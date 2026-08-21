@@ -216,6 +216,80 @@ DEMARRAGE_CONCURRENT = ("RzAppEngine", "RazerAppEngine", "RGBFusion",
                         "iCUE", "LightingService", "ArmouryCrate")
 
 
+def instances_parasites() -> list[tuple[int, str]]:
+    """Les OpenRGB qui tournent SANS etre le serveur, avec leur chemin.
+
+    Le cas s'est produit deux fois sur cette machine, et il est invisible :
+    une seconde instance d'OpenRGB -- lancee a la main, ou par une copie
+    oubliee de l'application -- n'obtient pas le port 6742, mais dispute le
+    controleur au serveur. Les modes se mettent alors a changer tout seuls et
+    les couleurs demandees ne tiennent pas. Vu de l'utilisateur, "OpenRGB ne
+    marche plus", et rien n'indique pourquoi.
+
+    On identifie le serveur par le port qu'il ecoute, pas par son chemin :
+    c'est la seule definition qui ne se trompe pas.
+    """
+    import psutil
+
+    proprietaire = _pid_du_serveur()
+    parasites = []
+    for proc in psutil.process_iter(["name", "pid", "exe"]):
+        try:
+            if (proc.info.get("name") or "").lower() != "openrgb.exe":
+                continue
+            if proc.info["pid"] == proprietaire:
+                continue
+            parasites.append((proc.info["pid"], proc.info.get("exe") or "?"))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return parasites
+
+
+def _arreter_les_parasites() -> str:
+    """Ferme les OpenRGB qui ne sont pas le serveur. Rend un compte-rendu.
+
+    Aucune elevation demandee : ces instances sont lancees par l'utilisateur
+    depuis l'explorateur, donc au meme niveau de privilege que l'assistant.
+    Celle qui tourne en administrateur est le serveur, et on l'epargne.
+    """
+    import psutil
+
+    trouves = instances_parasites()
+    if not trouves:
+        return ""
+
+    arretes = []
+    for pid, chemin in trouves:
+        try:
+            psutil.Process(pid).kill()
+            arretes.append(chemin)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    if not arretes:
+        detail = "\n".join(f"  {c}" for _p, c in trouves)
+        return ("Un autre OpenRGB tourne et dispute le controleur, mais je "
+                f"n'ai pas pu l'arreter :\n{detail}")
+
+    detail = "\n".join(f"  {c}" for c in arretes)
+    return (f"{len(arretes)} autre(s) OpenRGB fermé(s) — ils disputaient le "
+            f"controleur au serveur :\n{detail}")
+
+
+def _pid_du_serveur() -> int | None:
+    """Le PID qui ecoute sur le port d'OpenRGB, s'il y en a un."""
+    import psutil
+
+    try:
+        for connexion in psutil.net_connections(kind="inet"):
+            if (connexion.laddr and connexion.laddr.port == PORT_SERVEUR
+                    and connexion.status == psutil.CONN_LISTEN):
+                return connexion.pid
+    except (psutil.AccessDenied, OSError):
+        pass
+    return None
+
+
 def conflits() -> tuple[list[str], list[str]]:
     """Ce qui tient actuellement le controleur : programmes et services."""
     programmes = concurrents_actifs()
@@ -395,8 +469,14 @@ def liberer(ask=None) -> str:
     """
     from assistant import safety
 
+    # Les OpenRGB parasites d'abord : ils ne demandent aucun privilege, et
+    # c'est de loin la cause la plus frequente d'un eclairage qui n'obeit pas.
+    parasites = _arreter_les_parasites()
+
     programmes, services = conflits()
     if not programmes and not services:
+        if parasites:
+            return parasites
         return "Rien ne dispute le controleur : l'assistant a deja la main."
 
     action = safety.Action(
@@ -1223,6 +1303,19 @@ def liste() -> str:
             lignes.append(f"       mode actuel : {peripherique.mode_actif}")
         if peripherique.modes:
             lignes.append(f"       modes : {', '.join(peripherique.modes)}")
+        lignes.append("")
+
+    # Nommer le parasite AVANT les concurrents du fabricant : c'est la cause
+    # la plus frequente, et la seule qui ne se voit nulle part ailleurs.
+    parasites = instances_parasites()
+    if parasites:
+        lignes.append("  ATTENTION : un autre OpenRGB tourne en meme temps et "
+                      "dispute le controleur.")
+        lignes.append("  C'est ce qui fait changer les modes tout seuls et "
+                      "empeche les couleurs de tenir.")
+        for _pid, chemin in parasites:
+            lignes.append(f"       {chemin}")
+        lignes.append("  Dis \"reprends le controle du RGB\" pour le fermer.")
         lignes.append("")
 
     concurrents = concurrents_actifs()

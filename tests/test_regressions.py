@@ -1273,3 +1273,53 @@ def test_searchindexer_est_epargne_par_le_mode_jeu():
     from assistant.skills import gamemode
 
     assert "searchindexer.exe" in gamemode.EPARGNES
+
+
+# --- Le deuxieme OpenRGB, invisible et coupable ------------------------------
+
+def test_le_serveur_rgb_est_reconnu_par_son_port_pas_son_chemin():
+    """Deux fois dans la meme soiree, une seconde instance d'OpenRGB a
+    dispute le controleur au serveur : les modes changeaient tout seuls et
+    les couleurs ne tenaient pas. Vu de l'utilisateur, "OpenRGB ne marche
+    plus", sans rien pour l'expliquer.
+
+    Le serveur s'identifie par le port qu'il ecoute : c'est la seule
+    definition qui ne se trompe pas. Le comparer a un chemin echouerait des
+    qu'une copie de l'application est lancee depuis ailleurs -- ce qui est
+    precisement le cas rencontre.
+    """
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.instances_parasites)
+    assert "_pid_du_serveur()" in source
+    # Par la constante, pas par un numero en dur : le port se change a un seul
+    # endroit.
+    assert "PORT_SERVEUR" in inspect.getsource(rgb._pid_du_serveur)
+
+
+def test_reprendre_le_controle_ferme_aussi_les_openrgb_parasites():
+    """Sans ca, "reprends le controle du RGB" repondait "rien ne dispute le
+    controleur" alors qu'un second OpenRGB tournait juste a cote."""
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.liberer)
+    assert "_arreter_les_parasites()" in source
+    # Avant l'inventaire des concurrents du fabricant : c'est la cause la plus
+    # frequente, et la seule qui ne demande aucun privilege.
+    assert source.index("_arreter_les_parasites()") < source.index("conflits()")
+
+
+def test_l_etat_de_l_eclairage_nomme_le_parasite():
+    """Le symptome doit se nommer tout seul : l'utilisateur voyait des modes
+    changer sans comprendre, et accusait RGB Fusion -- qui etait arrete."""
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.liste)
+    assert "instances_parasites()" in source
+    assert "dispute le controleur" in source
