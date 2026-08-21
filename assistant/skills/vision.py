@@ -51,13 +51,67 @@ def _engine():
         return _ocr
 
 
+# En dessous de cette largeur, on agrandit avant de lire.
+#
+# Le texte d'une interface Windows fait 12 a 16 pixels de haut sur une capture
+# a taille reelle. C'est sous le seuil ou la reconnaissance devient fiable :
+# elle rendait "Assistant local toutrete sur cett macire" pour "tout reste sur
+# cette machine". Agrandir avant de lire coute quelques dixiemes de seconde et
+# change tout, parce que le modele a ete entraine sur du texte de document,
+# beaucoup plus gros qu'un libelle de menu.
+LARGEUR_CIBLE = 2600
+
+# Au-dela, on n'agrandit plus : la lecture deviendrait plus lente sans gagner
+# en justesse, et un ecran 4K est deja au-dessus du seuil.
+AGRANDISSEMENT_MAX = 3.0
+
+# En dessous de cette confiance, un passage est marque comme incertain.
+#
+# Mesure sur cette machine : la confiance moyenne d'une capture d'ecran est
+# de 0,84. Les mots reellement mal lus tombent nettement en dessous. Le seuil
+# separe donc ce qu'on peut citer de ce qu'il faut signaler comme douteux --
+# sans jeter le texte, qui reste souvent utile en contexte.
+SEUIL_SUR = 0.75
+
+
+def _preparer(path: str):
+    """Agrandit et adoucit l'image pour que le texte d'interface soit lisible.
+
+    Rend un tableau numpy, ou None si la preparation echoue -- dans ce cas
+    l'appelant lit le fichier tel quel plutot que de renoncer.
+    """
+    try:
+        import numpy as np
+        from PIL import Image, ImageOps
+
+        image = Image.open(path)
+        image = ImageOps.exif_transpose(image).convert("RGB")
+
+        facteur = min(max(LARGEUR_CIBLE / max(image.width, 1), 1.0),
+                      AGRANDISSEMENT_MAX)
+        if facteur > 1.05:
+            image = image.resize(
+                (round(image.width * facteur), round(image.height * facteur)),
+                Image.LANCZOS,
+            )
+
+        # Le texte clair sur fond sombre d'une interface est le cas le plus
+        # difficile : etaler le contraste ramene les deux extremes ou le
+        # modele les attend.
+        image = ImageOps.autocontrast(image, cutoff=1)
+        return np.array(image)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def read_text(path: str) -> tuple[bool, str]:
     """Extrait le texte d'une image, ligne par ligne, de haut en bas."""
     if not os.path.isfile(path):
         return False, f"{path} n'existe pas."
 
+    entree = _preparer(path)
     try:
-        resultat, _elapsed = _engine()(path)
+        resultat, _elapsed = _engine()(entree if entree is not None else path)
     except Exception as exc:  # noqa: BLE001
         return False, f"Lecture d'image impossible ({type(exc).__name__}: {exc})."
 
@@ -67,6 +121,7 @@ def read_text(path: str) -> tuple[bool, str]:
     # Chaque entree est (boite, texte, confiance). On garde l'ordre vertical
     # pour que la structure d'un menu reste comprehensible.
     lignes = []
+    incertaines = 0
     for entree in resultat:
         try:
             boite, texte, confiance = entree[0], entree[1], entree[2]
@@ -76,13 +131,31 @@ def read_text(path: str) -> tuple[bool, str]:
             continue
         y = min(point[1] for point in boite)
         x = min(point[0] for point in boite)
-        lignes.append((y, x, str(texte).strip()))
+
+        # Un mot mal lu presente comme certain est pire qu'un mot manquant :
+        # le modele batit alors un raisonnement sur du charabia. Mesure reelle
+        # sur cette machine : "tout reste sur cette machine" est ressorti
+        # "toutrete sur cett macire", et l'assistant l'a cite tel quel comme
+        # s'il en etait sur.
+        marque = str(texte).strip()
+        if confiance < SEUIL_SUR:
+            marque = f"{marque}(?)"
+            incertaines += 1
+        lignes.append((y, x, marque))
 
     if not lignes:
         return False, "Texte detecte mais illisible."
 
     lignes.sort(key=lambda item: (round(item[0] / 12), item[1]))
-    return True, "\n".join(texte for _y, _x, texte in lignes)
+    texte = "\n".join(t for _y, _x, t in lignes)
+
+    if incertaines:
+        texte += (
+            f"\n\n[{incertaines} passage(s) marque(s) (?) : la reconnaissance "
+            "n'en est pas sure. Ne les cite pas comme certains, et si le sens "
+            "en depend, demande a l'utilisateur plutot que de deviner.]"
+        )
+    return True, texte
 
 
 # --- Modele de vision -------------------------------------------------------

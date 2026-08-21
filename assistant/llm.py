@@ -61,6 +61,36 @@ Regles :
   la meme chose : ce serait le faire attendre pour rien. Une seule exception,
   s'il demande explicitement de rafraichir.
 
+CE QUE TU ES, EXACTEMENT
+
+Ne devine jamais ta propre nature : dis ce qui suit, et rien d'autre.
+
+- Tu es une application Windows installee sur cette machine, faite pour aider
+  quelqu'un qui ne s'y connait pas forcement. Tu tournes entierement en local.
+- Tu peux TOUT faire a la place de l'utilisateur sur ce PC : ouvrir et fermer
+  des applications, lancer et desinstaller des jeux, regler le son et la
+  lecture, taper du texte a sa place, reparer, nettoyer, et executer
+  n'importe quelle commande Windows.
+- Tu apprends cette machine a chaque demarrage et tu gardes ce que tu
+  decouvres pendant la session : outil ce_que_je_sais.
+- Ce que tu apprends vit en MEMOIRE VIVE et disparait a la fermeture. Tu ne
+  gardes RIEN d'une session a l'autre, sauf une note explicitement demandee
+  avec l'outil noter.
+
+Tu ne dis JAMAIS :
+- que tu "notes une correction pour la prochaine session" : c'est faux, sauf
+  si tu appelles reellement l'outil noter ;
+- qu'une application "n'est pas installee" sans avoir appele
+  lister_applications avec refresh, ou ouvrir_application, qui refait la
+  liste tout seul ;
+- que tes fonctionnalites "diminuent avec le temps" ou dependent de mises a
+  jour : tu n'en sais rien, et c'est faux ;
+- que tu ne peux pas faire quelque chose sans avoir cherche l'outil qui le
+  fait. Le catalogue est long : relis-le avant de refuser.
+
+Si un outil echoue, dis ce qui a echoue et pourquoi, puis propose la suite.
+Ne transforme jamais un echec technique en limite de principe.
+
 Quand l'utilisateur dit "mon" dossier, il parle de SES dossiers, listes
 ci-dessous. Ne devine jamais un chemin comme C:/Users/Public.
 
@@ -544,9 +574,13 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         "lister_applications",
-        "Liste les applications installees que l'assistant sait ouvrir.",
-        _obj({}),
-        lambda: apps.liste(),
+        "Liste les applications installees que l'assistant sait ouvrir, "
+        "Microsoft Store compris. Mets refresh a vrai pour refaire la liste "
+        "quand une application vient d'etre installee.",
+        _obj({"refresh": {"type": "boolean"}}),
+        lambda refresh=False: (
+            apps.rafraichir() + "\n\n" + apps.liste() if refresh
+            else apps.liste()),
     ),
     Tool(
         "minuteur",

@@ -51,8 +51,58 @@ _cache: list["App"] | None = None
 @dataclass
 class App:
     nom: str
-    cible: str          # chemin du raccourci, de l'exe, ou URI
-    source: str         # "menu demarrer", "windows", "index"
+    cible: str          # chemin du raccourci, de l'exe, URI, ou AUMID
+    source: str         # "menu demarrer", "microsoft store", "windows", "index"
+
+    @property
+    def est_store(self) -> bool:
+        """Une application du Store se lance autrement qu'un fichier."""
+        return self.source == "microsoft store"
+
+
+def _from_apps_folder() -> list[App]:
+    """Tout ce que Windows sait lancer, applications du Store comprises.
+
+    Le menu Demarrer ne suffit pas : une application installee depuis le
+    Microsoft Store n'a AUCUN raccourci .lnk. Xbox, YouTube Music, Netflix,
+    Photos et le Terminal etaient donc invisibles pour l'assistant, qui
+    repondait "cette application n'est pas installee" -- alors qu'elle
+    l'etait.
+
+    shell:AppsFolder est le dossier virtuel qui les contient toutes. Chaque
+    entree y porte son nom affiche et son identifiant de modele utilisateur
+    (AUMID), qui est la seule facon fiable de la lancer.
+    """
+    try:
+        import pythoncom
+        import win32com.client
+    except ImportError:
+        return []
+
+    # COM appartient au thread qui l'initialise, et le catalogue est construit
+    # dans un thread de fond.
+    try:
+        pythoncom.CoInitialize()
+    except Exception:  # noqa: BLE001 - deja initialise
+        pass
+
+    try:
+        shell = win32com.client.Dispatch("Shell.Application")
+        elements = shell.Namespace("shell:AppsFolder").Items()
+    except Exception:  # noqa: BLE001
+        return []
+
+    trouves = []
+    for index in range(elements.Count):
+        try:
+            element = elements.Item(index)
+            nom, aumid = str(element.Name), str(element.Path)
+        except Exception:  # noqa: BLE001
+            continue
+        if not nom or not aumid:
+            continue
+        trouves.append(App(nom, aumid, "microsoft store"))
+    return trouves
 
 
 def canon(texte: str) -> str:
@@ -84,19 +134,46 @@ def _from_start_menu() -> list[App]:
 
 
 def catalogue(refresh: bool = False) -> list[App]:
-    """Toutes les applications lancables, du menu Demarrer et de Windows."""
+    """Toutes les applications lancables : Store, menu Demarrer, Windows.
+
+    L'ordre des sources compte. Le Store vient EN PREMIER : quand une
+    application existe sous les deux formes, l'entree du Store porte le nom
+    exact que Windows affiche et se lance sans ambiguite, la ou un raccourci
+    peut pointer vers un installeur ou un site web.
+    """
     global _cache
     if _cache is not None and not refresh:
         return _cache
 
-    applications = _from_start_menu()
+    applications = _from_apps_folder()
     connus = {canon(a.nom) for a in applications}
+
+    for app in _from_start_menu():
+        if canon(app.nom) not in connus:
+            connus.add(canon(app.nom))
+            applications.append(app)
+
     for nom, commande in BUILTINS.items():
         if canon(nom) not in connus:
             applications.append(App(nom, commande, "windows"))
 
     _cache = sorted(applications, key=lambda a: a.nom.lower())
     return _cache
+
+
+def rafraichir() -> str:
+    """Refait le catalogue. Une application installee depuis le lancement
+    doit pouvoir etre trouvee sans redemarrer l'assistant."""
+    avant = len(_cache or [])
+    apres = len(catalogue(refresh=True))
+    if not avant:
+        return f"{apres} applications reconnues."
+    difference = apres - avant
+    if difference > 0:
+        return f"{apres} applications reconnues ({difference} de plus)."
+    if difference < 0:
+        return f"{apres} applications reconnues ({-difference} de moins)."
+    return f"{apres} applications reconnues, aucun changement."
 
 
 def _from_index(requete: str, limite: int = 5) -> list[App]:
@@ -152,13 +229,37 @@ def find(requete: str) -> list[tuple[float, App]]:
     return scores
 
 
-def open_app(nom: str) -> str:
+def _lancer(app: App) -> None:
+    """Ouvre reellement une application, selon sa nature.
+
+    Une application du Store ne s'ouvre pas comme un fichier : os.startfile
+    sur un AUMID echoue, ou pire, Windows le prend pour un terme de recherche
+    et ouvre le navigateur. C'est ce qui faisait apparaitre Microsoft Edge
+    quand on demandait l'application Xbox.
+    """
+    import subprocess
+
+    if app.est_store:
+        subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app.cible}"])
+        return
+    os.startfile(app.cible)
+
+
+def open_app(nom: str, refresh_si_absent: bool = True) -> str:
     """Ouvre une application par son nom."""
     resultats = find(nom)
+
+    # Rien trouve ? L'application vient peut-etre d'etre installee. On refait
+    # le catalogue une fois avant de declarer forfait : repondre "elle n'est
+    # pas installee" alors qu'elle l'est est la pire des reponses.
+    if not resultats and refresh_si_absent:
+        catalogue(refresh=True)
+        resultats = find(nom)
+
     if not resultats:
-        return (f"Aucune application ne correspond a \"{nom}\". "
-                "Demande \"liste mes applications\" pour voir ce qui est "
-                "reconnu.")
+        return (f"Aucune application ne correspond a \"{nom}\", meme apres "
+                "avoir refait la liste. Verifie l'orthographe, ou demande "
+                "\"liste mes applications\".")
 
     meilleur_score, meilleur = resultats[0]
     if len(resultats) > 1 and resultats[1][0] > meilleur_score - 0.08:
@@ -166,17 +267,83 @@ def open_app(nom: str) -> str:
         return f"Plusieurs applications correspondent : {noms}. Laquelle ?"
 
     try:
-        os.startfile(meilleur.cible)
+        _lancer(meilleur)
     except OSError as exc:
         return f"Ouverture impossible de {meilleur.nom} : {exc}"
     return f"{meilleur.nom} ouvert."
 
 
+# Applications dont le nom courant ne correspond a aucun processus unique.
+# Les fermer une par une obligeait l'utilisateur a deviner les noms exacts, et
+# a repeter la demande trois fois -- ce que l'assistant faisait reellement
+# pour Steam avant cette correction.
+FAMILLES = {
+    "steam": ("steam.exe", "steamwebhelper.exe", "steamservice.exe"),
+    "discord": ("discord.exe",),
+    "epic": ("epicgameslauncher.exe", "epicwebhelper.exe"),
+    "chrome": ("chrome.exe",),
+    "edge": ("msedge.exe",),
+    "firefox": ("firefox.exe",),
+    "ubisoft": ("upc.exe", "ubisoftconnect.exe"),
+    "ea": ("eadesktop.exe", "eabackgroundservice.exe"),
+    "riot": ("riotclientservices.exe", "leagueclient.exe"),
+    "teams": ("ms-teams.exe", "teams.exe"),
+    "spotify": ("spotify.exe",),
+    "obs": ("obs64.exe",),
+}
+
+
 def close_app(nom: str, ask=None) -> str:
-    """Ferme une application. Passe par le meme garde-fou que les processus."""
+    """Ferme une application, TOUS ses processus compris.
+
+    Une application n'est presque jamais un seul processus. Steam en lance
+    trois : le launcher, l'assistant web et un service. Fermer le premier
+    laissait les deux autres tourner, et l'utilisateur devait redemander deux
+    fois -- sans connaitre les noms exacts.
+
+    Ce qui demande les droits administrateur est signale comme tel, pas
+    presente comme un echec inexplicable.
+    """
     from assistant.skills import fixes
 
-    return str(fixes.arreter_processus(nom, ask=ask))
+    demande = canon(nom)
+    cibles = None
+    for famille, processus in FAMILLES.items():
+        if famille in demande:
+            cibles = processus
+            break
+
+    if cibles is None:
+        return str(fixes.arreter_processus(nom, ask=ask))
+
+    fermes, absents, refuses = [], [], []
+    for processus in cibles:
+        resultat = fixes.arreter_processus(processus, ask=ask)
+        message = resultat.message
+        if resultat.ok:
+            fermes.append(processus)
+        elif "aucun processus" in message.lower():
+            absents.append(processus)
+        else:
+            refuses.append((processus, message))
+
+    lignes = []
+    if fermes:
+        lignes.append(f"{nom} ferme : {', '.join(fermes)}.")
+    if absents:
+        lignes.append(f"Deja arrete : {', '.join(absents)}.")
+    for processus, message in refuses:
+        if "administrateur" in message.lower() or "droits" in message.lower():
+            lignes.append(
+                f"{processus} est un service : il demande les droits "
+                "administrateur. Il ne gene rien en tournant, et il se "
+                "relancera de toute facon au prochain lancement.")
+        else:
+            lignes.append(f"{processus} : {message[:100]}")
+
+    if not fermes and not absents:
+        return f"{nom} ne tournait pas."
+    return "\n".join(lignes)
 
 
 def liste(limite: int = 60) -> str:

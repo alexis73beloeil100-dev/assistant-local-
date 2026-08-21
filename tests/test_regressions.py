@@ -587,7 +587,7 @@ def test_taper_n_attend_aucune_confirmation():
 
 
 def test_taper_un_chemin_systeme_n_est_pas_pris_pour_une_modification():
-    """`targets` est le champ compare aux chemins proteges.
+    r"""`targets` est le champ compare aux chemins proteges.
 
     Ecrire "C:\Windows\System32" dans un editeur aurait ete refuse comme si
     on modifiait le dossier systeme. Le texte est donc prefixe pour sortir de
@@ -596,12 +596,9 @@ def test_taper_un_chemin_systeme_n_est_pas_pris_pour_une_modification():
     from assistant import safety
     from assistant.skills import control
 
-    action = safety.Action(
-        kind="clavier", summary="test",
-        targets=[f"texte: {chr(92)}".join(["C:", "Windows", "System32"])])
-    assert not safety.is_protected("texte: C:\Windows\System32")
+    assert not safety.is_protected(r"texte: C:\Windows\System32")
     # Et le vrai chemin, lui, reste protege.
-    assert safety.is_protected("C:\Windows\System32")
+    assert safety.is_protected(r"C:\Windows\System32")
     assert callable(control.taper)
 
 
@@ -613,3 +610,86 @@ def test_taper_reste_journalise():
 
     source = inspect.getsource(control.taper)
     assert "safety.Action" in source and "safety.guard" in source
+
+
+# --- Les applications introuvables -------------------------------------------
+
+def test_les_applications_du_store_sont_au_catalogue():
+    """"Cette application n'est pas installee" -- alors qu'elle l'etait.
+
+    Le catalogue ne lisait que les raccourcis .lnk du menu Demarrer. Une
+    application du Microsoft Store n'en a AUCUN : Xbox, YouTube Music,
+    Netflix, Photos et le Terminal etaient invisibles. L'assistant affirmait
+    qu'elles n'etaient pas installees, et proposait de les chercher a la main.
+    """
+    from assistant.skills import apps
+
+    sources = {a.source for a in apps.catalogue(refresh=True)}
+    assert "microsoft store" in sources, (
+        "shell:AppsFolder doit etre lu, sinon tout le Store est invisible")
+
+
+def test_une_application_du_store_ne_se_lance_pas_comme_un_fichier():
+    """Microsoft Edge s'ouvrait au lieu de l'application demandee.
+
+    os.startfile sur un AUMID echoue, ou Windows le prend pour un terme de
+    recherche et ouvre le navigateur par defaut.
+    """
+    import inspect
+
+    from assistant.skills import apps
+
+    source = inspect.getsource(apps._lancer)
+    assert "shell:AppsFolder" in source
+    assert "explorer.exe" in source
+
+
+def test_le_catalogue_peut_etre_refait_sans_redemarrer():
+    """L'assistant repondait que la liste "ne change pas depuis le debut".
+
+    Elle etait mise en cache pour toute la session : une application installee
+    entre-temps restait introuvable jusqu'au redemarrage.
+    """
+    from assistant.skills import apps
+
+    assert callable(apps.rafraichir)
+    avant = len(apps.catalogue())
+    apres = len(apps.catalogue(refresh=True))
+    assert apres >= avant > 0
+
+
+def test_fermer_une_application_ferme_tous_ses_processus():
+    """Steam en lance trois : le launcher, l'assistant web et un service.
+
+    Fermer le premier laissait les deux autres tourner, et l'utilisateur
+    devait redemander deux fois -- sans connaitre les noms exacts.
+    """
+    from assistant.skills import apps
+
+    assert "steam" in apps.FAMILLES
+    assert len(apps.FAMILLES["steam"]) >= 3
+
+
+def test_l_assistant_ne_ment_pas_sur_lui_meme():
+    """Il affirmait ne pas pouvoir voir son code, perdre ses fonctions avec le
+    temps, et noter des corrections pour la prochaine session. Trois inventions.
+    """
+    from assistant import llm
+
+    prompt = llm.SYSTEM_PROMPT
+    assert "CE QUE TU ES, EXACTEMENT" in prompt
+    for interdit in ("prochaine session", "diminuent", "n'est pas installee"):
+        assert interdit in prompt, (
+            f"le prompt doit interdire explicitement : {interdit}")
+
+
+def test_un_texte_mal_lu_est_signale_comme_douteux():
+    """"tout reste sur cette machine" est ressorti "toutrete sur cett macire",
+    et l'assistant l'a cite comme s'il en etait sur."""
+    import inspect
+
+    from assistant.skills import vision
+
+    assert vision.SEUIL_SUR > 0.5
+    source = inspect.getsource(vision.read_text)
+    assert "(?)" in source
