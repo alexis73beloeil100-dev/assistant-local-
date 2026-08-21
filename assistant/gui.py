@@ -1160,9 +1160,57 @@ class AssistantWindow(tk.Tk):
         except OSError as exc:
             self.post("error", f"Impossible d'ouvrir l'installateur : {exc}")
 
+    # =====================================================================
+    # Fin de vie
+    # =====================================================================
+
+    def report_callback_exception(self, exc, val, tb) -> None:
+        """Recupere les erreurs que Tkinter ferait disparaitre.
+
+        Tk attrape ce qui echoue dans un callback et l'imprime sur la sortie
+        d'erreur. En mode fenetre, cette sortie n'existe pas : le bouton ne
+        fait rien, et il n'y a rien a lire nulle part. On les ecrit, et on le
+        dit dans la conversation plutot que de laisser croire a un clic rate.
+        """
+        import traceback as _tb
+
+        texte = "".join(_tb.format_exception(exc, val, tb))
+        try:
+            from assistant import vie
+
+            vie.noter_exception(texte)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.post("error", f"{exc.__name__}: {val}")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _fermer_proprement(self) -> None:
+        """Note QUI a ferme la fenetre, puis ferme.
+
+        Sans cette ligne, une fermeture volontaire et une mort brutale
+        laissaient exactement la meme chose derriere elles : rien.
+        """
+        try:
+            from assistant import vie
+
+            vie.arret("fenetre fermee par l'utilisateur")
+        except Exception:  # noqa: BLE001
+            pass
+        self.destroy()
+
+
+# Renseigne par le lanceur quand la session precedente s'est mal terminee.
+MESSAGE_DE_REPRISE = ""
+
 
 def main() -> int:
-    AssistantWindow().mainloop()
+    fenetre = AssistantWindow()
+    fenetre.protocol("WM_DELETE_WINDOW", fenetre._fermer_proprement)
+    if MESSAGE_DE_REPRISE:
+        fenetre.after(1200, lambda: fenetre.post("error", MESSAGE_DE_REPRISE))
+    fenetre.mainloop()
     return 0
 
 

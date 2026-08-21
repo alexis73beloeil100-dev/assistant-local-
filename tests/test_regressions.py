@@ -1323,3 +1323,71 @@ def test_l_etat_de_l_eclairage_nomme_le_parasite():
     source = inspect.getsource(rgb.liste)
     assert "instances_parasites()" in source
     assert "dispute le controleur" in source
+
+
+# --- L'application qui s'evaporait sans un mot ------------------------------
+
+def test_une_mort_brutale_se_distingue_d_une_fermeture(tmp_path, monkeypatch):
+    """L'assistant a disparu deux fois dans la meme soiree : pas de
+    erreurs.log, pas d'evenement Windows, pas une ligne de journal. Une
+    fenetre qui se ferme toute seule et une fenetre fermee par l'utilisateur
+    laissaient exactement la meme chose derriere elles -- rien."""
+    from assistant import vie
+
+    monkeypatch.setattr(vie, "SESSIONS", tmp_path / "sessions.jsonl")
+    monkeypatch.setattr(vie, "PLANTAGES", tmp_path / "plantages.log")
+    monkeypatch.setattr(vie, "_arret_note", False)
+
+    # Une session complete ne doit rien signaler.
+    vie.demarrer("test")
+    vie.arret("fermeture normale")
+    assert vie.sessions_mortes_sans_un_mot() == []
+    assert vie.rapport_de_reprise() == ""
+
+    # Une ouverture orpheline, elle, doit etre vue.
+    vie._ecrire({"evt": "start", "pid": 999999, "t": __import__("time").time(),
+                 "at": "2026-08-22T01:47:33", "origine": "test"})
+    mortes = vie.sessions_mortes_sans_un_mot()
+    assert [m["pid"] for m in mortes] == [999999]
+    assert "sans passer par la fermeture normale" in vie.rapport_de_reprise()
+
+
+def test_une_fermeture_normale_n_est_pas_annoncee_comme_un_plantage(tmp_path, monkeypatch):
+    """Premiere version : elle se fiait a la DATE de plantages.log. Or
+    demarrer() y ecrit un en-tete a chaque lancement, donc le fichier est
+    toujours recent -- et chaque fermeture normale etait annoncee comme un
+    plantage."""
+    from assistant import vie
+
+    monkeypatch.setattr(vie, "SESSIONS", tmp_path / "sessions.jsonl")
+    monkeypatch.setattr(vie, "PLANTAGES", tmp_path / "plantages.log")
+
+    vie.PLANTAGES.write_text("\n=== session 2026-08-22T01:47:33 pid 4242 ===\n",
+                             encoding="utf-8")
+    assert not vie._trace_de_plantage(4242), "un en-tete seul n'est pas un plantage"
+
+    with vie.PLANTAGES.open("a", encoding="utf-8") as fh:
+        fh.write("Fatal Python error: Segmentation fault\n")
+    assert vie._trace_de_plantage(4242)
+
+
+def test_les_erreurs_de_boutons_ne_disparaissent_plus():
+    """Tkinter attrape ce qui echoue dans un callback et l'imprime sur la
+    sortie d'erreur. En mode fenetre elle n'existe pas : le bouton ne faisait
+    rien, et il n'y avait rien a lire nulle part."""
+    from assistant.gui import AssistantWindow
+
+    assert "report_callback_exception" in vars(AssistantWindow)
+
+
+def test_les_deux_lanceurs_arment_le_journal_de_vie():
+    """Un plantage natif survenu avant vie.demarrer() ne laisse toujours
+    rien : l'appel doit etre le plus tot possible, dans les DEUX portes
+    d'entree -- l'executable et le lanceur de secours."""
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    for nom in ("AssistantLocal.py", "demarrer_assistant.py"):
+        texte = (racine / nom).read_text(encoding="utf-8")
+        assert "vie.demarrer(" in texte, nom
+        assert "vie.arret(" in texte, nom

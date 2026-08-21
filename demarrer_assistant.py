@@ -27,16 +27,37 @@ def main() -> int:
     print(f"\n=== demarrage {datetime.now().isoformat(timespec='seconds')} ===")
 
     try:
+        from assistant import vie
+
+        reprise = vie.demarrer("sources (demarrer_assistant.py)")
+        if reprise:
+            print(reprise)
+
         # La FENETRE, pas la boucle vocale. assistant.main ouvrait l'ecoute
         # sans interface : au demarrage de Windows, l'utilisateur n'avait
         # rien a l'ecran et croyait que rien ne s'etait lance.
+        from assistant import gui
         from assistant.gui import main as run
 
-        return run()
+        if reprise:
+            gui.MESSAGE_DE_REPRISE = reprise
+
+        code = run()
+        print(f"=== arret {datetime.now().isoformat(timespec='seconds')} "
+              f"(code {code}) ===")
+        vie.arret(f"sortie normale (code {code})")
+        return code
     except Exception:
         import traceback
 
         traceback.print_exc()
+        try:
+            from assistant import vie
+
+            vie.noter_exception(traceback.format_exc())
+            vie.arret("exception")
+        except Exception:
+            pass
         return 1
 
 

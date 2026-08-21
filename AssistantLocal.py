@@ -55,16 +55,35 @@ def main() -> int:
     deux fenetres dependent de toute facon des memes modules.
     """
     try:
+        # Le plus tot possible : un plantage natif survenu avant cet appel ne
+        # laisse aucune trace. Voir assistant.vie -- l'application a disparu
+        # deux fois sans rien ecrire nulle part.
+        from assistant import vie
+
+        reprise = vie.demarrer("executable")
+
         if "--autotest" in sys.argv or "--verifier" in sys.argv:
             from assistant.selftest import main as run
         elif "--installer" in sys.argv or "--installation" in sys.argv:
             from assistant.installer import main as run
         else:
             from assistant.gui import main as run
+            if reprise:
+                from assistant import gui
+                gui.MESSAGE_DE_REPRISE = reprise
 
-        return run()
+        code = run()
+        vie.arret(f"sortie normale (code {code})")
+        return code
     except Exception:
         report(traceback.format_exc())
+        try:
+            from assistant import vie
+
+            vie.noter_exception(traceback.format_exc())
+            vie.arret("exception")
+        except Exception:
+            pass
         return 1
 
 
