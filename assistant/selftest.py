@@ -243,6 +243,30 @@ def check_inventaire():
     return OK, f"script present ({inventaire.SCRIPT.name})", ""
 
 
+def check_rgb():
+    """L'outil d'eclairage est-il bien embarque, et voit-il le materiel ?
+
+    Il est livre DANS l'application, dans outils/. Comme inventaire.ps1, ce
+    n'est pas du Python : s'il manque au .spec, l'executable se construit sans
+    erreur et la fonction disparait en silence.
+    """
+    from assistant.skills import rgb
+
+    if not rgb.disponible():
+        return ABSENT, "OpenRGB absent du paquet", (
+            "Depose-le dans outils/OpenRGB/ : le .spec l'embarquera."
+        )
+
+    trouves, erreur = rgb.peripheriques()
+    if erreur:
+        return PARTIEL, f"present ({rgb.source()}), aucun peripherique", (
+            "L'acces au bus SMBus demande les droits administrateur : "
+            "clic droit sur le raccourci, \"Executer en tant "
+            "qu'administrateur\". Et ferme le logiciel du fabricant."
+        )
+    return OK, f"{len(trouves)} peripherique(s) RGB ({rgb.source()})", ""
+
+
 def check_jeux():
     from assistant.skills import games
 
@@ -270,6 +294,7 @@ VERIFICATIONS = [
     # c'est precisement ce qu'un autotest doit attraper.
     ("Applications", check_applications, True),
     ("Inventaire logiciel", check_inventaire, True),
+    ("Eclairage RGB", check_rgb, False),
 ]
 
 
