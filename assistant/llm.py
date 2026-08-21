@@ -536,6 +536,15 @@ TOOLS: list[Tool] = [
         lambda: rgb.liste(),
     ),
     Tool(
+        "definir_chemin_openrgb",
+        "Enregistre ou se trouve OpenRGB quand il est portable et range "
+        "ailleurs que dans les emplacements habituels. Sert quand "
+        "l'utilisateur dit \"OpenRGB est dans tel dossier\".",
+        _obj({"chemin": STR}, ["chemin"]),
+        lambda chemin: rgb.definir_chemin(chemin),
+        effect=True,
+    ),
+    Tool(
         "changer_eclairage_rgb",
         "Change le mode d'eclairage RGB, par son nom tel qu'il apparait dans "
         "eclairage_rgb (statique, respiration, arc-en-ciel...). Sans "

@@ -34,6 +34,11 @@ CANDIDATS = [
     Path(os.environ.get("PROGRAMFILES", "")) / "OpenRGB" / "OpenRGB.exe",
     Path(os.environ.get("PROGRAMFILES(X86)", "")) / "OpenRGB" / "OpenRGB.exe",
     Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "OpenRGB" / "OpenRGB.exe",
+    Path(os.environ.get("LOCALAPPDATA", "")) / "OpenRGB" / "OpenRGB.exe",
+    Path(os.environ.get("APPDATA", "")) / "OpenRGB" / "OpenRGB.exe",
+    Path.home() / "OpenRGB" / "OpenRGB.exe",
+    Path.home() / "Downloads" / "OpenRGB" / "OpenRGB.exe",
+    Path("C:/OpenRGB/OpenRGB.exe"),
 ]
 
 # Logiciels de fabricant qui se disputent le controleur. Deux programmes qui
@@ -61,16 +66,51 @@ class Peripherique:
 
 
 def _executable() -> Path | None:
-    """Trouve OpenRGB, sans supposer ou il est."""
-    from assistant import config
+    """Trouve OpenRGB, sans supposer ou il est.
+
+    Un chemin explicite enregistre par l'utilisateur prime sur tout : une
+    installation portable peut vivre n'importe ou, et chercher indefiniment
+    sur les disques couterait plus cher que de demander une fois.
+
+    Le dossier de l'application est cherche EN DERNIER, et volontairement :
+    dans l'executable packagee, il est efface et recree a chaque
+    reconstruction. Ce qu'on y pose disparait a la mise a jour suivante.
+    """
+    from assistant import config, settings
+
+    force = settings.get("openrgb_chemin", "")
+    if force and Path(force).is_file():
+        return Path(force)
 
     trouve = shutil.which("OpenRGB")
     if trouve:
         return Path(trouve)
+
     for chemin in CANDIDATS + [config.ROOT / "OpenRGB" / "OpenRGB.exe"]:
-        if chemin.is_file():
-            return chemin
+        try:
+            if chemin.is_file():
+                return chemin
+        except OSError:      # chemin invalide sur cette machine
+            continue
     return None
+
+
+def definir_chemin(chemin: str) -> str:
+    """Enregistre l'emplacement d'OpenRGB, pour une installation portable."""
+    from assistant import settings
+
+    cible = Path(chemin.strip('"'))
+    if cible.is_dir():
+        cible = cible / "OpenRGB.exe"
+    if not cible.is_file():
+        return f"Introuvable : {cible}"
+
+    settings.set("openrgb_chemin", str(cible))
+    trouves, erreur = peripheriques()
+    if erreur:
+        return f"OpenRGB enregistre, mais : {erreur}"
+    return (f"OpenRGB enregistre. {len(trouves)} peripherique(s) RGB "
+            "detecte(s).")
 
 
 def disponible() -> bool:
@@ -244,9 +284,14 @@ def liste() -> str:
             "  dessinees. Il n'y a rien a piloter de l'exterieur.\n\n"
             "  OpenRGB parle au materiel lui-meme et couvre la plupart des\n"
             "  marques derriere une seule interface. Il est libre et\n"
-            "  fonctionne hors ligne. Pose-le dans un dossier OpenRGB a cote\n"
-            "  de l'assistant, ou installe-le : il sera trouve tout seul.\n"
-            "  Ferme le logiciel du fabricant avant de t'en servir."
+            "  fonctionne hors ligne.\n\n"
+            "  OU L'INSTALLER : sur le PC, normalement. PAS dans le dossier\n"
+            "  de l'assistant : celui-ci est efface et recree a chaque\n"
+            "  reconstruction de l'executable, et ce qu'on y pose disparait.\n"
+            "  Une fois installe il est trouve tout seul ; s'il est portable\n"
+            "  et range ailleurs, dis \"OpenRGB est dans <chemin>\".\n\n"
+            "  Ferme le logiciel du fabricant avant de t'en servir : deux\n"
+            "  programmes sur le meme controleur font clignoter l'eclairage."
             + _ce_qui_existe_deja()
         )
 
