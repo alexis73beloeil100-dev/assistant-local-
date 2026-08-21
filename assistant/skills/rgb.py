@@ -167,20 +167,87 @@ def _trouver(nom: str, liste: list[str]) -> str | None:
     return None
 
 
+# Bibliotheques de pilotage livrees AVEC les logiciels de fabricant. Elles
+# sont deja sur la machine des qu'on a installe le logiciel du constructeur --
+# il n'y a donc rien a telecharger pour les utiliser.
+#
+# On les cherche pour pouvoir dire a l'utilisateur ce qui est reellement
+# atteignable chez lui, plutot que de repondre "installe OpenRGB" sans
+# expliquer ce qu'il a deja sous la main.
+SDK_FABRICANTS = [
+    ("GvLedLib.dll", "Gigabyte RGB Fusion",
+     ["Program Files (x86)/GIGABYTE/RGBFusion"]),
+    ("iCUESDK.x64_2019.dll", "Corsair iCUE",
+     ["Program Files/Corsair/CORSAIR iCUE5 Software",
+      "Program Files/Corsair/CORSAIR iCUE4 Software"]),
+    ("RzChromaSDK64.dll", "Razer Chroma",
+     ["Program Files/Razer Chroma SDK/bin",
+      "Program Files (x86)/Razer Chroma SDK/bin"]),
+    ("AURA_SDK.dll", "Asus Aura", ["Program Files (x86)/LightingService"]),
+    ("MysticLight_SDK.dll", "MSI Mystic Light", ["Program Files (x86)/MSI"]),
+]
+
+
+def sdk_presents() -> list[tuple[str, Path, str]]:
+    """SDK de fabricants trouves sur cette machine, avec leur architecture.
+
+    L'architecture compte : une bibliotheque 32 bits ne peut pas etre chargee
+    par un processus 64 bits. GvLedLib de Gigabyte est en 32 bits, et
+    l'assistant en 64 -- la piste demande un pont, elle n'est pas gratuite.
+    """
+    import struct
+
+    trouves = []
+    for fichier, libelle, dossiers in SDK_FABRICANTS:
+        for dossier in dossiers:
+            chemin = Path("C:/") / dossier / fichier
+            if not chemin.is_file():
+                continue
+            try:
+                donnees = chemin.read_bytes()[:1024]
+                debut = struct.unpack_from("<I", donnees, 0x3C)[0]
+                machine = struct.unpack_from("<H", donnees, debut + 4)[0]
+                arch = {0x14c: "32 bits", 0x8664: "64 bits"}.get(machine, "?")
+            except Exception:  # noqa: BLE001
+                arch = "?"
+            trouves.append((libelle, chemin, arch))
+            break
+    return trouves
+
+
+def _ce_qui_existe_deja() -> str:
+    """Ce que la machine possede deja, meme sans OpenRGB."""
+    trouves = sdk_presents()
+    if not trouves:
+        return ""
+    lignes = ["", "  Ce qui est deja installe ici :"]
+    for libelle, _chemin, arch in trouves:
+        note = ""
+        if arch == "32 bits":
+            note = "  (32 bits : inutilisable directement depuis l'assistant)"
+        lignes.append(f"    {libelle}  —  {arch}{note}")
+    return "\n".join(lignes)
+
+
 def liste() -> str:
     """Ce qui est pilotable, avec les modes reellement offerts par chacun."""
     if not disponible():
         return (
             "ECLAIRAGE RGB\n\n"
             "  Le pilotage RGB demande OpenRGB, qui n'est pas installe.\n\n"
-            "  Pourquoi lui : les logiciels des fabricants (RGB Fusion, Aura,\n"
-            "  Mystic Light, iCUE) n'ont aucune ligne de commande et envoient\n"
-            "  leurs reglages directement au controleur de la carte. OpenRGB\n"
-            "  parle au materiel lui-meme, et couvre la plupart des marques\n"
-            "  derriere une seule interface.\n\n"
-            "  C'est un logiciel libre, qui fonctionne hors ligne.\n"
-            "  Pose-le dans un dossier OpenRGB a cote de l'assistant, ou\n"
-            "  installe-le normalement : il sera trouve tout seul."
+            "  Pourquoi lui, et pas le logiciel du fabricant : verifie sur\n"
+            "  cette machine, RGB Fusion n'ecrit rien sur le disque quand on\n"
+            "  change de mode (son fichier de profil n'a pas bouge en dix\n"
+            "  minutes d'essais), n'expose aucune ligne de commande sur ses\n"
+            "  quatorze executables, et sa fenetre ne publie aucun bouton a\n"
+            "  l'automatisation Windows : ses commandes sont des images\n"
+            "  dessinees. Il n'y a rien a piloter de l'exterieur.\n\n"
+            "  OpenRGB parle au materiel lui-meme et couvre la plupart des\n"
+            "  marques derriere une seule interface. Il est libre et\n"
+            "  fonctionne hors ligne. Pose-le dans un dossier OpenRGB a cote\n"
+            "  de l'assistant, ou installe-le : il sera trouve tout seul.\n"
+            "  Ferme le logiciel du fabricant avant de t'en servir."
+            + _ce_qui_existe_deja()
         )
 
     trouves, erreur = peripheriques()
