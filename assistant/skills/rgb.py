@@ -166,6 +166,193 @@ def disponible() -> bool:
     return _executable() is not None
 
 
+# Services qui gardent la main sur un controleur RGB, meme quand la fenetre du
+# logiciel est fermee. C'est eux qui comptent : tuer un programme qu'un service
+# relance ne sert a rien.
+#
+# Liste blanche stricte, et rien d'autre. Arreter un service au hasard parce
+# que son nom contient "RGB" est le genre de chose qui fait tomber une session
+# Windows.
+SERVICES_CONCURRENTS = {
+    "MyService1": "GIGABYTE Adjust",
+    "GvLedService": "Gigabyte LED",
+    "Razer Chroma SDK Server": "Razer Chroma (serveur)",
+    "Razer Chroma SDK Service": "Razer Chroma",
+    "Razer Chroma Stream Server": "Razer Chroma (flux)",
+    "RzActionSvc": "Razer Synapse",
+    "CorsairDeviceControlService": "Corsair iCUE",
+    "CorsairGamingAudioConfig": "Corsair audio",
+    "LightingService": "Asus Aura",
+    "asComSvc": "Asus Armoury Crate",
+    "MSI_Center_Service": "MSI Center",
+    "Micro Star SCM": "MSI Mystic Light",
+    "LGHUBUpdaterService": "Logitech G HUB",
+}
+
+
+def conflits() -> tuple[list[str], list[str]]:
+    """Ce qui tient actuellement le controleur : programmes et services."""
+    programmes = concurrents_actifs()
+
+    services = []
+    try:
+        resultat = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command",
+             "Get-Service | Where-Object { $_.Status -eq 'Running' } | "
+             "Select-Object -ExpandProperty Name"],
+            capture_output=True, text=True, timeout=30,
+            encoding="utf-8", errors="replace",
+            creationflags=CREATE_NO_WINDOW,
+        )
+        actifs = {l.strip() for l in (resultat.stdout or "").splitlines()}
+    except (subprocess.SubprocessError, OSError):
+        actifs = set()
+
+    for nom, libelle in SERVICES_CONCURRENTS.items():
+        if nom in actifs:
+            services.append(nom)
+    return programmes, services
+
+
+def liberer(ask=None) -> str:
+    """Ferme tout ce qui dispute le controleur RGB a l'assistant.
+
+    Deux logiciels qui ecrivent sur le meme controleur donnent un eclairage
+    qui ne repond a personne : la commande est acceptee, et le concurrent la
+    recouvre aussitot. C'est ce qui se passait ici -- le mode changeait dans
+    OpenRGB, les LED ne bougeaient pas.
+
+    Les services comptent plus que les fenetres : fermer un programme qu'un
+    service relance ne sert a rien.
+
+    Reversible : les services sont seulement ARRETES, pas desactives. Ils
+    repartiront au prochain demarrage de Windows, ou tout de suite avec
+    rendre_le_controleur().
+    """
+    from assistant import safety
+
+    programmes, services = conflits()
+    if not programmes and not services:
+        return "Rien ne dispute le controleur : l'assistant a deja la main."
+
+    action = safety.Action(
+        kind="service",
+        summary="Reprendre la main sur l'eclairage RGB",
+        targets=[f"programme: {p}" for p in programmes]
+                + [f"service: {SERVICES_CONCURRENTS.get(s, s)}" for s in services],
+        reversible=True,
+        details="Ces logiciels gardent le controleur et recouvrent chaque "
+                "commande. Ils sont arretes, pas desactives : ils repartiront "
+                "au prochain demarrage de Windows.",
+    )
+    try:
+        safety.guard(action, ask=ask)
+    except safety.Refused as exc:
+        return str(exc)
+
+    return _arreter_eleve(services)
+
+
+def _arreter_eleve(services: list[str]) -> str:
+    """Arrete les concurrents, en demandant l'elevation une seule fois.
+
+    RGB Fusion tourne en administrateur, et les services aussi : un processus
+    normal ne peut arreter ni l'un ni l'autre. On demande donc les droits UNE
+    fois pour tout le lot, plutot qu'une fenetre par element.
+
+    Le resultat est constate en RELISANT l'etat de la machine, pas en lisant
+    un compte-rendu ecrit par le processus eleve. D'abord parce qu'un fichier
+    ecrit par un administrateur n'est pas toujours relisible ensuite -- c'est
+    ce qui est arrive au premier essai. Ensuite et surtout parce qu'un rapport
+    dit ce qu'on a demande, pas ce qui s'est produit.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    avant_programmes, avant_services = conflits()
+
+    lignes = [
+        "foreach ($nom in @(" + ",".join(f"'{p}'" for p in CONCURRENTS) + ")) {",
+        "  $court = [IO.Path]::GetFileNameWithoutExtension($nom)",
+        "  Get-Process $court -ErrorAction SilentlyContinue | "
+        "Stop-Process -Force -ErrorAction SilentlyContinue",
+        "}",
+    ]
+    for service in services:
+        lignes.append(
+            f"Stop-Service -Name '{service}' -Force "
+            "-ErrorAction SilentlyContinue")
+
+    with tempfile.TemporaryDirectory() as dossier:
+        script = _Path(dossier) / "liberer.ps1"
+        script.write_text("\n".join(lignes), encoding="utf-8")
+        try:
+            subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-Command",
+                 "Start-Process powershell -Verb RunAs -Wait -WindowStyle "
+                 "Hidden -ArgumentList "
+                 "'-NoProfile','-ExecutionPolicy','Bypass','-File',"
+                 f"'{script}'"],
+                capture_output=True, text=True, timeout=180,
+                creationflags=CREATE_NO_WINDOW,
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            return f"Elevation impossible : {type(exc).__name__}: {exc}"
+
+    apres_programmes, apres_services = conflits()
+
+    arretes = ([p for p in avant_programmes if p not in apres_programmes]
+               + [SERVICES_CONCURRENTS.get(s, s) for s in avant_services
+                  if s not in apres_services])
+    restants = apres_programmes + [SERVICES_CONCURRENTS.get(s, s)
+                                   for s in apres_services]
+
+    if not arretes and restants:
+        return ("Rien n'a pu etre arrete : l'elevation a probablement ete "
+                "refusee. Sans les droits administrateur, ni le logiciel du "
+                "fabricant ni ses services ne peuvent lacher le controleur.\n"
+                "Tiennent encore : " + ", ".join(restants))
+
+    lignes_finales = ["Reprise du controleur RGB :", ""]
+    for nom in arretes:
+        lignes_finales.append(f"  arrete : {nom}")
+    lignes_finales.append("")
+    if restants:
+        lignes_finales.append("Tiennent encore : " + ", ".join(restants))
+    else:
+        lignes_finales.append("Plus rien ne dispute le controleur.")
+    lignes_finales.append("")
+    lignes_finales.append("Reversible : ils repartiront au prochain demarrage "
+                          "de Windows.")
+    return "\n".join(lignes_finales)
+
+
+def rendre_le_controleur() -> str:
+    """Relance les services d'eclairage arretes, sans attendre un redemarrage."""
+    _programmes, actifs = conflits()
+    a_relancer = [s for s in SERVICES_CONCURRENTS if s not in actifs]
+    if not a_relancer:
+        return "Tous les services d'eclairage tournent deja."
+
+    commandes = "; ".join(
+        f"Start-Service -Name '{s}' -ErrorAction SilentlyContinue"
+        for s in a_relancer)
+    try:
+        subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-Command",
+             f"Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden "
+             f"-ArgumentList '-NoProfile','-Command','{commandes}'"],
+            capture_output=True, text=True, timeout=180,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        return f"Impossible : {type(exc).__name__}: {exc}"
+    return ("Services d'eclairage relances. Le logiciel du fabricant reprendra "
+            "la main sur le controleur.")
+
+
 def concurrents_actifs() -> list[str]:
     """Logiciels de fabricant en cours, qui se disputeraient le controleur."""
     try:
@@ -437,8 +624,20 @@ def changer_mode(mode: str, peripherique: str = "", couleur: str = "") -> str:
 
     lignes = []
     if faits:
-        lignes.append("Eclairage change :")
+        # "Commande envoyee", et non "eclairage change".
+        #
+        # Le serveur accepte le mode et le rend ensuite quand on l'interroge --
+        # il repete simplement ce qu'on lui a dit. Sur cette machine, les LED
+        # ne suivent pas : carte mere, carte graphique et souris sont restees
+        # comme avant, concurrents arretes ou non.
+        #
+        # Annoncer un succes qu'on n'a pas constate est pire que de ne rien
+        # annoncer : l'utilisateur cherche ailleurs un probleme qui est ici.
+        lignes.append("Commande envoyee au controleur :")
         lignes.extend(f"  {f}" for f in faits)
+        lignes.append("")
+        lignes.append("Regarde tes LED : si elles n'ont pas bouge, le "
+                      "controleur a accepte l'ordre sans l'appliquer.")
     if ignores:
         lignes.append("Sans effet :")
         lignes.extend(f"  {i}" for i in ignores)

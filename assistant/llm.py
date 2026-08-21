@@ -536,6 +536,25 @@ TOOLS: list[Tool] = [
         lambda: rgb.liste(),
     ),
     Tool(
+        "reprendre_le_controle_rgb",
+        "Ferme les logiciels du fabricant qui gardent la main sur l'eclairage "
+        "(RGB Fusion, Aura, iCUE, Synapse) et leurs services. A appeler quand "
+        "un changement de mode est accepte mais que les LED ne bougent pas : "
+        "c'est le symptome d'un concurrent qui recouvre la commande. "
+        "Reversible : les services sont arretes, pas desactives.",
+        _obj({}),
+        lambda: rgb.liberer(),
+        effect=True,
+    ),
+    Tool(
+        "rendre_le_controle_rgb",
+        "Relance les services d'eclairage du fabricant, pour lui rendre la "
+        "main sans attendre un redemarrage.",
+        _obj({}),
+        lambda: rgb.rendre_le_controleur(),
+        effect=True,
+    ),
+    Tool(
         "definir_chemin_openrgb",
         "Enregistre ou se trouve OpenRGB quand il est portable et range "
         "ailleurs que dans les emplacements habituels. Sert quand "
