@@ -201,6 +201,48 @@ def check_synthese_vocale():
     return OK, francaises[0], ""
 
 
+def check_applications():
+    """Le catalogue voit-il les applications du Microsoft Store ?
+
+    C'est le controle qui manquait. Enumerer le Store passe par COM, donc par
+    pywin32, importe A L'INTERIEUR des fonctions : l'analyse statique de
+    PyInstaller ne le voit pas. L'executable se construisait sans erreur, puis
+    ne trouvait plus ni Xbox, ni YouTube Music, ni Netflix -- et repondait
+    qu'elles n'etaient pas installees.
+    """
+    from assistant.skills import apps
+
+    catalogue = apps.catalogue(refresh=True)
+    if not catalogue:
+        return ECHEC, "aucune application detectee", (
+            "Le menu Demarrer et le Store sont tous deux illisibles."
+        )
+    store = [a for a in catalogue if a.source == "microsoft store"]
+    if not store:
+        return PARTIEL, (f"{len(catalogue)} applications, aucune du Store"), (
+            "pywin32 est absent ou COM est indisponible : les applications "
+            "du Microsoft Store seront introuvables."
+        )
+    return OK, f"{len(catalogue)} applications, dont {len(store)} du Store", ""
+
+
+def check_inventaire():
+    """Le script d'inventaire est-il bien embarque ?
+
+    inventaire.ps1 n'est pas du Python : sans une ligne dans le .spec,
+    PyInstaller l'ignore, l'executable se construit sans erreur et
+    l'inventaire logiciel echoue en silence -- plus de services, plus de
+    logiciels, plus de pilotes.
+    """
+    from assistant.skills import inventaire
+
+    if not inventaire.SCRIPT.exists():
+        return ECHEC, f"introuvable : {inventaire.SCRIPT}", (
+            "Ajoute inventaire.ps1 aux datas de AssistantLocal.spec."
+        )
+    return OK, f"script present ({inventaire.SCRIPT.name})", ""
+
+
 def check_jeux():
     from assistant.skills import games
 
@@ -224,6 +266,10 @@ VERIFICATIONS = [
     ("Lecture d'images", check_lecture_image, False),
     ("Synthese vocale", check_synthese_vocale, False),
     ("Detection des jeux", check_jeux, False),
+    # Essentiels : ces deux-la echouent SILENCIEUSEMENT une fois packages, et
+    # c'est precisement ce qu'un autotest doit attraper.
+    ("Applications", check_applications, True),
+    ("Inventaire logiciel", check_inventaire, True),
 ]
 
 

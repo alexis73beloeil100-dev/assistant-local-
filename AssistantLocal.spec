@@ -4,7 +4,8 @@ from PyInstaller.utils.hooks import collect_all
 
 # probe.ps1 n'est pas du Python : sans cette ligne, PyInstaller l'ignore et
 # l'application packagee ne sait plus relever la configuration de la machine.
-datas = [('assistant/skills/probe.ps1', 'assistant/skills')]
+datas = [('assistant/skills/probe.ps1', 'assistant/skills'),
+         ('assistant/skills/inventaire.ps1', 'assistant/skills')]
 binaries = []
 hiddenimports = ['pyttsx3.drivers', 'pyttsx3.drivers.sapi5', 'pynput.keyboard._win32', 'pynput.mouse._win32']
 hiddenimports += collect_submodules('assistant')
@@ -29,6 +30,16 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('comtypes')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('nvidia')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+# pywin32, pour trois choses qui echouent silencieusement sans lui :
+# l'enumeration des applications du Microsoft Store (shell:AppsFolder), la
+# restauration depuis la corbeille, et la lecture des voix OneCore. Ces
+# modules sont importes A L'INTERIEUR des fonctions, donc l'analyse statique
+# de PyInstaller ne les voit pas -- meme piege que pour le paquet assistant.
+hiddenimports += ['win32com', 'win32com.client', 'pythoncom', 'pywintypes',
+                  'win32api', 'win32gui', 'win32con']
+tmp_ret = collect_all('win32com')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
