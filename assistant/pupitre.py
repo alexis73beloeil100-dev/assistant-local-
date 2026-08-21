@@ -56,6 +56,17 @@ PROFILS = [
     ("economie", "Economie"),
 ]
 
+# Teintes d'un clic. Le nom, pas le code : c'est celui que l'assistant
+# comprend aussi a la voix, donc les deux chemins parlent la meme langue.
+_PALETTE = [
+    ("rouge", (255, 0, 0)), ("orange", (255, 100, 0)),
+    ("jaune", (255, 255, 0)), ("vert", (0, 255, 0)),
+    ("cyan", (0, 255, 255)), ("bleu", (0, 0, 255)),
+    ("violet", (140, 0, 255)), ("magenta", (255, 0, 255)),
+    ("rose", (255, 105, 180)), ("blanc", (255, 255, 255)),
+    ("noir", (0, 0, 0)),
+]
+
 
 class Pupitre(tk.Frame):
     """Le panneau Controle, en widgets."""
@@ -138,6 +149,7 @@ class Pupitre(tk.Frame):
     def _afficher_rgb(self, peripheriques, message: str) -> None:
         for enfant in self.modes_rgb.winfo_children():
             enfant.destroy()
+        self.reglages_rgb = {}
 
         if not peripheriques:
             self.etat_rgb.configure(text=message or "Aucun peripherique RGB.")
@@ -149,33 +161,109 @@ class Pupitre(tk.Frame):
             fg=t.AMBER if message else t.TEXT_DIM)
 
         for peripherique in peripheriques:
-            entete = tk.Frame(self.modes_rgb, bg=t.SURFACE)
-            entete.pack(fill="x", pady=(4, 0))
-            tk.Label(entete, text=peripherique.nom, bg=t.SURFACE, fg=t.TEXT,
-                     font=t.FONT_UI_TINY, anchor="w").pack(side="left")
-            if peripherique.mode_actif:
-                tk.Label(entete, text=peripherique.mode_actif, bg=t.SURFACE,
-                         fg=t.ACCENT, font=t.FONT_UI_TINY).pack(side="right")
+            self._bloc_peripherique(peripherique)
 
-            rangee = tk.Frame(self.modes_rgb, bg=t.SURFACE)
-            rangee.pack(fill="x", pady=(2, 2))
-            for mode in peripherique.modes[:10]:
-                _LigneCliquable(
-                    rangee, mode,
-                    lambda m=mode, p=peripherique: self._mode_rgb(p, m),
-                    active=(mode == peripherique.mode_actif),
-                ).pack(side="left", padx=(0, 2))
+    def _bloc_peripherique(self, peripherique) -> None:
+        """Un materiel : ses modes, sa couleur, et ses reglages disponibles.
 
-    def _mode_rgb(self, peripherique, mode: str) -> None:
-        self.etat_rgb.configure(text=f"{peripherique.nom} -> {mode} ...",
+        Ce qui est propose depend de ce que le MODE declare accepter. Un
+        curseur de vitesse sur un mode qui n'en a pas serait un bouton mort ;
+        le cacher quand il existe priverait l'utilisateur. Les intervalles
+        different d'un materiel a l'autre -- la luminosite va de 1 a 10 sur la
+        carte graphique et de 0 a 255 sur la carte mere.
+        """
+        cadre = tk.Frame(self.modes_rgb, bg=t.SURFACE_2)
+        cadre.pack(fill="x", pady=(6, 0))
+
+        entete = tk.Frame(cadre, bg=t.SURFACE_2)
+        entete.pack(fill="x", padx=t.PAD, pady=(t.PAD, 2))
+        tk.Label(entete, text=peripherique.nom, bg=t.SURFACE_2, fg=t.TEXT,
+                 font=t.FONT_LABEL, anchor="w").pack(side="left")
+        tk.Label(entete, text=f"{peripherique.genre} · {peripherique.nb_leds} LED",
+                 bg=t.SURFACE_2, fg=t.TEXT_FAINT,
+                 font=t.FONT_UI_TINY).pack(side="right")
+
+        modes = tk.Frame(cadre, bg=t.SURFACE_2)
+        modes.pack(fill="x", padx=t.PAD, pady=(0, 4))
+        for nom in peripherique.modes:
+            _LigneCliquable(
+                modes, nom,
+                lambda m=nom, p=peripherique: self._appliquer_rgb(p, mode=m),
+                active=(nom == peripherique.mode_actif),
+            ).pack(side="left", padx=(0, 2))
+
+        # La palette : douze teintes d'un clic, et la roue de Windows pour
+        # tout le reste. Se limiter aux presets serait dire "n'importe quelle
+        # couleur" en n'en offrant que douze.
+        palette = tk.Frame(cadre, bg=t.SURFACE_2)
+        palette.pack(fill="x", padx=t.PAD, pady=(0, 4))
+        tk.Label(palette, text="couleur", bg=t.SURFACE_2, fg=t.TEXT_FAINT,
+                 font=t.FONT_UI_TINY).pack(side="left", padx=(0, 6))
+        for nom, (r, v, b) in _PALETTE:
+            case = tk.Canvas(palette, width=16, height=16, bg=t.SURFACE_2,
+                             highlightthickness=1,
+                             highlightbackground=t.BORDER, cursor="hand2")
+            case.create_rectangle(0, 0, 16, 16, fill=f"#{r:02x}{v:02x}{b:02x}",
+                                  outline="")
+            case.pack(side="left", padx=1)
+            case.bind("<Button-1>",
+                      lambda _e, c=nom, p=peripherique:
+                      self._appliquer_rgb(p, couleur=c))
+        choix = tk.Label(palette, text="  autre...", bg=t.SURFACE_2,
+                         fg=t.ACCENT, font=t.FONT_UI_TINY, cursor="hand2")
+        choix.pack(side="left")
+        choix.bind("<Button-1>",
+                   lambda _e, p=peripherique: self._choisir_couleur(p))
+
+        detail = peripherique.mode(peripherique.mode_actif)
+        if detail is None:
+            return
+        for libelle, plage, cle in (("luminosite", detail.luminosite, "lum"),
+                                    ("vitesse", detail.vitesse, "vit")):
+            if not plage:
+                continue
+            bas, haut, valeur = plage
+            ligne = tk.Frame(cadre, bg=t.SURFACE_2)
+            ligne.pack(fill="x", padx=t.PAD, pady=(0, 2))
+            tk.Label(ligne, text=libelle, bg=t.SURFACE_2, fg=t.TEXT_FAINT,
+                     font=t.FONT_UI_TINY, width=10, anchor="w").pack(side="left")
+            curseur = tk.Scale(
+                ligne, from_=bas, to=haut, orient="horizontal", showvalue=True,
+                bg=t.SURFACE_2, fg=t.TEXT_DIM, troughcolor=t.BG,
+                activebackground=t.ACCENT, highlightthickness=0, bd=0,
+                sliderrelief="flat", sliderlength=16, width=8,
+                font=t.FONT_UI_TINY, length=200,
+            )
+            curseur.set(valeur)
+            curseur.pack(side="left")
+            curseur.bind(
+                "<ButtonRelease-1>",
+                lambda _e, p=peripherique, c=cle, s=curseur:
+                self._appliquer_rgb(p, **{("luminosite" if c == "lum"
+                                           else "vitesse"): s.get()}))
+        self.reglages_rgb[peripherique.nom] = cadre
+
+    def _choisir_couleur(self, peripherique) -> None:
+        from tkinter import colorchooser
+
+        choisi = colorchooser.askcolor(
+            title=f"Couleur pour {peripherique.nom}", parent=self)
+        if choisi and choisi[1]:
+            self._appliquer_rgb(peripherique, couleur=choisi[1].lstrip("#"))
+
+    def _appliquer_rgb(self, peripherique, mode: str = "", couleur: str = "",
+                       luminosite=None, vitesse=None) -> None:
+        quoi = mode or couleur or "reglage"
+        self.etat_rgb.configure(text=f"{peripherique.nom} -> {quoi} ...",
                                 fg=t.AMBER)
 
         def travail():
             from assistant.skills import rgb
 
-            message = rgb.changer_mode(mode, peripherique.nom)
+            message = rgb.appliquer(peripherique.nom, mode, couleur,
+                                    luminosite, vitesse)
             self.window.post("appel", lambda: (
-                self.etat_rgb.configure(text=message.replace("\n", "  ")[:180],
+                self.etat_rgb.configure(text=message.replace("\n", "  ")[:190],
                                         fg=t.TEXT_DIM),
                 self._charger_rgb(),
             ))

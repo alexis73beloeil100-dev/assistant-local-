@@ -613,15 +613,41 @@ def demarrer_serveur(attente: float = 20.0) -> tuple[bool, str]:
 
 
 @dataclass
+class Mode:
+    """Un mode, et ce qu'il accepte reellement.
+
+    Rien n'est suppose : chaque materiel declare ses propres capacites, et
+    elles ne se recoupent pas. La luminosite va de 1 a 10 sur la carte
+    graphique et de 0 a 255 sur la carte mere ; le mode Respiration de cette
+    derniere annonce une vitesse de 9 a 0, intervalle INVERSE. Proposer un
+    reglage qu'un mode n'accepte pas donne un bouton mort ; le cacher quand il
+    existe prive l'utilisateur.
+    """
+
+    nom: str
+    couleur: bool = False        # accepte une couleur, par LED ou globale
+    par_led: bool = False
+    luminosite: tuple | None = None    # (mini, maxi, valeur)
+    vitesse: tuple | None = None       # (mini, maxi, valeur)
+
+
+@dataclass
 class Peripherique:
     """Un materiel eclairable, tel que le SDK le rapporte."""
 
     index: int
     nom: str
     genre: str = ""
-    modes: list = field(default_factory=list)
+    modes: list = field(default_factory=list)          # noms, pour l'existant
+    details: list = field(default_factory=list)        # objets Mode
     mode_actif: str = ""
     nb_leds: int = 0
+
+    def mode(self, nom: str) -> "Mode | None":
+        for detail in self.details:
+            if detail.nom.lower() == str(nom).lower():
+                return detail
+        return None
 
 
 def _client():
@@ -644,6 +670,146 @@ def _client():
     return OpenRGBClient(name="AssistantLocal")
 
 
+def _intervalle(mini, maxi, valeur):
+    """Normalise un intervalle, meme annonce a l'envers.
+
+    Le mode Respiration de la carte mere declare une vitesse de 9 a 0. Pris
+    tel quel, un curseur va de 9 a 0 et ne bouge jamais.
+    """
+    if mini is None or maxi is None:
+        return None
+    bas, haut = (mini, maxi) if mini <= maxi else (maxi, mini)
+    if bas == haut:
+        return None
+    return (bas, haut, valeur if valeur is not None else bas)
+
+
+def _lire(materiel) -> Peripherique:
+    """Traduit un materiel du SDK, avec ce que chacun de ses modes accepte."""
+    from openrgb.utils import ModeFlags
+
+    details = []
+    for mode in materiel.modes:
+        drapeaux = mode.flags or 0
+        details.append(Mode(
+            nom=mode.name,
+            couleur=bool(drapeaux & (ModeFlags.HAS_PER_LED_COLOR
+                                     | ModeFlags.HAS_MODE_SPECIFIC_COLOR)),
+            par_led=bool(drapeaux & ModeFlags.HAS_PER_LED_COLOR),
+            luminosite=(_intervalle(mode.brightness_min, mode.brightness_max,
+                                    mode.brightness)
+                        if drapeaux & ModeFlags.HAS_BRIGHTNESS else None),
+            vitesse=(_intervalle(mode.speed_min, mode.speed_max, mode.speed)
+                     if drapeaux & ModeFlags.HAS_SPEED else None),
+        ))
+
+    return Peripherique(
+        index=materiel.id,
+        nom=materiel.name,
+        genre=str(getattr(materiel.type, "name", "")).lower(),
+        modes=[m.name for m in materiel.modes],
+        details=details,
+        mode_actif=(materiel.modes[materiel.active_mode].name
+                    if 0 <= materiel.active_mode < len(materiel.modes) else ""),
+        nb_leds=len(materiel.leds),
+    )
+
+
+def appliquer(peripherique: str = "", mode: str = "", couleur: str = "",
+              luminosite=None, vitesse=None) -> str:
+    """Applique un reglage complet : mode, couleur, luminosite, vitesse.
+
+    Tout est optionnel. Ce qui n'est pas demande n'est pas touche, et ce que
+    le mode n'accepte pas est signale plutot qu'applique en silence.
+    """
+    from openrgb.utils import RGBColor
+
+    trouves, erreur = peripheriques()
+    if erreur:
+        return erreur
+
+    cibles = trouves
+    if peripherique:
+        demande = str(peripherique).lower()
+        cibles = [p for p in trouves
+                  if demande in p.nom.lower() or demande == str(p.index)]
+        if not cibles:
+            return (f"Aucun peripherique ne correspond a \"{peripherique}\". "
+                    f"Connus : {', '.join(p.nom for p in trouves)}.")
+
+    faits, ignores = [], []
+    try:
+        client = _client()
+        par_index = {m.id: m for m in client.devices}
+    except Exception as exc:  # noqa: BLE001
+        return f"Serveur OpenRGB injoignable : {type(exc).__name__}: {exc}"
+
+    for cible in cibles:
+        materiel = par_index.get(cible.index)
+        if materiel is None:
+            continue
+
+        nom_mode = _trouver(mode, cible.modes) if mode else cible.mode_actif
+        if mode and nom_mode is None:
+            ignores.append(f"{cible.nom} ne connait pas \"{mode}\" "
+                           f"(modes : {', '.join(cible.modes)})")
+            continue
+
+        detail = cible.mode(nom_mode) if nom_mode else None
+        changements = []
+
+        try:
+            objet = next(m for m in materiel.modes
+                         if m.name.lower() == str(nom_mode).lower())
+
+            if luminosite is not None and detail and detail.luminosite:
+                bas, haut, _ = detail.luminosite
+                objet.brightness = max(bas, min(int(luminosite), haut))
+                changements.append(f"luminosite {objet.brightness}")
+            elif luminosite is not None:
+                ignores.append(f"{cible.nom} : \"{nom_mode}\" n'a pas de "
+                               "reglage de luminosite")
+
+            if vitesse is not None and detail and detail.vitesse:
+                bas, haut, _ = detail.vitesse
+                objet.speed = max(bas, min(int(vitesse), haut))
+                changements.append(f"vitesse {objet.speed}")
+            elif vitesse is not None:
+                ignores.append(f"{cible.nom} : \"{nom_mode}\" n'a pas de "
+                               "reglage de vitesse")
+
+            materiel.set_mode(objet)
+            changements.insert(0, nom_mode)
+
+            if couleur:
+                if detail and not detail.couleur:
+                    ignores.append(f"{cible.nom} : \"{nom_mode}\" ne prend pas "
+                                   "de couleur")
+                else:
+                    _peindre(materiel, objet, detail, _couleur(couleur))
+                    changements.append(f"couleur {couleur}")
+            else:
+                secours = _teinte_a_appliquer(materiel, "")
+                if secours is not None:
+                    _peindre(materiel, objet, detail, secours)
+                    changements.append("blanc (le materiel etait sur noir)")
+
+            faits.append(f"{cible.nom} : {', '.join(changements)}")
+        except ValueError as exc:
+            ignores.append(f"{cible.nom} : {exc}")
+        except Exception as exc:  # noqa: BLE001
+            ignores.append(f"{cible.nom} : {type(exc).__name__}: {exc}")
+
+    lignes = []
+    if faits:
+        lignes.append("Eclairage regle :")
+        lignes.extend(f"  {f}" for f in faits)
+    if ignores:
+        lignes.append("Sans effet :")
+        lignes.extend(f"  {i}" for i in ignores)
+    return "\n".join(lignes) or "Rien n'a change."
+
+
 def peripheriques() -> tuple[list, str]:
     """Ce qui est reellement pilotable sur CETTE machine, et ses modes."""
     if not disponible():
@@ -655,19 +821,7 @@ def peripheriques() -> tuple[list, str]:
 
     try:
         client = _client()
-        trouves = [
-            Peripherique(
-                index=materiel.id,
-                nom=materiel.name,
-                genre=str(getattr(materiel.type, "name", "")).lower(),
-                modes=[m.name for m in materiel.modes],
-                mode_actif=(materiel.modes[materiel.active_mode].name
-                            if 0 <= materiel.active_mode < len(materiel.modes)
-                            else ""),
-                nb_leds=len(materiel.leds),
-            )
-            for materiel in client.devices
-        ]
+        trouves = [_lire(materiel) for materiel in client.devices]
     except Exception as exc:  # noqa: BLE001 - le SDK leve des types varies
         return [], f"Serveur OpenRGB injoignable : {type(exc).__name__}: {exc}"
 
@@ -707,6 +861,59 @@ def _couleur(demande: str):
     raise ValueError(
         f"Couleur inconnue : {demande}. Attendu un nom "
         f"({', '.join(sorted(COULEURS))}) ou un code comme FF0000.")
+
+
+def _peindre(materiel, objet_mode, detail, teinte) -> None:
+    """Envoie la couleur au bon format, selon ce que le mode attend.
+
+    Un mode "par LED" veut une couleur par LED ; un mode a couleur globale n'en
+    veut qu'UNE, et le SDK leve une AssertionError seche -- sans message -- si
+    on lui en donne trois. C'est ce qui arrivait sur la carte mere, dont les
+    modes Static et Respiration declarent colors_max = 1 pour trois LED.
+    """
+    if detail is not None and detail.par_led:
+        materiel.set_colors([teinte] * max(len(materiel.leds), 1))
+        return
+
+    combien = getattr(objet_mode, "colors_max", None) or 1
+    materiel.set_colors([teinte] * int(combien))
+
+
+def _teinte_a_appliquer(materiel, couleur: str):
+    """La couleur a pousser apres un changement de mode, ou None.
+
+    Changer le mode ne pousse AUCUNE couleur. Et sur cette machine, les trois
+    LED de la carte mere etaient enregistrees en NOIR : le mode changeait
+    correctement -- respiration, clignotement, cycle -- et rien ne s'allumait.
+    De l'exterieur, ca ressemblait a un bouton mort.
+
+    On ne pousse donc une couleur que dans deux cas :
+      - elle est demandee explicitement ;
+      - le mode se colore et le materiel est enregistre en noir, auquel cas
+        il resterait eteint quoi qu'on fasse.
+
+    Surtout pas systematiquement : ecraser la couleur d'un materiel qui
+    fonctionne -- la souris, la carte graphique -- serait une regression pour
+    corriger l'autre.
+    """
+    from openrgb.utils import ModeColors, RGBColor
+
+    if couleur:
+        return _couleur(couleur)
+
+    try:
+        mode = materiel.modes[materiel.active_mode]
+        if mode.color_mode not in (ModeColors.MODE_SPECIFIC,
+                                   ModeColors.PER_LED):
+            return None
+        couleurs = list(materiel.colors or [])
+        if couleurs and any((c.red or c.green or c.blue) for c in couleurs):
+            return None            # deja une couleur visible : on n'y touche pas
+    except Exception:  # noqa: BLE001 - materiel avare en informations
+        return None
+
+    # Blanc : neutre, et visible sur tous les materiels.
+    return RGBColor(255, 255, 255)
 
 
 def _trouver(nom: str, liste: list[str]) -> str | None:
@@ -875,12 +1082,9 @@ def changer_mode(mode: str, peripherique: str = "", couleur: str = "") -> str:
                 continue
             try:
                 materiel.set_mode(exact)
-                # La couleur APRES le mode, et seulement si elle est demandee.
-                # Changer le mode ne pousse aucune couleur : c'est ce qui
-                # faisait qu'une carte mere ne bougeait pas alors que la
-                # souris et la carte graphique suivaient.
-                if couleur:
-                    materiel.set_color(_couleur(couleur))
+                teinte = _teinte_a_appliquer(materiel, couleur)
+                if teinte is not None:
+                    materiel.set_color(teinte)
                 faits.append(f"{cible.nom} -> {exact}"
                              + (f" en {couleur}" if couleur else ""))
             except Exception as exc:  # noqa: BLE001
