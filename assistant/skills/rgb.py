@@ -183,6 +183,12 @@ SERVICES_CONCURRENTS = {
     "Razer Chroma SDK Diagnostic Service": "Razer Chroma (diagnostic)",
     "Razer Chroma Stream Server": "Razer Chroma (flux)",
     "RzActionSvc": "Razer Synapse",
+    # Ces deux-la relancent RazerAppEngine apres chaque demarrage, et
+    # RazerAppEngine reprend la souris. Neutraliser les services Chroma seuls
+    # ne suffisait pas : dix instances etaient de retour au redemarrage
+    # suivant.
+    "Razer Game Manager Service 3": "Razer Game Manager",
+    "Razer Update Service": "Razer Update",
     "CorsairDeviceControlService": "Corsair iCUE",
     "CorsairGamingAudioConfig": "Corsair audio",
     "LightingService": "Asus Aura",
@@ -787,20 +793,18 @@ def changer_mode(mode: str, peripherique: str = "", couleur: str = "") -> str:
 
     lignes = []
     if faits:
-        # "Commande envoyee", et non "eclairage change".
-        #
-        # Le serveur accepte le mode et le rend ensuite quand on l'interroge --
-        # il repete simplement ce qu'on lui a dit. Sur cette machine, les LED
-        # ne suivent pas : carte mere, carte graphique et souris sont restees
-        # comme avant, concurrents arretes ou non.
-        #
-        # Annoncer un succes qu'on n'a pas constate est pire que de ne rien
-        # annoncer : l'utilisateur cherche ailleurs un probleme qui est ici.
-        lignes.append("Commande envoyee au controleur :")
+        lignes.append("Eclairage change :")
         lignes.extend(f"  {f}" for f in faits)
-        lignes.append("")
-        lignes.append("Regarde tes LED : si elles n'ont pas bouge, le "
-                      "controleur a accepte l'ordre sans l'appliquer.")
+        # Le seul cas ou la commande part sans effet : un logiciel de
+        # fabricant qui tient encore le controleur et recouvre l'ordre au
+        # cycle suivant. C'est ce qui a fait croire pendant des heures a un
+        # defaut de protocole, alors que le protocole etait juste.
+        concurrents = concurrents_actifs()
+        if concurrents:
+            lignes.append("")
+            lignes.append(f"Attention : {', '.join(concurrents)} tourne et "
+                          "reprend le controleur. Si les LED n'ont pas bouge, "
+                          "demande-moi de neutraliser les logiciels RGB.")
     if ignores:
         lignes.append("Sans effet :")
         lignes.extend(f"  {i}" for i in ignores)
