@@ -173,7 +173,21 @@ def set_audio_output(nom: str) -> str:
     except Exception as exc:  # noqa: BLE001
         return f"Impossible : {type(exc).__name__}: {exc}"
 
-    besoin = nom.lower()
+    besoin = nom.strip().lower()
+
+    # Le nom COMPLET l'emporte sur tout le reste.
+    #
+    # audio_outputs() affiche "Haut-parleurs (7.1 Surround Sound)". Quatre
+    # sorties de cette machine commencent par "Haut-parleurs" : rendue telle
+    # quelle, cette reponse etait refusee comme ambigue. Autrement dit,
+    # l'outil ne savait pas relire ce qu'il venait d'ecrire, et un "remets le
+    # son sur les enceintes" pouvait laisser la machine sur la mauvaise
+    # sortie. Une egalite exacte ne peut jamais etre ambigue : elle passe
+    # avant la recherche par morceau de nom.
+    exactes = [a for a in appareils if a.FriendlyName.strip().lower() == besoin]
+    if len(exactes) == 1:
+        return _basculer(exactes[0])
+
     correspondances = [a for a in appareils if besoin in a.FriendlyName.lower()]
 
     # "casque" et "haut-parleur" sont les deux demandes courantes : on les
@@ -198,10 +212,19 @@ def set_audio_output(nom: str) -> str:
         return (f"Aucune sortie ne correspond a \"{nom}\".\n\n"
                 + audio_outputs())
     if len(correspondances) > 1:
-        noms = ", ".join(a.FriendlyName for a in correspondances)
-        return f"Plusieurs sorties correspondent : {noms}. Precise laquelle."
+        # On donne les noms COMPLETS, et on dit qu'ils sont utilisables tels
+        # quels : une liste qu'on ne peut pas recopier ne fait pas avancer.
+        noms = "\n".join(f"  - {a.FriendlyName}" for a in correspondances)
+        return (f"Plusieurs sorties correspondent a \"{nom}\". "
+                f"Reprends le nom complet :\n{noms}")
 
-    cible = correspondances[0]
+    return _basculer(correspondances[0])
+
+
+def _basculer(cible) -> str:
+    """Rend la sortie par defaut, et le confirme."""
+    from pycaw.utils import AudioUtilities
+
     try:
         AudioUtilities.SetDefaultDevice(cible.id)
     except Exception as exc:  # noqa: BLE001

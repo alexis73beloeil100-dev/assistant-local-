@@ -143,6 +143,25 @@ def _from_start_menu() -> list[App]:
     return trouves
 
 
+def _commande_resolvable(commande: str) -> bool:
+    """La commande designe-t-elle quelque chose qui existe sur CETTE machine ?
+
+    Les entrees de BUILTINS sont de deux natures : un executable
+    ("mspaint.exe"), qu'on doit retrouver dans le PATH ou sur le disque, et
+    une adresse Windows ("ms-settings:", "shell:..."), qui ne s'y cherche pas.
+    """
+    import shutil
+
+    cible = (commande or "").strip()
+    if not cible:
+        return False
+    if ":" in cible.split("\\")[0] and not cible[1:2] == ":":
+        return True         # ms-settings:, shell:, explorer: ...
+    if os.path.isabs(cible):
+        return os.path.exists(cible)
+    return shutil.which(cible) is not None
+
+
 def catalogue(refresh: bool = False) -> list[App]:
     """Toutes les applications lancables : Store, menu Demarrer, Windows.
 
@@ -164,8 +183,17 @@ def catalogue(refresh: bool = False) -> list[App]:
             applications.append(app)
 
     for nom, commande in BUILTINS.items():
-        if canon(nom) not in connus:
-            applications.append(App(nom, commande, "windows"))
+        if canon(nom) in connus:
+            continue
+        # Un integre qui n'existe plus ne doit pas figurer au catalogue.
+        #
+        # "paint" pointait sur mspaint.exe, disparu de Windows 11 au profit
+        # d'une application du Store. L'outil le proposait, echouait sur
+        # WinError 2, et l'utilisateur n'y comprenait rien -- alors que le
+        # vrai Paint etait la, sous une autre entree.
+        if not _commande_resolvable(commande):
+            continue
+        applications.append(App(nom, commande, "windows"))
 
     _cache = sorted(applications, key=lambda a: a.nom.lower())
     return _cache
@@ -322,11 +350,54 @@ def open_app(nom: str, refresh_si_absent: bool = True) -> str:
         noms = ", ".join(a.nom for _s, a in resultats[:4])
         return f"Plusieurs applications correspondent : {noms}. Laquelle ?"
 
+    # L'instantane AVANT le lancement : pris apres, il contiendrait deja le
+    # processus qu'on cherche, et la verification vaudrait toujours vrai.
+    avant = _processus_ouverts()
     try:
         _lancer(meilleur)
     except OSError as exc:
         return f"Ouverture impossible de {meilleur.nom} : {exc}"
-    return f"{meilleur.nom} ouvert."
+
+    # Constate, pas rapporte -- la meme regle que partout ailleurs.
+    #
+    # Pour une application du Store, on passe par explorer.exe : il rend la
+    # main immediatement et REUSSIT TOUJOURS, meme sur un identifiant faux.
+    # Annoncer "ouvert" juste apres, c'etait affirmer sans avoir regarde.
+    #
+    # On attend donc qu'un processus apparaisse. Le delai est genereux : un
+    # premier lancement du Store, disque froid, met facilement plus de cinq
+    # secondes. Ne rien voir n'est pas une preuve d'echec -- une application
+    # deja lancee ouvre une fenetre sans creer de processus -- alors on le dit
+    # sans trancher, plutot que d'inventer une certitude dans un sens ou dans
+    # l'autre.
+    if _processus_apparu(avant, attente=8.0):
+        return f"{meilleur.nom} ouvert."
+    return (f"{meilleur.nom} lance, mais aucune nouvelle fenetre detectee en "
+            "8 secondes. Si elle n'apparait pas, elle etait peut-etre deja "
+            "ouverte, ou l'application est en cours de demarrage.")
+
+
+def _processus_ouverts() -> set[int]:
+    import psutil
+
+    return {p.pid for p in psutil.process_iter()}
+
+
+def _processus_apparu(avant: set[int], attente: float) -> bool:
+    """Un processus est-il apparu depuis `avant`, dans le delai imparti ?"""
+    import time
+
+    import psutil
+
+    limite = time.time() + attente
+    while time.time() < limite:
+        time.sleep(0.4)
+        try:
+            if {p.pid for p in psutil.process_iter()} - avant:
+                return True
+        except Exception:  # noqa: BLE001
+            return True     # dans le doute, on n'accuse pas a tort
+    return False
 
 
 # Applications dont le nom courant ne correspond a aucun processus unique.

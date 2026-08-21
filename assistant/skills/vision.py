@@ -269,12 +269,71 @@ def read_image(path: str, question: str = "") -> str:
     ok, texte = read_text(path)
     if not ok:
         return texte
+
+    # Repondre a la question posee, meme sans modele de vision.
+    #
+    # L'ancienne version rendait le texte reconnu tel quel. Demander "quelles
+    # fenetres sont ouvertes ?" renvoyait donc une liste de fragments d'OCR,
+    # a l'utilisateur de faire le tri -- alors que c'est exactement le travail
+    # du modele de langage, qui est deja charge. L'OCR deforme beaucoup
+    # ("Asseto Corsa", "Eure Truck Simuletor") : on le dit au modele pour
+    # qu'il corrige au lieu de recopier.
+    if question.strip():
+        reponse = _repondre_sur_le_texte(question, texte)
+        if reponse:
+            return (
+                f"--- {Path(path).name} (lu par reconnaissance de texte) ---\n"
+                f"{reponse}\n\n"
+                "[Reponse deduite du seul texte reconnu, sans modele de "
+                "vision : la disposition, les images et les curseurs ne sont "
+                "pas vus. Installe un modele de vision depuis l'ecran "
+                "Composants pour qu'il regarde vraiment l'image.]"
+            )
+
     return (
         f"--- {Path(path).name} (texte reconnu dans l'image) ---\n{texte}\n\n"
         "[Seul le texte a ete extrait. Pour que l'assistant comprenne aussi "
         "la disposition et les curseurs, installe un modele de vision depuis "
         "l'ecran Composants.]"
     )
+
+
+def _repondre_sur_le_texte(question: str, texte: str) -> str:
+    """Fait repondre le modele de langage a partir du texte reconnu.
+
+    Rend une chaine vide si le modele n'est pas joignable : l'appelant
+    retombe alors sur le texte brut, qui vaut mieux que rien.
+    """
+    from assistant import llm
+
+    # 3000 caracteres, pas 6000 : au-dela, l'OCR d'un ecran charge n'apporte
+    # plus que du bruit, et le temps de reponse double.
+    extrait = texte[:3000]
+    invite = (
+        "Tu lis le texte reconnu automatiquement sur une capture d'ecran. La "
+        "reconnaissance deforme les mots (\"Asseto Corsa\" pour \"Assetto "
+        "Corsa\").\n\n"
+        "Regles absolues :\n"
+        "- ne cite QUE ce qui figure litteralement dans le texte ci-dessous ;\n"
+        "- corrige une deformation seulement si le mot d'origine est evident, "
+        "et signale-le entre parentheses ;\n"
+        "- tu n'as AUCUN autre moyen de verification : n'ecris jamais qu'une "
+        "chose est \"verifiee\", \"installee\" ou \"presente sur la machine\" ;\n"
+        "- quand un fragment est trop abime pour etre identifie, dis "
+        "\"illisible\" plutot que de deviner ;\n"
+        "- si la reponse ne se trouve pas dans ce texte, dis-le et arrete-toi.\n\n"
+        f"--- texte reconnu ---\n{extrait}\n--- fin ---\n\n"
+        f"Question : {question}\n"
+        "Reponds en francais, brievement."
+    )
+    try:
+        # Sans reflexion : recopier des noms d'applications depuis un texte
+        # n'en demande aucune, et le modele y passait plus de 40 secondes.
+        message = llm._call([{"role": "user", "content": invite}],
+                            with_tools=False, think=False)
+        return str(message.get("content", "")).strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def read_screen(question: str = "", ecran: int = 0) -> str:

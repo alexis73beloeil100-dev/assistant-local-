@@ -877,13 +877,24 @@ def available(on_progress=None) -> tuple[bool, str]:
     return backend.ensure(on_progress)
 
 
-def _call(convo: list[dict], with_tools: bool = True) -> dict:
+def _call(convo: list[dict], with_tools: bool = True,
+          think: bool | None = None) -> dict:
+    """Un aller-retour avec le modele.
+
+    `think` ne concerne que les modeles qui raisonnent a voix haute avant de
+    repondre, comme la famille qwen3. Le mettre a False sur une tache de pure
+    extraction fait passer la reponse de 43 secondes a 3 : le modele produisait
+    17 000 caracteres de reflexion pour une question qui n'en demandait
+    aucune. Laisse a None, on ne touche a rien et le modele decide.
+    """
     payload = {
         "model": config.LLM_MODEL,
         "messages": convo,
         "stream": False,
         "options": {"temperature": 0.3, "num_ctx": config.LLM_CONTEXT},
     }
+    if think is not None:
+        payload["think"] = think
     if with_tools:
         payload["tools"] = [t.schema() for t in TOOLS]
     r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=payload, timeout=300)

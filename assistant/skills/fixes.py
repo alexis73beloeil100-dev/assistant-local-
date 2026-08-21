@@ -302,16 +302,40 @@ def redemarrer_service(nom: str, ask=None) -> Result:
 
     _run(["net", "stop", nom], timeout=90)
     ok, sortie = _run(["net", "start", nom], timeout=90)
-    if not ok:
-        if _acces_refuse(sortie):
-            return Result(False, (
-                f"Droits insuffisants pour redemarrer {nom}.\n"
-                "Gerer les services Windows demande les droits "
-                "administrateur : clic droit sur le raccourci de l'assistant, "
-                "\"Executer en tant qu'administrateur\"."
-            ))
+    if ok:
+        return Result(True, f"Service {nom} redemarre.")
+
+    if not _acces_refuse(sortie):
         return Result(False, f"Echec : {sortie[:200]}")
-    return Result(True, f"Service {nom} redemarre.")
+
+    # Droits insuffisants -- le cas NORMAL, pas l'exception.
+    #
+    # L'assistant tourne volontairement sans privileges : c'est ce sur quoi
+    # repose son garde-fou. Or gerer un service Windows demande toujours
+    # l'administrateur. L'ancien message conseillait donc de relancer toute
+    # l'application en administrateur, ce qui defaisait exactement la
+    # propriete qu'on cherche a garder -- et rendait l'outil inutilisable
+    # dans les faits.
+    #
+    # On demande donc l'elevation POUR CETTE SEULE OPERATION, comme le fait
+    # deja le RGB. Une fenetre Windows, puis on relit l'etat du service au
+    # lieu de croire un compte-rendu.
+    from assistant.skills.rgb import _executer_eleve
+
+    erreur = _executer_eleve([
+        f"Stop-Service -Name '{nom}' -Force -ErrorAction SilentlyContinue",
+        f"Start-Service -Name '{nom}' -ErrorAction SilentlyContinue",
+    ])
+    if erreur:
+        return Result(False, erreur)
+
+    etat = etat_service(nom)
+    if "running" in etat.lower() or "en cours" in etat.lower():
+        return Result(True, f"Service {nom} redemarre (avec elevation).")
+    return Result(False, (
+        f"{nom} n'a pas redemarre : l'autorisation administrateur a "
+        f"probablement ete refusee. Etat actuel : {etat}."
+    ))
 
 
 def _acces_refuse(sortie: str) -> bool:
@@ -347,7 +371,17 @@ def _acces_refuse(sortie: str) -> bool:
 
 def vider_cache(nom: str, ask=None) -> Result:
     """Vide un cache identifie par analyser_nettoyage, vers la corbeille."""
+    from assistant.index import db
     from assistant.skills import cleanup
+
+    # Les candidats se chiffrent depuis l'index : sans lui, la requete SQL
+    # tombait sur une table absente et remontait une erreur sqlite brute.
+    if not db.is_ready():
+        return Result(False, (
+            "L'index des fichiers est encore en construction "
+            "(environ 80 secondes apres le demarrage). "
+            "Le reste de l'assistant fonctionne deja."
+        ))
 
     candidats = cleanup.candidates()
     correspondances = [

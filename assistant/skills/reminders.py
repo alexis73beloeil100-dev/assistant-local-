@@ -7,12 +7,17 @@ Trois choses proches mais distinctes :
   - une VEILLE surveille une condition et se declenche quand elle devient
     vraie ("quand le telechargement est fini", "si le GPU depasse 80 degres").
 
-Tout vit en memoire et disparait a la fermeture, comme le reste. Un rappel
-qui survivrait a l'application supposerait de l'ecrire sur le disque.
+Les alertes SURVIVENT a la fermeture, et c'est le seul endroit de
+l'application ou quelque chose est ecrit sur le disque de facon durable.
+La raison : promettre "je te rappelle demain a 9 h" puis oublier la promesse
+sans rien dire est pire que de refuser de la prendre. Le fichier fait
+quelques centaines d'octets et ne contient que ce que l'utilisateur a dicte
+-- rien a voir avec l'index de fichiers, qui lui reste en memoire.
 """
 from __future__ import annotations
 
 import itertools
+import json
 import re
 import threading
 import time
@@ -20,9 +25,19 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Callable
 
+from assistant import config
+
 _compteur = itertools.count(1)
 _lock = threading.Lock()
 _alertes: dict[int, "Alerte"] = {}
+
+# Ou les alertes sont conservees entre deux sessions.
+FICHIER = config.DATA_DIR / "alertes.json"
+
+# Au-dela, une echeance ratee ne vaut plus la peine d'etre annoncee : un
+# minuteur est plafonne a 24 h, et reveiller l'utilisateur avec un rappel de
+# la semaine derniere serait du bruit, pas un service.
+RETARD_MAX = 24 * 3600
 
 # Intervalle de verification des veilles. Une seconde suffit et ne coute rien
 # mesurable ; verifier plus souvent ferait travailler le disque pour rien.
@@ -39,6 +54,13 @@ class Alerte:
     cree: float = field(default_factory=time.time)
     declenchee: bool = False
     detail: str = ""
+    # La phrase d'origine, pour les veilles seulement. Une veille porte une
+    # fonction Python : ca ne s'ecrit pas dans un fichier. On conserve donc
+    # ce que l'utilisateur a dit, et on refabrique la condition au chargement
+    # avec le meme analyseur -- ce qui garantit qu'elle est identique.
+    source: str = ""
+    # Vraie quand l'echeance etait deja passee au demarrage.
+    en_retard: bool = False
 
     def reste(self) -> float:
         if self.echeance is None:
@@ -48,6 +70,10 @@ class Alerte:
     def describe(self) -> str:
         if self.genre == "veille":
             return f"[{self.numero}] veille : {self.message}"
+        if self.en_retard:
+            moment = datetime.fromtimestamp(self.echeance).strftime("%d/%m a %H:%M")
+            return (f"[{self.numero}] EN RETARD, etait prevu le {moment} : "
+                    f"{self.message}")
         moment = datetime.fromtimestamp(self.echeance).strftime("%H:%M:%S")
         restant = self.reste()
         if restant > 3600:
@@ -250,6 +276,11 @@ def _boucle_surveillance() -> None:
                         alerte.detail = detail
                         a_declencher.append(alerte)
 
+        if a_declencher:
+            # Une alerte qui vient de sonner ne doit pas ressusciter au
+            # prochain demarrage : on reecrit le fichier sans elle.
+            _sauver()
+
         for alerte in a_declencher:
             if _notifier:
                 try:
@@ -268,10 +299,101 @@ def _demarrer_boucle() -> None:
     _boucle.start()
 
 
+def _sauver() -> None:
+    """Ecrit les alertes encore en attente. Ne leve jamais.
+
+    Un disque plein ou un fichier verrouille ne doit pas faire echouer un
+    "minuteur 20 minutes" : la fonctionnalite en memoire marche encore, seule
+    la survie au redemarrage est perdue.
+    """
+    with _lock:
+        vivantes = [
+            {
+                "numero": a.numero,
+                "genre": a.genre,
+                "message": a.message,
+                "echeance": a.echeance,
+                "source": a.source,
+            }
+            for a in _alertes.values() if not a.declenchee
+        ]
+    try:
+        FICHIER.parent.mkdir(parents=True, exist_ok=True)
+        # Ecriture par fichier temporaire puis remplacement : une coupure en
+        # plein milieu laisserait sinon un JSON tronque, et TOUTES les
+        # alertes seraient perdues au lieu d'une.
+        provisoire = FICHIER.with_suffix(".json.tmp")
+        provisoire.write_text(
+            json.dumps(vivantes, ensure_ascii=False, indent=1), encoding="utf-8")
+        provisoire.replace(FICHIER)
+    except OSError:
+        pass
+
+
+def charger() -> str:
+    """Remet en place les alertes de la session precedente.
+
+    Appelee une fois au demarrage. Les echeances deja passees sont conservees
+    et signalees comme en retard : l'utilisateur doit apprendre que son rappel
+    est arrive pendant que l'application etait fermee, plutot que de ne jamais
+    le savoir. Au-dela de RETARD_MAX, elles sont ecartees.
+    """
+    try:
+        brut = json.loads(FICHIER.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(brut, list):
+        return ""
+
+    maintenant = time.time()
+    reprises, perimees = 0, 0
+
+    for entree in brut:
+        if not isinstance(entree, dict):
+            continue
+        genre = entree.get("genre", "")
+        message = str(entree.get("message", ""))
+
+        if genre == "veille":
+            # On rejoue la demande d'origine : c'est le seul moyen d'obtenir
+            # exactement la meme condition qu'a la creation.
+            source = str(entree.get("source", ""))
+            if source and not veille(source, message).startswith("Condition"):
+                reprises += 1
+            continue
+
+        echeance = entree.get("echeance")
+        if not isinstance(echeance, (int, float)):
+            continue
+        if maintenant - echeance > RETARD_MAX:
+            perimees += 1
+            continue
+
+        _ajouter(Alerte(
+            numero=next(_compteur),
+            genre=genre or "rappel",
+            message=message,
+            echeance=float(echeance),
+            en_retard=echeance <= maintenant,
+        ))
+        reprises += 1
+
+    _sauver()
+    if not reprises and not perimees:
+        return ""
+    morceaux = []
+    if reprises:
+        morceaux.append(f"{reprises} alerte(s) reprise(s) de la derniere session")
+    if perimees:
+        morceaux.append(f"{perimees} trop ancienne(s), ecartee(s)")
+    return ", ".join(morceaux) + "."
+
+
 def _ajouter(alerte: Alerte) -> Alerte:
     with _lock:
         _alertes[alerte.numero] = alerte
     _demarrer_boucle()
+    _sauver()
     return alerte
 
 
@@ -404,6 +526,7 @@ def veille(quoi: str, message: str = "") -> str:
         genre="veille",
         message=message or f"Condition atteinte : {libelle}",
         condition=condition,
+        source=quoi,
     ))
     return f"Veille active : {libelle}. Numero {alerte.numero}."
 
@@ -438,8 +561,14 @@ def annuler(numero: int | None = None) -> str:
         if numero is None:
             combien = len([a for a in _alertes.values() if not a.declenchee])
             _alertes.clear()
-            return f"{combien} alerte(s) annulee(s)."
-        alerte = _alertes.pop(int(numero), None)
+        else:
+            alerte = _alertes.pop(int(numero), None)
+
+    # Hors du verrou : _sauver() le reprend, et le garder ici bloquerait.
+    if numero is None:
+        _sauver()
+        return f"{combien} alerte(s) annulee(s)."
     if alerte is None:
         return f"Aucune alerte numero {numero}."
+    _sauver()
     return f"Alerte {numero} annulee ({alerte.message})."

@@ -841,7 +841,7 @@ def test_l_apostrophe_typographique_ne_dedouble_pas_une_application():
 # --- Les reglages perdus a chaque reconstruction -----------------------------
 
 def test_les_donnees_ne_vivent_pas_dans_le_dossier_jetable():
-    """Reglages, journal et notes repartaient de zero a chaque reconstruction.
+    r"""Reglages, journal et notes repartaient de zero a chaque reconstruction.
 
     Ils etaient ranges a cote de l'executable. PyInstaller efface dist/ avant
     de le remplir, et le desinstalleur efface {app}\data : les deux
@@ -872,7 +872,7 @@ def test_les_donnees_sont_dans_le_profil_de_l_utilisateur():
 
 
 def test_le_dossier_d_installation_n_accueille_pas_les_donnees():
-    """L'installateur pose le programme dans %LOCALAPPDATA%\AssistantLocal et
+    r"""L'installateur pose le programme dans %LOCALAPPDATA%\AssistantLocal et
     son desinstalleur efface ce dossier. Y ranger les donnees deplacerait le
     defaut d'un cran au lieu de le corriger."""
     import os
@@ -1005,3 +1005,211 @@ def test_l_installation_du_demarrage_rgb_est_constatee():
     source = inspect.getsource(rgb.installer_demarrage)
     apres_elevation = source.split("_executer_eleve", 1)[1]
     assert "_tache_installee()" in apres_elevation
+
+
+# --- Les dix defauts releves a l'audit du 2026-08-22 -------------------------
+
+def test_le_nettoyage_attend_l_index_au_lieu_de_planter():
+    """Seul consommateur de l'index a ne pas verifier db.is_ready() : il
+    remontait "OperationalError: no such table: files" a froid, la ou tous
+    les autres disent poliment d'attendre."""
+    import inspect
+
+    from assistant.skills import cleanup, fixes
+
+    for fonction in (cleanup.report, cleanup.clean):
+        assert getattr(fonction, "__wrapped__", None) is not None, (
+            f"{fonction.__name__} doit passer par needs_index")
+    assert "is_ready" in inspect.getsource(fixes.vider_cache)
+
+
+def test_la_sortie_audio_sait_relire_son_propre_nom():
+    """audio_outputs() affiche "Haut-parleurs (7.1 Surround Sound)", et
+    quatre sorties commencent par "Haut-parleurs" : rendue telle quelle, la
+    reponse etait refusee comme ambigue. Une egalite exacte passe d'abord."""
+    import inspect
+
+    from assistant.skills import control
+
+    source = inspect.getsource(control.set_audio_output)
+    exacte = source.index("FriendlyName.strip().lower() == besoin")
+    partielle = source.index("besoin in a.FriendlyName.lower()")
+    assert exacte < partielle
+
+
+def test_un_rappel_survit_a_la_fermeture(tmp_path, monkeypatch):
+    """"Rappelle-moi demain a 9 h" disparaissait au redemarrage, sans rien
+    dire. La promesse etait prise puis oubliee en silence."""
+    from assistant.skills import reminders
+
+    monkeypatch.setattr(reminders, "FICHIER", tmp_path / "alertes.json")
+    reminders._alertes.clear()
+
+    reminders.rappel("23:59", "acheter du pain")
+    assert reminders.FICHIER.exists()
+
+    # On simule une nouvelle session : memoire vide, fichier intact.
+    reminders._alertes.clear()
+    assert "Aucun minuteur" in reminders.liste()
+
+    reminders.charger()
+    assert "acheter du pain" in reminders.liste()
+
+
+def test_une_echeance_trop_vieille_n_est_pas_ressuscitee(tmp_path, monkeypatch):
+    """Reveiller l'utilisateur avec un rappel de la semaine derniere serait
+    du bruit, pas un service."""
+    import json
+    import time
+
+    from assistant.skills import reminders
+
+    fichier = tmp_path / "alertes.json"
+    fichier.write_text(json.dumps([
+        {"numero": 1, "genre": "rappel", "message": "trop vieux",
+         "echeance": time.time() - reminders.RETARD_MAX - 60, "source": ""},
+        {"numero": 2, "genre": "rappel", "message": "encore valable",
+         "echeance": time.time() + 3600, "source": ""},
+    ]), encoding="utf-8")
+    monkeypatch.setattr(reminders, "FICHIER", fichier)
+    reminders._alertes.clear()
+
+    reminders.charger()
+    listing = reminders.liste()
+    assert "encore valable" in listing
+    assert "trop vieux" not in listing
+
+
+def test_une_alerte_declenchee_ne_revient_pas(tmp_path, monkeypatch):
+    """Sans reecriture au declenchement, un minuteur deja sonne repartait a
+    chaque demarrage."""
+    import json
+    import time
+
+    from assistant.skills import reminders
+
+    monkeypatch.setattr(reminders, "FICHIER", tmp_path / "alertes.json")
+    reminders._alertes.clear()
+
+    reminders.minuteur("10 minutes", "sonne")
+    for alerte in reminders._alertes.values():
+        alerte.declenchee = True
+    reminders._sauver()
+
+    assert json.loads(reminders.FICHIER.read_text(encoding="utf-8")) == []
+
+
+def test_redemarrer_un_service_s_eleve_au_lieu_de_renvoyer_l_utilisateur():
+    """L'assistant tourne sans privileges par conception. Conseiller de le
+    relancer en administrateur defaisait la propriete meme qu'on protege, et
+    rendait l'outil inutilisable : il echouait a tous les coups."""
+    import inspect
+
+    from assistant.skills import fixes
+
+    source = inspect.getsource(fixes.redemarrer_service)
+    assert "_executer_eleve" in source
+    assert "Executer en tant qu'administrateur" not in source
+
+
+def test_le_rattrapage_agit_quand_la_connaissance_est_vide():
+    """Le cas ou l'on en a le plus besoin -- apprentissage de fond mort --
+    est celui ou l'outil repondait "rien a rattraper" sans rien faire."""
+    import inspect
+
+    from assistant import apprentissage
+
+    source = inspect.getsource(apprentissage.reessayer)
+    assert "connaissance.total() == 0" in source
+    assert "tout_apprendre()" in source
+
+
+def test_ouvrir_une_application_est_constate_pas_annonce():
+    """explorer.exe shell:AppsFolder reussit TOUJOURS, meme sur un
+    identifiant faux : "X ouvert" etait ecrit sans avoir regarde."""
+    import inspect
+
+    from assistant.skills import apps
+
+    source = inspect.getsource(apps.open_app)
+    assert "_processus_apparu" in source
+    # L'instantane doit etre pris AVANT le lancement, sinon il contient deja
+    # le processus cherche et la verification vaut toujours vrai.
+    assert source.index("avant = _processus_ouverts()") < source.index("_lancer(meilleur)")
+
+
+def test_un_integre_disparu_n_est_pas_propose():
+    """"paint" pointait sur mspaint.exe, disparu de Windows 11 : l'outil le
+    proposait, echouait sur WinError 2, et le vrai Paint restait introuvable."""
+    from assistant.skills import apps
+
+    assert apps._commande_resolvable("explorer.exe")
+    assert apps._commande_resolvable("ms-settings:sound")
+    assert not apps._commande_resolvable("programme-qui-n-existe-pas.exe")
+    assert not apps._commande_resolvable(r"C:\chemin\absent\rien.exe")
+    assert not apps._commande_resolvable("")
+
+
+def test_la_reconstruction_sait_arreter_un_openrgb_eleve():
+    """Depuis la tache planifiee, OpenRGB tourne en administrateur : le
+    taskkill non eleve echoue en silence et la construction repart sur une
+    hidapi.dll verrouillee."""
+    import inspect
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parent.parent / "reconstruire.py"
+    texte = source.read_text(encoding="utf-8")
+    assert "schtasks" in texte
+    assert "-Verb RunAs" in texte
+
+
+def test_le_garde_fou_refuse_au_lieu_d_attendre_sans_fin(monkeypatch):
+    """input() sur un tuyau ouvert que personne n'alimente n'a jamais leve
+    EOFError : il attendait indefiniment. Un script d'audit est reste fige
+    dix minutes dessus."""
+    import io
+
+    from assistant import safety
+
+    faux = io.StringIO()          # isatty() vaut False, et ne bloque pas
+    monkeypatch.setattr("sys.stdin", faux)
+    with pytest.raises(EOFError):
+        safety._ask_terminal("[test] une action quelconque")
+
+
+def test_lire_une_image_repond_a_la_question_posee():
+    """Sans modele de vision, l'outil rendait l'OCR brut : demander "quelles
+    fenetres sont ouvertes ?" renvoyait des fragments a trier soi-meme."""
+    import inspect
+
+    from assistant.skills import vision
+
+    source = inspect.getsource(vision.read_image)
+    assert "_repondre_sur_le_texte" in source
+    assert "question.strip()" in source
+
+
+def test_la_lecture_d_ecran_ne_fait_pas_reflechir_le_modele():
+    """Recopier des noms d'applications depuis un texte ne demande aucun
+    raisonnement. Le modele y produisait pourtant 17 000 caracteres de
+    reflexion : 80 secondes pour "regarde mon ecran", contre 7 sans."""
+    import inspect
+
+    from assistant import llm
+    from assistant.skills import vision
+
+    assert "think" in inspect.signature(llm._call).parameters
+    assert "think=False" in inspect.getsource(vision._repondre_sur_le_texte)
+
+
+def test_le_reglage_de_reflexion_reste_optionnel():
+    """think=None doit laisser la conversation normale intacte : elle ne paie
+    pas cette taxe (8,5 s mesurees), et la desactiver partout risquerait de
+    degrader le choix des outils."""
+    import inspect
+
+    from assistant import llm
+
+    source = inspect.getsource(llm._call)
+    assert "if think is not None:" in source
+    assert llm._call.__defaults__[-1] is None

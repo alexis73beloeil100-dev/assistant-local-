@@ -164,6 +164,15 @@ def reessayer() -> str:
     lieu de 700, et repondait "je ne sais pas" sur des logiciels installes.
     """
     if not echecs:
+        # Aucune source en echec ET aucun fait : l'apprentissage de fond n'a
+        # jamais tourne, ou il est mort avant de commencer. C'est justement le
+        # cas ou l'utilisateur a besoin de cet outil -- et l'ancienne version
+        # repondait "rien a rattraper" en ne faisant rien, ce qui laissait
+        # l'assistant durablement ignorant de sa propre machine.
+        if connaissance.total() == 0:
+            appris = tout_apprendre()
+            return (f"La connaissance etait vide : releve complet refait, "
+                    f"{appris} faits appris.")
         return f"Rien a rattraper : {connaissance.total()} faits connus."
 
     a_refaire = dict(echecs)

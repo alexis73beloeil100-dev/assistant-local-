@@ -16,6 +16,7 @@ from pathlib import Path
 
 from assistant import safety
 from assistant.index import db
+from assistant.skills.files import needs_index
 from assistant.util import human_size, norm
 
 
@@ -183,6 +184,7 @@ def candidates() -> list[Candidate]:
     return sorted(found, key=lambda c: c.size, reverse=True)
 
 
+@needs_index
 def report() -> str:
     found = candidates()
     if not found:
@@ -207,6 +209,7 @@ def report() -> str:
     return "\n".join(lines)
 
 
+@needs_index
 def clean(indexes: list[int], ask=None) -> str:
     """Envoie a la corbeille les candidats choisis, apres confirmation."""
     found = candidates()

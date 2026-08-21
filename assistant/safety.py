@@ -181,6 +181,23 @@ def guard(action: Action, ask=None) -> bool:
 
 
 def _ask_terminal(text: str) -> bool:
+    # Sans terminal reel, on refuse tout de suite.
+    #
+    # Le cas "pas de console du tout" etait deja prevu : input() leve alors
+    # EOFError, que guard() attrape. Mais quand l'entree standard est un tuyau
+    # ouvert que personne n'alimente -- une application lancee par un script,
+    # un service --, input() ne leve rien : il attend indefiniment. L'appel
+    # restait bloque, sans message et sans fin. On teste donc d'abord si
+    # quelqu'un peut reellement repondre.
+    import sys
+
+    try:
+        interactif = bool(sys.stdin) and sys.stdin.isatty()
+    except (AttributeError, ValueError, OSError):
+        interactif = False
+    if not interactif:
+        raise EOFError("aucun terminal pour demander l'accord")
+
     print()
     print(text)
     answer = input("  Confirmer ? [o/N] ").strip().lower()

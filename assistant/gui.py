@@ -770,9 +770,18 @@ class AssistantWindow(tk.Tk):
 
         def prevenir(alerte) -> None:
             detail = f"  ({alerte.detail})" if alerte.detail else ""
-            self.post("alerte", f"{alerte.message}{detail}")
+            retard = "  (en retard : l'assistant etait ferme)" if getattr(
+                alerte, "en_retard", False) else ""
+            self.post("alerte", f"{alerte.message}{detail}{retard}")
 
         reminders.set_notifier(prevenir)
+
+        # Le notifier D'ABORD, la relecture ENSUITE : une echeance deja passee
+        # se declenche des le premier tour de boucle, et sans destinataire
+        # branche elle serait perdue une seconde fois.
+        repris = reminders.charger()
+        if repris:
+            self.post("alerte", repris)
 
     # =====================================================================
     # Conversation
