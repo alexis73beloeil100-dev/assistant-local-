@@ -1,0 +1,69 @@
+RESTAURER L'ASSISTANT LOCAL
+===========================
+
+La sauvegarde ne contient que le code source (58 Ko). C'est volontaire : le
+reste pese 2,3 Go et se reconstruit tout seul.
+
+Ce qui N'EST PAS dans la sauvegarde, et pourquoi :
+
+  .venv        l'environnement Python et ses bibliotheques -> pip
+  dist/        l'executable AssistantLocal.exe             -> PyInstaller
+  build/       fichiers temporaires de construction        -> jetables
+  data/        l'index des fichiers                        -> vit en memoire,
+                                                              il n'existe pas
+
+
+ETAPES
+------
+
+1. Decompresser dans un dossier, par exemple :
+   C:\Users\Asuna\Documents\Assistant
+
+2. Installer Python 3.12 s'il n'est plus la :
+   winget install --id Python.Python.3.12 -e --scope user
+
+3. Recreer l'environnement et les bibliotheques :
+   python -m venv .venv
+   .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+4. Installer Ollama et le modele (9 Go de telechargement) :
+   winget install --id Ollama.Ollama -e
+   ollama pull qwen2.5:14b-instruct-q4_K_M
+
+5. Reconstruire l'executable :
+   .venv\Scripts\python.exe -m PyInstaller --noconfirm AssistantLocal.spec
+
+6. Recreer le raccourci sur le Bureau :
+   .venv\Scripts\python.exe creer_raccourci.py
+
+7. Facultatif, demarrage avec Windows :
+   double-clic sur ACTIVER-demarrage-auto.bat
+
+
+PIEGES CONNUS
+-------------
+
+- Les DLL CUDA viennent des paquets pip nvidia-cublas-cu12 et
+  nvidia-cudnn-cu12. Windows ne les cherche pas dans site-packages : il faut
+  les ajouter au PATH avant d'importer CTranslate2. Sans ca, Whisper se
+  charge sur GPU puis echoue a la premiere transcription. Le code retombe
+  alors sur le CPU, plus lent mais fonctionnel.
+
+- PyInstaller exige --collect-submodules assistant. Les imports du projet
+  sont ecrits a l'interieur des fonctions, l'analyse statique ne les voit
+  pas, et l'exe se construit sans erreur puis meurt au lancement.
+
+- Le seuil de detection de la parole est calibre sur le bruit de fond du
+  micro au debut de chaque enregistrement. Ne jamais remettre un seuil fixe :
+  le micro de ce PC sort un ambiant a 0.0033, un seuil fixe a 0.012 ne
+  detectait jamais la voix et l'enregistrement rendait du vide, sans erreur.
+
+- Ne jamais nommer un attribut self._w sur un widget Tkinter : c'est le nom
+  interne du chemin Tcl du widget, l'ecraser le rend inutilisable.
+
+- L'index des fichiers reste en memoire vive, jamais sur le disque. C'est une
+  exigence explicite, pas un detail d'implementation. Voir PERSIST_INDEX dans
+  assistant/config.py.
+
+Tout tourne en local. Aucune connexion sortante, hors les telechargements
+d'installation ci-dessus.

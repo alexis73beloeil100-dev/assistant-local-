@@ -1,0 +1,98 @@
+"""Palette et reglages visuels, en un seul endroit.
+
+Direction : affichage tete haute technique. Bahnschrift, la police derivee du
+DIN que Windows fournit, en demi-gras. Cascadia Mono pour les mesures. Traits
+fins, angles coupes, libelles en capitales espacees.
+
+Deux corrections importantes par rapport a la premiere version :
+
+  - Le cyan pur (#00E5FF) sur un noir quasi absolu fatiguait les yeux. Un
+    bleu-vert tres sature sur fond tres sombre cree un halo autour des
+    lettres : l'oeil n'arrive pas a faire la mise au point sur les deux
+    couleurs a la fois. Le cyan a ete desature et le fond remonte.
+
+  - Les textes etaient trop fins. Sur fond sombre, un trait fin clair
+    "brule" et devient penible a lire. Tout est passe en demi-gras, d'un
+    corps au-dessus.
+
+Ce qui reste ecarte : l'aplat bleu sur l'element selectionne, signature de
+Windows. Un liseret cyan a gauche marque la selection sans remplir la ligne.
+
+Tkinter n'a pas de feuille de style : sans ce module, les couleurs se
+retrouvent recopiees dans quarante appels de widgets et la moindre retouche
+devient un travail de fourmi.
+"""
+from __future__ import annotations
+
+# --- Couleurs ---------------------------------------------------------------
+#
+# Le fond n'est pas un noir absolu : un ecart de luminosite trop grand avec
+# le texte est ce qui fatigue. On reste sombre, mais on respire.
+
+BG          = "#0C1319"   # fond de la fenetre, ardoise bleutee
+SURFACE     = "#131D25"   # panneaux, barre laterale
+SURFACE_2   = "#1D2A34"   # survol, champs de saisie
+BORDER      = "#2A414C"   # traits fins, visibles sans etre durs
+
+TEXT        = "#E2F0F5"   # texte principal
+TEXT_DIM    = "#9BB6C2"   # remonte : l'ancien gris etait trop efface
+TEXT_FAINT  = "#66838F"
+
+ACCENT      = "#4FD3E6"   # cyan desature : le meme registre, sans le halo
+ACCENT_SOFT = "#12303A"   # fond du cyan
+ACCENT_DEEP = "#2E93A6"   # cyan eteint, pour les traits secondaires
+
+GOLD        = "#F5B845"   # secondaire chaud, a doser
+GREEN       = "#4FE0A8"
+AMBER       = "#F5B845"
+RED         = "#FF6B78"
+
+# --- Typographie ------------------------------------------------------------
+#
+# Bahnschrift est la police technique fournie avec Windows 10 et 11. Sa
+# variante SemiBold donne l'epaisseur qui manquait, et sa construction
+# geometrique porte le registre "instrument" mieux que Segoe UI.
+
+_UI = "Bahnschrift SemiBold"
+_UI_LEGER = "Bahnschrift"
+_MONO = "Cascadia Mono"
+
+FONT_UI        = (_UI, 11)
+FONT_UI_SMALL  = (_UI, 10)
+FONT_UI_TINY   = (_UI_LEGER, 10)
+FONT_TITLE     = (_UI, 16)
+FONT_LABEL     = (_UI, 11)
+FONT_INPUT     = (_UI, 12)
+
+# Les sorties de mesure sont des colonnes alignees : elles exigent une
+# largeur fixe, sinon les tailles et les chemins partent en accordeon.
+FONT_MONO      = (_MONO, 10)
+FONT_MONO_BOLD = (_MONO, 10, "bold")
+
+# Les titres de section : capitales espacees, comme une legende d'instrument.
+FONT_HUD       = (_UI, 9)
+
+
+def espacer(texte: str) -> str:
+    """Ecarte les lettres d'un libelle.
+
+    Tkinter ne gere pas l'interlettrage. Sur un titre court en capitales, un
+    espace entre chaque caractere donne le meme effet et coute une ligne.
+    """
+    return " ".join(texte.upper())
+
+
+# --- Espacements ------------------------------------------------------------
+
+PAD = 8          # unite de base ; tout est un multiple
+PAD_L = 16
+PAD_XL = 24
+
+RADIUS = 10      # rayon simule des cartes
+CHAMFER = 7      # taille du coin coupe des boutons
+
+
+def hover(widget, normal: str, over: str) -> None:
+    """Effet de survol sur un widget Tk, qui n'en propose aucun nativement."""
+    widget.bind("<Enter>", lambda _e: widget.configure(bg=over))
+    widget.bind("<Leave>", lambda _e: widget.configure(bg=normal))

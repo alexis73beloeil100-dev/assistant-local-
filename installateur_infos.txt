@@ -1,0 +1,68 @@
+CE QUE VOUS INSTALLEZ
+
+Un assistant qui connaît votre PC et agit dessus, entièrement hors ligne.
+Il répond à la voix ou au texte, en français.
+
+
+EN DEUX MOTS
+
+    Il relève votre matériel au démarrage : carte mère, processeur, mémoire,
+    carte graphique, disques et leur état de santé.
+
+    Il indexe vos fichiers pour les retrouver instantanément, et sait lire
+    leur contenu quand vous posez une question dessus.
+
+    Il détecte les vrais problèmes : disque qui fatigue, mémoire mal réglée,
+    erreurs matérielles. Pas le bruit habituel du journal Windows.
+
+    Il agit : ouvrir une application, régler le son, lancer un jeu, faire de
+    la place, réparer ce qui coince.
+
+
+RIEN NE SORT DE VOTRE MACHINE
+
+    Le modèle de langage, la reconnaissance vocale et la synthèse tournent
+    tous en local. Aucune connexion sortante après l'installation.
+
+    L'index de vos fichiers vit en mémoire et disparaît à la fermeture.
+    Sur le disque il ne reste qu'un fichier de réglages de quelques lignes.
+
+
+IL DEMANDE AVANT D'AGIR
+
+    Lire votre machine : il le fait librement.
+    Modifier quelque chose : il vous montre l'action et attend votre accord.
+    Formater un disque ou couper l'antivirus : refusé, même si vous insistez.
+
+    Tout est écrit dans un journal consultable, accepté comme refusé.
+
+
+APRÈS L'INSTALLATION
+
+    Un second écran s'ouvrira pour télécharger le moteur d'intelligence
+    artificielle et le modèle adapté à votre carte graphique. Ils ne sont pas
+    inclus ici : ils pèsent plusieurs gigaoctets et dépendent de votre
+    matériel.
+
+    Cet écran regarde votre machine et coche pour vous ce qui lui convient.
+    Laissez la sélection proposée si vous ne savez pas quoi choisir.
+
+    Prévoyez entre 2 et 6 Go de téléchargement selon votre configuration.
+
+
+AU PREMIER LANCEMENT
+
+    L'application s'ouvre sur un écran « Par où commencer » avec des
+    exemples de questions. Cliquez une ligne, elle part toute seule.
+
+    Si quelque chose ne fonctionne pas, le menu « Autotest » vérifie onze
+    points et dit, pour chacun, ce qui manque et quoi faire.
+
+
+CE QU'IL FAUT
+
+    Windows 10 ou 11, 64 bits.
+    Aucun droit administrateur pour installer.
+    Un micro pour la commande vocale (facultatif).
+    Une carte graphique NVIDIA rend tout nettement plus rapide, sans être
+    obligatoire.

@@ -1,0 +1,30 @@
+# Environnement Python : se reconstruit avec requirements.txt
+.venv/
+
+# Sorties de construction : se reconstruisent avec reconstruire.py
+build/
+dist/
+installateur/
+*.spec.bak
+
+# Donnees de fonctionnement, propres a chaque machine
+data/
+erreurs.log
+
+# Dossiers de test crees a la volee
+bac_de_test/
+bac_suppression/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Editeurs
+.vscode/
+.idea/
+*.swp
+
+# Windows
+Thumbs.db
+desktop.ini
