@@ -17,9 +17,56 @@ import sounddevice as sd
 SAMPLE_RATE = 16_000
 CHUNK = 1280            # 80 ms : la taille attendue par openWakeWord
 
-# Score au-dela duquel on considere le mot-cle prononce. 0.5 est le defaut
-# recommande ; monte a 0.6-0.7 si le micro declenche tout seul.
-WAKE_THRESHOLD = 0.5
+# Le mot-cle. Un seul endroit : l'interface, l'annonce vocale et le
+# telechargement du composant lisent tous cette constante.
+#
+# C'est "alexa" et pas "hey jarvis", pour une raison mesuree. openWakeWord ne
+# fournit que six modeles pre-entraines, chacun entraine sur de l'anglais.
+# Essai du 21/08, les deux detecteurs tournant en parallele sur le meme flux,
+# meme micro, meme voix francaise :
+#
+#   "hey jarvis"  ->  maximum 0,097   0 bloc au-dessus du seuil   jamais declenche
+#   "alexa"       ->  maximum 0,692   4 blocs au-dessus du seuil  declenche
+#
+# Sept fois plus haut. Le modele "hey jarvis" ne reconnait tout simplement pas
+# cette prononciation : ce n'etait ni le micro, ni le seuil, ni la regle de
+# confirmation. Un mot-cle "Tom" demanderait d'entrainer un modele -- torch,
+# tensorflow et des heures de calcul -- et une syllabe est de toute facon trop
+# courte pour un declenchement fiable.
+WAKE_MODEL = "alexa"
+
+# Comment on l'ecrit a l'ecran et comment la voix le prononce.
+WAKE_PHRASE = "alexa"
+
+# Score au-dela duquel on considere le mot-cle prononce.
+#
+# 0.5 est le defaut recommande par openWakeWord. On descend a 0,3 parce que
+# le modele n'a jamais entendu de francais et rend des scores plus bas qu'avec
+# une voix anglaise. Mesure du 21/08 : le mot-cle prononce monte a 0,692, le
+# silence a une mediane de 0,0000 et un 95e centile de 0,0001.
+#
+# L'ecart est de plusieurs milliers : on peut descendre le seuil sans risque
+# de declenchements intempestifs.
+WAKE_THRESHOLD = 0.3
+
+# Combien de blocs consecutifs doivent depasser le seuil.
+#
+# UN SEUL. Une confirmation sur deux blocs consecutifs a ete essayee, et elle
+# rendait le mot-cle purement indeclenchable. Mesure du 21/08 sur une vraie
+# voix, blocs de 80 ms :
+#
+#   t+20.3s  0.2242   sous le seuil
+#   t+20.4s  0.3525   AU-DESSUS      -> compteur = 1
+#   t+20.5s  0.0577   sous le seuil  -> compteur remis a 0
+#
+# Le score monte en fleche pendant un bloc puis retombe : il n'y a jamais deux
+# blocs consecutifs. Le mot-cle etait correctement reconnu et ne declenchait
+# rien. Descendre le seuil ne servait a rien, la regle annulait le gain.
+#
+# Le garde-fou n'est pas necessaire : sur les memes 45 secondes, la mediane du
+# silence est 0.0000 et le maximum ambiant 0.0226, soit treize fois sous le
+# seuil. WAKE_COOLDOWN suffit a empecher les redeclenchements en rafale.
+BLOCS_CONFIRMATION = 1
 
 # Apres un declenchement, on ignore le detecteur un instant : le mot-cle
 # resterait dans la fenetre glissante et se redeclencherait en boucle.
@@ -57,13 +104,24 @@ class VoiceLoop:
 
     def __init__(
         self,
-        wake_model: str = "hey_jarvis",
+        wake_model: str = WAKE_MODEL,
         device: int | None = None,
-        threshold: float = WAKE_THRESHOLD,
+        threshold: float | None = None,
         use_wake_word: bool = True,
     ):
+        from assistant import settings
+
         self.device = device
+        if threshold is None:
+            try:
+                threshold = float(settings.get("seuil_mot_cle", WAKE_THRESHOLD))
+            except (TypeError, ValueError):
+                threshold = WAKE_THRESHOLD
         self.threshold = threshold
+        # Meilleur score vu depuis le dernier releve. Sert a montrer a
+        # l'utilisateur que le detecteur reagit bien a sa voix, au lieu de le
+        # laisser repeter le mot-cle devant une interface muette.
+        self.meilleur_score = 0.0
         self.use_wake_word = use_wake_word
         self.wake_model = wake_model
         self._forced = threading.Event()
@@ -112,15 +170,19 @@ class VoiceLoop:
 
     # --- boucle -----------------------------------------------------------
 
-    def run(self, on_command, on_trigger=None, on_status=None) -> None:
+    def run(self, on_command, on_trigger=None, on_status=None,
+            on_score=None) -> None:
         """Boucle principale.
 
         on_command(texte)  : appele avec chaque commande transcrite
         on_trigger(Trigger): appele des le declenchement, avant l'enregistrement
         on_status(texte)   : messages d'etat pour l'affichage
+        on_score(score)    : meilleur score recent, pour l'affichage continu
         """
         self._load_wake()
         say = on_status or (lambda _msg: None)
+        confirmations = 0
+        dernier_releve = 0.0
 
         with sd.InputStream(
             samplerate=SAMPLE_RATE, channels=1, dtype="float32",
@@ -152,9 +214,24 @@ class VoiceLoop:
                     pcm = (mono * 32767).astype(np.int16)
                     scores = self._oww.predict(pcm)
                     best = max(scores.values()) if scores else 0.0
-                    if best >= self.threshold:
+                    self.meilleur_score = max(self.meilleur_score, float(best))
+
+                    # Voir BLOCS_CONFIRMATION : exiger deux blocs consecutifs
+                    # rendait le declenchement impossible, le score ne tenant
+                    # qu'un seul bloc.
+                    confirmations = confirmations + 1 if best >= self.threshold else 0
+                    if confirmations >= BLOCS_CONFIRMATION:
+                        confirmations = 0
                         last_wake = time.time()
                         trigger = Trigger("mot-cle", round(float(best), 3))
+
+                    # Montrer que le detecteur entend quelque chose, meme
+                    # quand il ne declenche pas : sans ce retour, impossible
+                    # de savoir si on prononce mal ou si rien ne fonctionne.
+                    if on_score and time.time() - dernier_releve > 0.7:
+                        dernier_releve = time.time()
+                        on_score(self.meilleur_score)
+                        self.meilleur_score = 0.0
 
                 if trigger is None:
                     continue

@@ -226,7 +226,7 @@ class AssistantWindow(tk.Tk):
             lien.bind("<Button-1>", lambda _e, a=action: a())
 
         tk.Checkbutton(
-            bottom, text=" Ecoute permanente (hey jarvis)",
+            bottom, text=f" Ecoute permanente ({wake.WAKE_PHRASE})",
             variable=self.ecoute, command=self._basculer_ecoute,
             bg=t.SURFACE, fg=t.TEXT_DIM, font=t.FONT_UI_SMALL,
             selectcolor=t.SURFACE_2, activebackground=t.SURFACE,
@@ -750,11 +750,15 @@ class AssistantWindow(tk.Tk):
 
         def demarrer():
             boucle = wake.VoiceLoop(device=self.mic_device)
+            # A conserver AVANT de lancer la boucle : sans cette ligne, l'objet
+            # restait local et decocher la case ne pouvait rien arreter.
+            self.boucle_vocale = boucle
+
             try:
                 boucle.start_hotkey()
             except Exception as exc:  # noqa: BLE001
-                self.post("ecouteinfo", (f"raccourci indisponible : "
-                                         f"{type(exc).__name__}", t.AMBER))
+                self.post("ecouteinfo", (f"raccourci indisponible : {exc}"[:34],
+                                         t.AMBER))
 
             def sur_commande(texte: str) -> None:
                 self.after(0, lambda: self.ask(texte))
@@ -763,23 +767,39 @@ class AssistantWindow(tk.Tk):
                 detail = f" ({trigger.score})" if trigger.score else ""
                 self.post("status", (f"{trigger.source}{detail} : parle",
                                      t.ACCENT))
+                threading.Thread(target=tts.say, args=("Je t'ecoute.",),
+                                 daemon=True).start()
 
             def sur_etat(message: str) -> None:
                 self.post("ecouteinfo", (message[:34], t.TEXT_FAINT))
 
+            def sur_score(score: float) -> None:
+                # Un temoin permanent : l'utilisateur voit sa voix bouger le
+                # chiffre, et sait donc si le micro et le detecteur marchent,
+                # meme quand le mot-cle n'est pas reconnu.
+                couleur = t.GREEN if score >= boucle.threshold else t.TEXT_FAINT
+                self.post("ecouteinfo",
+                          (f'"{wake.WAKE_PHRASE}" — {score:.2f} '
+                           f'/ {boucle.threshold:.2f}', couleur))
+
             try:
-                self.post("ecouteinfo", ('"hey jarvis" ou Ctrl+Alt+Espace',
-                                         t.GREEN))
+                self.post("ecouteinfo",
+                          (f'"{wake.WAKE_PHRASE}" ou Ctrl+Alt+Espace', t.GREEN))
+                threading.Thread(
+                    target=tts.say,
+                    args=(f"Ecoute permanente activee. Dis {wake.WAKE_PHRASE}.",),
+                    daemon=True).start()
                 boucle.run(sur_commande, on_trigger=sur_declenchement,
-                           on_status=sur_etat)
+                           on_status=sur_etat, on_score=sur_score)
             except Exception as exc:  # noqa: BLE001
-                self.post("ecouteinfo", (f"arret : {type(exc).__name__}",
-                                         t.RED))
+                # Le message complet, pas seulement le type : une erreur de
+                # micro et une erreur de modele ne se corrigent pas pareil.
+                self.post("ecouteinfo", (f"arret : {exc}"[:34], t.RED))
+                self.post("status", (f"Ecoute impossible : {exc}"[:70], t.RED))
                 self.after(0, lambda: self.ecoute.set(False))
 
             self.boucle_vocale = None
 
-        self.boucle_vocale = None
         threading.Thread(target=demarrer, name="ecoute", daemon=True).start()
 
     # =====================================================================

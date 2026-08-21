@@ -258,13 +258,30 @@ phrase. Quand quelqu'un peut cliquer, il n'y a aucune raison de deviner.
 
 ### Écoute permanente
 
-Case **« Écoute permanente (hey jarvis) »** dans la barre latérale, décochée
+Case **« Écoute permanente (alexa) »** dans la barre latérale, décochée
 par défaut.
 
 | Déclencheur | Quand l'utiliser |
 |---|---|
-| Dire **« hey jarvis »** | à la souris, hors jeu |
+| Dire **« alexa »** | à la souris, hors jeu |
 | **Ctrl + Alt + Espace** | en jeu ou en vocal — aucun faux déclenchement |
+
+**Pourquoi « alexa » et pas « hey jarvis ».** openWakeWord ne fournit que six
+modèles pré-entraînés, tous entraînés sur de l'anglais. Les deux détecteurs ont
+été mis à tourner en parallèle sur le même flux, même micro, même voix :
+
+| Modèle | Score maximal | Blocs au-dessus du seuil |
+|---|---|---|
+| `hey_jarvis` | 0,097 | **0** — n'a jamais déclenché |
+| `alexa` | **0,692** | 4 |
+
+Sept fois plus haut. Ce n'était ni le micro, ni le seuil : le modèle
+`hey_jarvis` ne reconnaît pas cette prononciation. Un mot-clé au choix — « Tom »,
+par exemple — demanderait d'entraîner un réseau de neurones : torch, tensorflow,
+plusieurs giga-octets et des heures de calcul. Et une syllabe est de toute façon
+trop courte pour un déclenchement fiable.
+
+Le mot-clé se change à un seul endroit, `WAKE_MODEL` dans `voice/wake.py`.
 
 Là, personne ne peut cliquer pour dire « j'ai fini » : la fin de phrase doit
 être détectée. Trois règles évitent le défaut ci-dessus — il faut **320 ms de
@@ -409,7 +426,7 @@ qui rend le comportement prévisible et vérifiable.
 |---|---|---|
 | Modèle de langage | `qwen3.5:4b` | GPU, ~6,1 Go VRAM |
 | Reconnaissance vocale | `faster-whisper medium` | GPU, ~1,5 Go VRAM |
-| Mot-clé | openWakeWord `hey_jarvis` | CPU, négligeable |
+| Mot-clé | openWakeWord `alexa` | CPU, négligeable |
 | Synthèse vocale | SAPI Hortense | CPU |
 | Index fichiers | SQLite + FTS5 | **mémoire vive uniquement** |
 

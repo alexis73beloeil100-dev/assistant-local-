@@ -322,8 +322,10 @@ def _wake_installed() -> bool:
     try:
         import openwakeword
 
+        from assistant.voice.wake import WAKE_MODEL
+
         base = Path(openwakeword.__file__).parent / "resources" / "models"
-        return any(base.glob("hey_jarvis*"))
+        return any(base.glob(f"{WAKE_MODEL}*"))
     except Exception:  # noqa: BLE001
         return False
 
@@ -333,7 +335,9 @@ def _install_wake(progress) -> tuple[bool, str]:
     try:
         import openwakeword
 
-        openwakeword.utils.download_models(["hey_jarvis"])
+        from assistant.voice.wake import WAKE_MODEL
+
+        openwakeword.utils.download_models([WAKE_MODEL])
     except Exception as exc:  # noqa: BLE001
         return False, f"Echec : {type(exc).__name__}: {exc}"
     return True, "Mot-cle installe"
@@ -449,7 +453,7 @@ def catalogue() -> list[Component]:
         ),
         Component(
             key="motcle",
-            label="Mot-cle \"hey jarvis\"",
+            label="Mot-cle \"alexa\"",
             description="Permet de declencher l'assistant a la voix, sans "
                         "toucher au clavier.",
             size_gb=0.01,

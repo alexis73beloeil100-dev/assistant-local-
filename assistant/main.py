@@ -6,7 +6,8 @@
     python -m assistant.main --mic 11        -> force un micro
     python -m assistant.main --muet          -> repond a l'ecrit, sans voix
 
-Dis "hey jarvis", ou appuie sur Ctrl+Alt+Espace, puis parle.
+Dis le mot-cle (voir wake.WAKE_PHRASE), ou appuie sur Ctrl+Alt+Espace,
+puis parle.
 """
 from __future__ import annotations
 
@@ -71,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_wake:
         print(f"  Declencheur : {HOTKEY} uniquement")
     else:
-        print(f"  Declencheur : \"hey jarvis\" ou {HOTKEY}")
+        print(f"  Declencheur : \"{wake.WAKE_PHRASE}\" ou {HOTKEY}")
     print()
 
     convo = llm.new_conversation()
