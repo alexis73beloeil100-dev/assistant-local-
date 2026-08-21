@@ -788,3 +788,51 @@ def test_meubler_une_salutation_est_explicitement_interdit():
     from assistant import llm
 
     assert "PERSONNE NE TE DEMANDE RIEN" in llm.SYSTEM_PROMPT
+
+
+def test_une_application_absente_n_en_ouvre_pas_une_autre():
+    """"ouvre spotify" lancait TikFinity. "word" lancait Discord.
+
+    Le releve etait pourtant juste : ni Spotify ni Word ne sont installes. Le
+    defaut etait dans la correspondance -- le seuil approximatif etait a 0,50,
+    et "spotify"/"TikFinity" vaut exactement 0,50.
+
+    Ouvrir la mauvaise application est pire que repondre "pas trouve" :
+    l'utilisateur ne comprend pas ce qui s'est passe et doit refermer quelque
+    chose qu'il n'a pas demande.
+    """
+    import difflib
+
+    from assistant.skills import apps
+
+    assert apps.SEUIL_FLOU > 0.5
+    for demande, faux_ami in (("spotify", "TikFinity"), ("word", "Discord")):
+        note = difflib.SequenceMatcher(None, demande,
+                                       apps.canon(faux_ami)).ratio()
+        assert note < apps.SEUIL_FLOU, (
+            f"{demande} ressemble trop a {faux_ami} : {note}")
+
+
+def test_nos_propres_synonymes_ne_creent_pas_d_ambiguite():
+    """"gestionnaire des taches" demandait "laquelle ?".
+
+    Deux orthographes internes pointaient sur le meme taskmgr.exe, et le
+    menu Demarrer en ajoutait une troisieme. L'ambiguite venait de nous.
+    """
+    from assistant.skills import apps
+
+    resultats = apps.find("gestionnaire des taches")
+    assert resultats
+    note = resultats[0][0]
+    assert note == 1.0 or len(resultats) == 1 or \
+        resultats[1][0] <= note - 0.08, (
+            "un nom exact ne doit jamais demander de choisir")
+
+
+def test_l_apostrophe_typographique_ne_dedouble_pas_une_application():
+    """"Observateur d'evenements" et "Observateur d'evenements" avec
+    l'apostrophe courbe sont la meme application."""
+    from assistant.skills import apps
+
+    assert apps.canon("Observateur d'evenements") == \
+        apps.canon("Observateur d’evenements")

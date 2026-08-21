@@ -106,9 +106,19 @@ def _from_apps_folder() -> list[App]:
 
 
 def canon(texte: str) -> str:
+    """Forme comparable d'un nom d'application.
+
+    L'apostrophe typographique et l'apostrophe droite doivent donner le meme
+    resultat : "Observateur d'evenements" du menu Demarrer et
+    "observateur d'evenements" de notre liste interne sont la meme chose, et
+    les distinguer faisait demander "laquelle ?" pour un choix qui n'en est
+    pas un.
+    """
     texte = unicodedata.normalize("NFKD", texte)
     texte = "".join(c for c in texte if not unicodedata.combining(c))
-    return " ".join(texte.lower().replace("-", " ").split())
+    for signe in ("-", "'", "’", "_", ".", ",", "(", ")"):
+        texte = texte.replace(signe, " ")
+    return " ".join(texte.lower().split())
 
 
 def _from_start_menu() -> list[App]:
@@ -199,6 +209,20 @@ def _from_index(requete: str, limite: int = 5) -> list[App]:
     return trouves
 
 
+# Ressemblance minimale pour une correspondance PUREMENT approximative,
+# c'est-a-dire sans mot commun.
+#
+# Le seuil etait a 0,50, et il ouvrait n'importe quoi : "spotify" lancait
+# TikFinity, "word" lancait Discord -- deux applications qui n'ont rien a voir,
+# et dont aucune n'etait celle demandee. Ouvrir la mauvaise application est
+# pire que repondre "pas trouve" : l'utilisateur ne comprend pas ce qui s'est
+# passe, et doit refermer quelque chose qu'il n'a pas demande.
+#
+# A 0,72, "word"/"Discord" (0,46) et "spotify"/"TikFinity" (0,50) sont
+# ecartes, tandis qu'une faute de frappe ou un accent manquant passe encore.
+SEUIL_FLOU = 0.72
+
+
 def find(requete: str) -> list[tuple[float, App]]:
     """Classe les applications par ressemblance avec la demande."""
     demande = canon(requete)
@@ -215,18 +239,46 @@ def find(requete: str) -> list[tuple[float, App]]:
         elif all(mot in nom for mot in demande.split()):
             note = 0.75
         else:
+            # Aucun mot en commun : on n'accepte qu'une tres forte
+            # ressemblance, sinon on lance autre chose.
             note = difflib.SequenceMatcher(None, demande, nom).ratio()
-        if note >= 0.5:
-            scores.append((round(note, 3), app))
+            if note < SEUIL_FLOU:
+                continue
+        scores.append((round(note, 3), app))
 
     scores.sort(key=lambda item: item[0], reverse=True)
+    scores = _sans_doublons(scores)
     if scores and scores[0][0] >= 0.7:
         return scores
 
     for app in _from_index(requete):
         scores.append((0.6, app))
     scores.sort(key=lambda item: item[0], reverse=True)
-    return scores
+    return _sans_doublons(scores)
+
+
+def _sans_doublons(scores: list[tuple[float, App]]) -> list[tuple[float, App]]:
+    """Une meme cible ne doit apparaitre qu'une fois.
+
+    "gestionnaire des taches" et "gestionnaire de taches" ouvrent le meme
+    taskmgr.exe : les garder toutes les deux faisait repondre "plusieurs
+    applications correspondent, laquelle ?" pour un choix qui n'en est pas un.
+    L'ambiguite venait de nos propres synonymes.
+    """
+    vus = set()
+    garde = []
+    for note, app in scores:
+        # Deux cles : la cible, et le nom. Une meme application apparait
+        # souvent sous les deux formes -- une entree du Store et un raccourci
+        # du menu Demarrer pointant ailleurs, mais portant le meme nom.
+        for cle in (("cible", canon(app.cible)), ("nom", canon(app.nom))):
+            if cle in vus:
+                break
+        else:
+            vus.add(("cible", canon(app.cible)))
+            vus.add(("nom", canon(app.nom)))
+            garde.append((note, app))
+    return garde
 
 
 def _lancer(app: App) -> None:
@@ -262,7 +314,11 @@ def open_app(nom: str, refresh_si_absent: bool = True) -> str:
                 "\"liste mes applications\".")
 
     meilleur_score, meilleur = resultats[0]
-    if len(resultats) > 1 and resultats[1][0] > meilleur_score - 0.08:
+    # Un nom exact n'est jamais ambigu. Demander "laquelle ?" quand
+    # l'utilisateur a donne le nom precis d'une application est une question
+    # de trop, meme si une autre lui ressemble.
+    if meilleur_score < 1.0 and len(resultats) > 1 \
+            and resultats[1][0] > meilleur_score - 0.08:
         noms = ", ".join(a.nom for _s, a in resultats[:4])
         return f"Plusieurs applications correspondent : {noms}. Laquelle ?"
 
