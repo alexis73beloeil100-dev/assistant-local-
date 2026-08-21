@@ -261,3 +261,108 @@ def clean(indexes: list[int], ask=None) -> str:
     out.append("")
     out.append("Relance 'scan' pour remettre l'index a jour.")
     return "\n".join(out)
+
+
+# --- Retour en arriere -------------------------------------------------------
+
+# Colonne du dossier special "Corbeille" qui contient l'emplacement d'origine.
+# C'est la colonne 1 sur Windows 10 et 11, mais on ne s'y fie pas : le libelle
+# et l'ordre changent selon la version et la langue. On la cherche.
+_COLONNES_A_SONDER = 12
+
+
+def _verbe_restaurer(element) -> object | None:
+    """Le verbe "Restaurer" du menu contextuel, quelle que soit la langue.
+
+    Il s'appelle "R&estaurer" en francais et "&Restore" en anglais -- le "&"
+    marque la lettre soulignee et n'est pas dans le nom affiche. On le retire
+    avant de comparer, et on accepte les deux racines.
+    """
+    for verbe in element.Verbs():
+        nom = str(verbe.Name).replace("&", "").casefold()
+        if nom.startswith("restaur") or nom.startswith("restor"):
+            return verbe
+    return None
+
+
+def _origine(corbeille, element) -> str:
+    """Chemin qu'occupait l'element avant sa suppression."""
+    import os
+
+    for colonne in range(_COLONNES_A_SONDER):
+        valeur = str(corbeille.GetDetailsOf(element, colonne) or "")
+        # Un emplacement d'origine est un chemin absolu : il porte une lettre
+        # de lecteur. Les autres colonnes sont des dates et des tailles.
+        if ":\\" in valeur:
+            return os.path.join(valeur, str(element.Name))
+    return ""
+
+
+def restaurer(chemins: list[str]) -> tuple[bool, str]:
+    """Ressort de la corbeille exactement les dossiers qu'on y a envoyes.
+
+    On ne restaure QUE les chemins demandes : la corbeille contient aussi ce
+    que l'utilisateur y a mis lui-meme, et tout ressortir en bloc serait une
+    surprise desagreable.
+    """
+    try:
+        import pythoncom
+        import win32com.client
+    except ImportError:
+        return False, ("La restauration demande pywin32, qui n'est pas "
+                       "installe. Ouvre la corbeille pour le faire a la main.")
+
+    # COM appartient au thread qui l'initialise, et l'interface travaille dans
+    # des threads de fond. Sans cet appel, la corbeille est illisible.
+    try:
+        pythoncom.CoInitialize()
+    except Exception:  # noqa: BLE001 - deja initialise dans ce thread
+        pass
+
+    voulus = {norm(c) for c in chemins}
+    if not voulus:
+        return False, "Aucun chemin a restaurer."
+
+    try:
+        shell = win32com.client.Dispatch("Shell.Application")
+        corbeille = shell.Namespace(10)      # 10 = ssfBITBUCKET, la corbeille
+        elements = corbeille.Items()
+    except Exception as exc:  # noqa: BLE001
+        return False, f"Corbeille illisible : {type(exc).__name__}: {exc}"
+
+    restaures, echecs = [], []
+    introuvables = set(voulus)
+
+    for index in range(elements.Count):
+        element = elements.Item(index)
+        origine = _origine(corbeille, element)
+        if not origine or norm(origine) not in voulus:
+            continue
+
+        introuvables.discard(norm(origine))
+        verbe = _verbe_restaurer(element)
+        if verbe is None:
+            echecs.append(f"  {origine} : aucun verbe de restauration")
+            continue
+        try:
+            verbe.DoIt()
+            restaures.append(f"  {origine}")
+        except Exception as exc:  # noqa: BLE001
+            echecs.append(f"  {origine} : {type(exc).__name__}")
+
+    lignes = []
+    if restaures:
+        lignes.append(f"Ressorti de la corbeille ({len(restaures)}) :")
+        lignes.extend(restaures)
+    if introuvables:
+        lignes.append("Plus dans la corbeille (deja restaure, ou corbeille "
+                      "videe) :")
+        lignes.extend(f"  {c}" for c in sorted(introuvables))
+    if echecs:
+        lignes.append("Echecs :")
+        lignes.extend(echecs)
+    if restaures:
+        lignes.append("")
+        lignes.append("Relance 'scan' pour remettre l'index a jour.")
+
+    return bool(restaures), "\n".join(lignes) or "Rien a restaurer."

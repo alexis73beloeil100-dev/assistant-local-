@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,6 +31,14 @@ class Action:
     targets: list[str] = field(default_factory=list)
     reversible: bool = True
     details: str = ""
+    # Comment revenir en arriere, sous la forme {"operation": ..., "args": ...}.
+    #
+    # `reversible` disait seulement qu'un retour etait concevable ; personne ne
+    # savait comment le faire, et le journal restait en lecture seule. On
+    # enregistre desormais le moyen exact, au moment ou l'action est faite --
+    # c'est le seul moment ou on le connait encore. Les operations disponibles
+    # sont listees dans assistant.annulation.
+    annulation: dict | None = None
 
     def describe(self) -> str:
         lines = [f"[{self.kind}] {self.summary}"]
@@ -49,14 +58,43 @@ def is_protected(path: str) -> bool:
     return any(p.startswith(prot) for prot in config.PROTECTED_PATHS)
 
 
-def _audit(action: Action, verdict: str) -> None:
+def _audit(action: Action, verdict: str) -> str:
+    """Ecrit une ligne dans le journal et rend son identifiant."""
+    identifiant = uuid.uuid4().hex[:12]
     AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
     entry = {
+        "id": identifiant,
         "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "kind": action.kind,
         "summary": action.summary,
         "targets": action.targets,
         "verdict": verdict,
+    }
+    # Une action refusee n'a rien fait : lui proposer une annulation n'aurait
+    # aucun sens, et ferait croire qu'elle a eu lieu.
+    if action.annulation and verdict == "accepte":
+        entry["annulation"] = action.annulation
+    with AUDIT_LOG.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return identifiant
+
+
+def noter_annulation(entry_id: str, message: str, ok: bool) -> None:
+    """Consigne qu'une entree du journal vient d'etre annulee.
+
+    Le journal est ecrit en ajout seul, jamais reecrit : c'est un journal
+    d'audit, et une ligne qu'on peut modifier apres coup ne prouve plus rien.
+    L'annulation est donc une NOUVELLE ligne qui designe la precedente.
+    """
+    AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "id": uuid.uuid4().hex[:12],
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "kind": "annulation",
+        "summary": message,
+        "targets": [],
+        "verdict": "accepte" if ok else "echec",
+        "annule": entry_id,
     }
     with AUDIT_LOG.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
