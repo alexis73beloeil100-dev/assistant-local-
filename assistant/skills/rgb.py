@@ -868,6 +868,25 @@ def _lire(materiel) -> Peripherique:
     )
 
 
+def _mode_qui_accepte_une_couleur(cible) -> str | None:
+    """Le meilleur mode de ce materiel pour afficher une couleur choisie.
+
+    "Direct" d'abord : c'est le mode ou l'ordinateur pilote chaque LED, donc
+    celui qui rend exactement la couleur demandee. "Static" ensuite, qui la
+    fige dans le materiel lui-meme. A defaut, le premier mode qui accepte une
+    couleur, quel que soit son nom -- les fabricants ne s'accordent pas.
+    """
+    par_nom = {d.nom.lower(): d for d in cible.details}
+    for prefere in ("direct", "static", "statique"):
+        detail = par_nom.get(prefere)
+        if detail is not None and detail.couleur:
+            return detail.nom
+    for detail in cible.details:
+        if detail.couleur:
+            return detail.nom
+    return None
+
+
 def appliquer(peripherique: str = "", mode: str = "", couleur: str = "",
               luminosite=None, vitesse=None) -> str:
     """Applique un reglage complet : mode, couleur, luminosite, vitesse.
@@ -909,6 +928,27 @@ def appliquer(peripherique: str = "", mode: str = "", couleur: str = "",
             continue
 
         detail = cible.mode(nom_mode) if nom_mode else None
+
+        # Demander une couleur, c'est demander un mode qui en accepte une.
+        #
+        # Cette carte mere se remet d'elle-meme en "Random", un effet pilote
+        # par son propre controleur qui ignore toute couleur. "Mets les LED en
+        # bleu" repondait alors "Eclairage regle : Random" PUIS "Random ne
+        # prend pas de couleur" : deux lignes qui se contredisent, et des
+        # ventilateurs qui n'ont pas bouge. C'est le defaut que l'utilisateur
+        # decrivait depuis le debut.
+        #
+        # On ne fait ce choix que si aucun mode n'a ete demande explicitement :
+        # "mets-le en arc-en-ciel" doit rester un arc-en-ciel, meme si la
+        # commande porte aussi une couleur qui ne servira pas.
+        if couleur and not mode and detail is not None and not detail.couleur:
+            remplacant = _mode_qui_accepte_une_couleur(cible)
+            if remplacant is None:
+                ignores.append(f"{cible.nom} n'a aucun mode acceptant une "
+                               "couleur choisie")
+                continue
+            nom_mode = remplacant
+            detail = cible.mode(nom_mode)
         changements = []
 
         try:

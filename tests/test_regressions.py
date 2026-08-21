@@ -1213,3 +1213,63 @@ def test_le_reglage_de_reflexion_reste_optionnel():
     source = inspect.getsource(llm._call)
     assert "if think is not None:" in source
     assert llm._call.__defaults__[-1] is None
+
+
+def test_demander_une_couleur_choisit_un_mode_qui_en_accepte_une():
+    """La carte mere se remet d'elle-meme en "Random", un effet pilote par son
+    propre controleur qui ignore toute couleur. "Mets les LED en bleu"
+    repondait "Eclairage regle : Random" PUIS "Random ne prend pas de
+    couleur" -- deux lignes qui se contredisent, et des ventilateurs qui
+    n'avaient pas bouge."""
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.appliquer)
+    assert "_mode_qui_accepte_une_couleur" in source
+    # Seulement si aucun mode n'a ete demande : "mets-le en arc-en-ciel" doit
+    # rester un arc-en-ciel.
+    assert "if couleur and not mode" in source
+
+
+def test_le_mode_choisi_pour_une_couleur_privilegie_direct():
+    """Direct rend exactement la couleur demandee ; Static la fige dans le
+    materiel. Les autres modes portent des noms propres a chaque fabricant."""
+    from dataclasses import dataclass
+
+    from assistant.skills import rgb
+
+    @dataclass
+    class FauxDetail:
+        nom: str
+        couleur: bool
+
+    class FauxPeripherique:
+        def __init__(self, details):
+            self.details = details
+
+    cm = FauxPeripherique([
+        FauxDetail("Random", False), FauxDetail("Static", True),
+        FauxDetail("Direct", True),
+    ])
+    assert rgb._mode_qui_accepte_une_couleur(cm) == "Direct"
+
+    sans_direct = FauxPeripherique([
+        FauxDetail("Random", False), FauxDetail("Static", True)])
+    assert rgb._mode_qui_accepte_une_couleur(sans_direct) == "Static"
+
+    exotique = FauxPeripherique([
+        FauxDetail("Random", False), FauxDetail("Vague", True)])
+    assert rgb._mode_qui_accepte_une_couleur(exotique) == "Vague"
+
+    aucun = FauxPeripherique([FauxDetail("Random", False)])
+    assert rgb._mode_qui_accepte_une_couleur(aucun) is None
+
+
+def test_searchindexer_est_epargne_par_le_mode_jeu():
+    """Un service Windows que le systeme relance dans la minute : le fermer ne
+    libere rien de durable, et depuis que le mode jeu n'attend plus d'accord,
+    ca revenait a tuer un service systeme en silence a chaque partie."""
+    from assistant.skills import gamemode
+
+    assert "searchindexer.exe" in gamemode.EPARGNES

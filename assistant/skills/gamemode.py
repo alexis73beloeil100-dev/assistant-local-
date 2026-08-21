@@ -41,6 +41,13 @@ EPARGNES = {
     "discord.exe", "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe",
     "upc.exe", "eadesktop.exe", "riotclientservices.exe", "nvcontainer.exe",
     "assistantlocal.exe", "ollama.exe", "llama-server.exe",
+    # searchindexer.exe est un SERVICE Windows, pas une application. Windows le
+    # relance tout seul dans la minute : le fermer ne libere donc rien de
+    # durable, et depuis que le mode jeu n'attend plus d'accord, ca revenait a
+    # tuer un service systeme en silence a chaque partie. Il reste dans
+    # GOURMANDS parce qu'il consomme bel et bien -- c'est sa fermeture qui est
+    # inutile, pas le constat.
+    "searchindexer.exe",
 }
 
 
