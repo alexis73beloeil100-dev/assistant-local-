@@ -892,3 +892,116 @@ def test_les_anciennes_donnees_sont_recuperees():
 
     assert hasattr(config, "DONNEES_REPRISES")
     assert isinstance(config.DONNEES_REPRISES, list)
+
+
+# --- Les confirmations qui rendaient la commande vocale inutilisable --------
+
+def test_un_geste_courant_ne_demande_pas_d_accord():
+    """"Mode jeu" ouvrait une fenetre de confirmation par navigateur ouvert.
+
+    Il fallait lacher la manette et cliquer cinq fois "oui" a ce qu'on venait
+    de demander a voix haute. Une action marquee `routine` passe seule.
+    """
+    from assistant import safety
+
+    def jamais(_texte):
+        raise AssertionError("guard() a demande un accord pour une routine")
+
+    action = safety.Action(kind="processus", summary="Arreter chrome.exe",
+                           targets=["chrome.exe pid 1"], reversible=True,
+                           routine=True)
+    assert safety.guard(action, ask=jamais) is True
+
+
+def test_une_action_irreversible_demande_toujours():
+    """`routine` ne doit pas pouvoir desarmer le garde-fou par megarde.
+
+    Sans la double condition dans guard(), un appelant qui aurait coche
+    `routine` sur une desinstallation l'aurait rendue silencieuse.
+    """
+    from assistant import safety
+
+    action = safety.Action(kind="jeu", summary="Desinstaller un jeu",
+                           targets=["jeu: exemple"], reversible=False,
+                           routine=True)
+    with pytest.raises(safety.Refused):
+        safety.guard(action, ask=lambda _texte: False)
+
+
+def test_un_chemin_protege_refuse_meme_en_routine():
+    """Les chemins proteges passent AVANT tout le reste dans guard()."""
+    import os
+
+    from assistant import safety
+
+    systeme = os.environ.get("SystemRoot", r"C:\Windows")
+    action = safety.Action(kind="fichier", summary="Toucher au systeme",
+                           targets=[os.path.join(systeme, "System32")],
+                           reversible=True, routine=True)
+    with pytest.raises(safety.Refused):
+        safety.guard(action, ask=lambda _texte: True)
+
+
+def test_le_mode_jeu_ferme_sans_demander():
+    """Le lien reel entre gamemode et le garde-fou : c'est ce chainon qui
+    manquait, pas la mecanique de safety."""
+    import inspect
+
+    from assistant.skills import fixes, gamemode
+
+    assert "routine" in inspect.signature(fixes.arreter_processus).parameters
+    source = inspect.getsource(gamemode.activer)
+    assert "routine=True" in source
+
+
+def test_reprendre_le_controle_rgb_ne_demande_pas_d_accord():
+    """C'est le prealable de "mets les LED en bleu", pas une decision a part.
+
+    Les services sont arretes, pas desactives : ils repartent au prochain
+    demarrage de Windows.
+    """
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.liberer)
+    assert "routine=True" in source
+
+
+# --- Le UAC du RGB a chaque ouverture de session ----------------------------
+
+def test_le_serveur_rgb_passe_par_la_tache_avant_l_elevation():
+    """Une tache "privileges les plus eleves" demarre OpenRGB en admin sans
+    fenetre. Si demarrer_serveur() tentait l'elevation manuelle d'abord, le
+    UAC reapparaitrait alors meme que la tache est installee."""
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.demarrer_serveur)
+    assert source.index("_tache_installee") < source.index("-Verb RunAs")
+
+
+def test_la_tache_du_serveur_rgb_interdit_les_doublons():
+    """Deux OpenRGB lances ensemble : un seul obtient le port 6742, l'autre
+    reste a disputer le controleur sans repondre a personne. C'est ce qui a
+    ete trouve sur la machine avant la correction."""
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.installer_demarrage)
+    assert "-MultipleInstances IgnoreNew" in source
+    assert "RunLevel Highest" in source
+
+
+def test_l_installation_du_demarrage_rgb_est_constatee():
+    """Un script eleve qui dit "c'est fait" ne prouve rien : le defaut avait
+    deja ete rencontre avec _arreter_eleve(). On relit la machine."""
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.installer_demarrage)
+    apres_elevation = source.split("_executer_eleve", 1)[1]
+    assert "_tache_installee()" in apres_elevation

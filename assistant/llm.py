@@ -565,6 +565,32 @@ TOOLS: list[Tool] = [
         effect=True,
     ),
     Tool(
+        "installer_demarrage_rgb",
+        "Fait demarrer le serveur OpenRGB avec la session Windows, en "
+        "administrateur, sans plus jamais afficher de fenetre d'autorisation. "
+        "A utiliser quand l'utilisateur se plaint que le RGB demande une "
+        "autorisation Windows a chaque demarrage. Une derniere autorisation "
+        "est demandee au moment de l'installation. Reversible.",
+        _obj({}),
+        lambda: rgb.installer_demarrage(),
+        effect=True,
+    ),
+    Tool(
+        "desinstaller_demarrage_rgb",
+        "Retire le demarrage automatique du serveur OpenRGB. Il redevient "
+        "lancable a la demande, avec une fenetre d'autorisation par session.",
+        _obj({}),
+        lambda: rgb.desinstaller_demarrage(),
+        effect=True,
+    ),
+    Tool(
+        "etat_demarrage_rgb",
+        "Dit si le serveur OpenRGB demarre tout seul avec Windows, ou s'il "
+        "demande encore une autorisation a chaque session.",
+        _obj({}),
+        lambda: rgb.etat_demarrage(),
+    ),
+    Tool(
         "definir_chemin_openrgb",
         "Enregistre ou se trouve OpenRGB quand il est portable et range "
         "ailleurs que dans les emplacements habituels. Sert quand "

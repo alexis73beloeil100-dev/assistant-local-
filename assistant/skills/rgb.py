@@ -408,6 +408,11 @@ def liberer(ask=None) -> str:
         details="Ces logiciels gardent le controleur et recouvrent chaque "
                 "commande. Ils sont arretes, pas desactives : ils repartiront "
                 "au prochain demarrage de Windows.",
+        # Geste courant : c'est le prealable de "mets les LED en bleu", pas
+        # une decision separee. Demander l'accord ici revenait a faire
+        # confirmer une commande deja donnee -- et rien n'est perdu, les
+        # logiciels repartent au prochain demarrage de Windows.
+        routine=True,
     )
     try:
         safety.guard(action, ask=ask)
@@ -556,12 +561,139 @@ def _serveur_actif(timeout: float = 0.6) -> bool:
         return False
 
 
+# Nom de la tache planifiee qui lance le serveur avec la session Windows.
+#
+# Elle existe pour une seule raison : supprimer la fenetre UAC. Une tache
+# enregistree "avec les privileges les plus eleves" demarre son programme en
+# administrateur sans rien demander -- l'autorisation a ete donnee une fois, a
+# l'enregistrement, et Windows s'en souvient. C'est le mecanisme prevu par
+# Microsoft pour ce cas precis : il faut deja etre administrateur pour creer la
+# tache, et elle reste visible et supprimable dans le Planificateur de taches.
+#
+# Sans elle, l'utilisateur voyait une demande d'elevation a chaque session,
+# pour un geste -- allumer ses LED -- qui ne merite pas qu'on s'y arrete.
+TACHE_SERVEUR = "AssistantLocal - serveur OpenRGB"
+
+
+def _tache_installee() -> bool:
+    """La tache planifiee du serveur existe-t-elle ?"""
+    try:
+        resultat = subprocess.run(
+            ["schtasks.exe", "/query", "/tn", TACHE_SERVEUR],
+            capture_output=True, text=True, timeout=20,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return resultat.returncode == 0
+
+
+def etat_demarrage() -> str:
+    """Ou en est le lancement automatique du serveur, en clair."""
+    if _executable() is None:
+        return "OpenRGB introuvable : il n'y a rien a lancer."
+
+    if not _tache_installee():
+        return ("Le serveur OpenRGB demarre a la demande, avec une fenetre "
+                "d'autorisation Windows a chaque session.\n"
+                "  \"installe le demarrage du RGB\" la supprime pour de bon "
+                "(une derniere autorisation a accorder).")
+
+    repond = "il repond" if _serveur_actif() else "il ne repond pas encore"
+    return (f"Le serveur OpenRGB demarre avec ta session, en administrateur et "
+            f"sans rien demander ({repond}).\n"
+            f"  Tache Windows : \"{TACHE_SERVEUR}\"\n"
+            "  Pour l'enlever : \"desinstalle le demarrage du RGB\".")
+
+
+def installer_demarrage() -> str:
+    """Enregistre la tache planifiee qui lance le serveur avec la session.
+
+    Une seule fenetre d'autorisation, ici et maintenant : creer une tache
+    "privileges les plus eleves" exige d'etre administrateur. Ensuite, plus
+    jamais.
+
+    MultipleInstances=IgnoreNew evite un defaut deja constate sur cette
+    machine : deux OpenRGB lances en meme temps, dont un seul obtient le port,
+    l'autre restant a disputer le controleur sans repondre a personne.
+    """
+    exe = _executable()
+    if exe is None:
+        return "OpenRGB introuvable : impossible d'installer son demarrage."
+
+    if _tache_installee():
+        return ("Le demarrage automatique du serveur RGB etait deja installe.\n"
+                + etat_demarrage())
+
+    compte = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}"
+    lignes = [
+        f"$action = New-ScheduledTaskAction -Execute '{exe}' "
+        "-Argument '--server --noautoconnect'",
+        f"$declencheur = New-ScheduledTaskTrigger -AtLogOn -User '{compte}'",
+        f"$identite = New-ScheduledTaskPrincipal -UserId '{compte}' "
+        "-LogonType Interactive -RunLevel Highest",
+        # ExecutionTimeLimit a zero : un serveur n'a pas de duree de vie
+        # prevue, et Windows arrete par defaut toute tache passe trois jours.
+        "$reglages = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries "
+        "-DontStopIfGoingOnBatteries -StartWhenAvailable "
+        "-ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew",
+        f"Register-ScheduledTask -TaskName '{TACHE_SERVEUR}' -Action $action "
+        "-Trigger $declencheur -Principal $identite -Settings $reglages "
+        "-Description 'Lance le serveur OpenRGB pour Assistant local. "
+        "Supprimable sans risque : le RGB redemandera alors une autorisation "
+        "a chaque session.' -Force | Out-Null",
+    ]
+
+    erreur = _executer_eleve(lignes)
+    if erreur:
+        return erreur
+
+    # Constate, pas rapporte. Un script eleve qui dit "c'est fait" ne prouve
+    # rien : on relit l'etat de la machine. Meme raison qu'au-dessus, dans
+    # _arreter_eleve().
+    if not _tache_installee():
+        return ("La tache n'a pas ete creee : l'autorisation administrateur a "
+                "probablement ete refusee. Rien n'a change.")
+
+    ok, message = demarrer_serveur()
+    suite = ("Le serveur repond deja." if ok
+             else f"Il demarrera a ta prochaine session ({message})")
+    return ("Demarrage automatique du serveur RGB installe.\n"
+            "  OpenRGB se lancera en administrateur avec ta session Windows, "
+            "sans plus jamais demander d'autorisation.\n"
+            f"  {suite}\n"
+            "  Pour revenir en arriere : \"desinstalle le demarrage du RGB\".")
+
+
+def desinstaller_demarrage() -> str:
+    """Retire la tache planifiee. Le serveur redevient lancable a la demande."""
+    if not _tache_installee():
+        return "Le demarrage automatique du serveur RGB n'etait pas installe."
+
+    erreur = _executer_eleve(
+        [f"Unregister-ScheduledTask -TaskName '{TACHE_SERVEUR}' "
+         "-Confirm:$false"])
+    if erreur:
+        return erreur
+
+    if _tache_installee():
+        return ("La tache n'a pas pu etre supprimee : l'autorisation "
+                "administrateur a probablement ete refusee.")
+    return ("Demarrage automatique du serveur RGB retire.\n"
+            "  Le serveur reste lancable a la demande, avec une fenetre "
+            "d'autorisation Windows a chaque session.")
+
+
 def demarrer_serveur(attente: float = 20.0) -> tuple[bool, str]:
     """Lance le serveur OpenRGB si besoin, et attend qu'il reponde.
 
     Meme raison que pour Ollama : exiger de l'utilisateur qu'il lance un
     programme avant l'assistant, c'est garantir qu'il oubliera, et que la
     fonction paraitra cassee sans que rien n'explique pourquoi.
+
+    Deux voies, dans cet ordre : la tache planifiee, qui porte deja le droit
+    administrateur et ne demande donc rien ; sinon l'elevation a la main, avec
+    sa fenetre UAC. Voir installer_demarrage().
 
     --noautoconnect empeche le serveur de se connecter a un autre serveur
     OpenRGB : sans lui, deux instances se renvoient la balle.
@@ -574,6 +706,27 @@ def demarrer_serveur(attente: float = 20.0) -> tuple[bool, str]:
     exe = _executable()
     if exe is None:
         return False, "OpenRGB introuvable."
+
+    # La tache sert aussi EN COURS de session : si le serveur a ete ferme, la
+    # relancer par elle evite la fenetre UAC qu'on cherche justement a faire
+    # disparaitre. On ne se contente pas de compter sur le declenchement a
+    # l'ouverture de session.
+    if _tache_installee():
+        lancee = True
+        try:
+            subprocess.run(
+                ["schtasks.exe", "/run", "/tn", TACHE_SERVEUR],
+                capture_output=True, text=True, timeout=60,
+                creationflags=CREATE_NO_WINDOW,
+            )
+        except (subprocess.SubprocessError, OSError):
+            lancee = False      # on retombe sur l'elevation a la main
+        if lancee:
+            limite = time.time() + attente
+            while time.time() < limite:
+                if _serveur_actif():
+                    return True, "serveur demarre par la tache planifiee"
+                time.sleep(0.5)
 
     # EN ADMINISTRATEUR, et c'est indispensable.
     #

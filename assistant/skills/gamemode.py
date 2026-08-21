@@ -4,8 +4,10 @@ Une seule phrase remplace une routine que les joueurs font a la main : fermer
 les programmes gourmands, passer en profil performance, basculer le son sur
 le casque, puis lancer le jeu.
 
-Rien n'est ferme sans accord, et tout est reversible : "quitte le mode jeu"
-remet le profil d'alimentation d'origine.
+Tout est reversible : les programmes fermes se relancent normalement, et
+"quitte le mode jeu" remet le profil d'alimentation d'origine. Rien n'est
+donc soumis a confirmation -- dire "mode jeu" EST l'accord. "apercu()" montre
+ce qui serait ferme, sans rien faire.
 """
 from __future__ import annotations
 
@@ -120,14 +122,25 @@ def activer(jeu: str = "", audio: str = "", ask=None) -> str:
     if audio:
         rapport.append("  " + control.set_audio_output(audio))
 
-    # 3. Fermeture des gourmands, chacun soumis a confirmation.
+    # 3. Fermeture des gourmands, sans confirmation, et c'est voulu.
+    #
+    # "Mode jeu" veut dire exactement ca : ferme ce qui mange la machine.
+    # Demander l'accord programme par programme ouvrait une fenetre par
+    # navigateur ouvert -- il fallait cliquer cinq fois "oui" a ce qu'on venait
+    # de demander a voix haute, manette en main.
+    #
+    # Le risque reste nul : GOURMANDS ne liste que des applications ordinaires,
+    # EPARGNES protege les compagnons de jeu, arreter_processus refuse les
+    # processus systeme, et "apercu()" permet de voir la liste avant. Tout
+    # passe au journal des actions sous le verdict "auto:routine".
     trouves = _candidats()
     if not trouves:
         rapport.append("  Aucun programme gourmand a fermer.")
     else:
         libere = 0
         for candidat in trouves:
-            resultat = fixes.arreter_processus(candidat.nom, ask=ask)
+            resultat = fixes.arreter_processus(candidat.nom, ask=ask,
+                                               routine=True)
             if resultat.ok:
                 libere += candidat.ram
                 rapport.append(f"  ferme : {candidat.nom} "

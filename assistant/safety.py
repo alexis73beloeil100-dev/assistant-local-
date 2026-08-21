@@ -1,8 +1,13 @@
 """Garde-fou : lecture libre, ecriture confirmee.
 
 Toute fonction qui modifie la machine (registre, service, fichier, reglage
-de jeu) passe par `guard()`. Rien ne s'execute sans un accord explicite, et
-certains chemins sont refuses meme si tu dis oui.
+de jeu) passe par `guard()`, et certains chemins sont refuses meme si tu dis
+oui.
+
+L'accord est demande par defaut. Deux exceptions, toutes deux journalisees :
+les actions marquees `routine` -- des gestes quotidiens et reversibles, ou la
+demande de l'utilisateur vaut accord -- et les appelants qui fournissent
+eux-memes un `ask` acceptant, comme la frappe au clavier dictee.
 """
 from __future__ import annotations
 
@@ -39,6 +44,19 @@ class Action:
     # c'est le seul moment ou on le connait encore. Les operations disponibles
     # sont listees dans assistant.annulation.
     annulation: dict | None = None
+
+    # Geste courant : fait sans demander.
+    #
+    # Le garde-fou existe pour les actions qu'on regretterait. Changer la
+    # couleur des LED ou fermer Chrome avant une partie ne sont pas de
+    # celles-la : ce sont des gestes qu'on refait dix fois par jour. Une
+    # fenetre a chacun d'eux rend la commande vocale absurde -- il faut lacher
+    # la manette pour cliquer "oui" a ce qu'on vient de demander a voix haute.
+    #
+    # Ce drapeau ne desarme rien d'autre : les chemins proteges refusent
+    # toujours, guard() l'ignore sur une action irreversible, et le journal
+    # garde la trace de tout sous le verdict "auto:routine".
+    routine: bool = False
 
     def describe(self) -> str:
         lines = [f"[{self.kind}] {self.summary}"]
@@ -135,6 +153,14 @@ def guard(action: Action, ask=None) -> bool:
 
     if not config.REQUIRE_CONFIRMATION:
         _audit(action, "auto")
+        return True
+
+    # Un geste courant passe seul -- mais jamais s'il est irreversible. Les
+    # deux conditions sont verifiees ici, et pas au moment de construire
+    # l'Action : ainsi un futur appelant qui cocherait `routine` sur une
+    # suppression definitive verrait quand meme la fenetre s'ouvrir.
+    if action.routine and action.reversible:
+        _audit(action, "auto:routine")
         return True
 
     ask = ask or _asker or _ask_terminal

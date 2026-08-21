@@ -188,11 +188,15 @@ def desactivations() -> str:
 
 # --- Processus --------------------------------------------------------------
 
-def arreter_processus(cible: str, ask=None) -> Result:
+def arreter_processus(cible: str, ask=None, routine: bool = False) -> Result:
     """Arrete un processus qui monopolise la machine.
 
     Refuse les processus systeme : arreter lsass ou csrss fait tomber la
     session immediatement, ce n'est jamais ce que l'utilisateur veut.
+
+    `routine` vaut pour les appels ou l'utilisateur a deja dit ce qu'il
+    voulait fermer -- le mode jeu, qui annonce sa liste avant d'agir. Un
+    "arrete Chrome" dit isolement laisse le defaut, et demande.
     """
     import psutil
 
@@ -233,6 +237,7 @@ def arreter_processus(cible: str, ask=None) -> Result:
         targets=[f"{nom} pid {p}" for p in pids],
         reversible=True,
         details="Le programme peut etre relance normalement ensuite.",
+        routine=routine,
     )
     try:
         safety.guard(action, ask=ask)
