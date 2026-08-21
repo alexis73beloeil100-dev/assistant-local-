@@ -6,6 +6,19 @@ from PyInstaller.utils.hooks import collect_all
 # l'application packagee ne sait plus relever la configuration de la machine.
 datas = [('assistant/skills/probe.ps1', 'assistant/skills'),
          ('assistant/skills/inventaire.ps1', 'assistant/skills')]
+
+# Outils tiers portables embarques avec l'application.
+#
+# L'utilisateur ne veut rien installer sur sa machine : ces outils vivent DANS
+# l'assistant, partent avec lui et s'en vont avec lui. Le dossier est declare
+# seulement s'il existe -- l'application doit se construire meme sans, et
+# expliquer proprement ce qui manque plutot que d'echouer a la construction.
+import os as _os
+
+if _os.path.isdir('outils'):
+    for _racine, _sous, _fichiers in _os.walk('outils'):
+        if _fichiers:
+            datas.append((_os.path.join(_racine, '*'), _racine))
 binaries = []
 hiddenimports = ['pyttsx3.drivers', 'pyttsx3.drivers.sapi5', 'pynput.keyboard._win32', 'pynput.mouse._win32']
 hiddenimports += collect_submodules('assistant')

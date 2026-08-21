@@ -65,18 +65,53 @@ class Peripherique:
     mode_actif: str = ""
 
 
+# Outil EMBARQUE avec l'application. C'est l'emplacement prioritaire.
+#
+# L'utilisateur ne veut rien installer sur sa machine : ni entree dans
+# Program Files, ni cle de registre, ni desinstalleur de plus. L'outil vit
+# donc DANS l'application, part avec elle, et s'en va avec elle.
+#
+# Le chemin est relatif au paquet, pas au dossier courant : dans l'executable
+# packagee, les fichiers de donnees atterrissent dans _MEIPASS.
+OUTIL_EMBARQUE = Path("outils") / "OpenRGB" / "OpenRGB.exe"
+
+
+def _embarque() -> Path | None:
+    """L'OpenRGB livre avec l'assistant, en sources comme en packagee."""
+    import sys
+
+    from assistant import config
+
+    candidats = [config.ROOT / OUTIL_EMBARQUE]
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        candidats.insert(0, Path(base) / OUTIL_EMBARQUE)
+    for chemin in candidats:
+        try:
+            if chemin.is_file():
+                return chemin
+        except OSError:
+            continue
+    return None
+
+
 def _executable() -> Path | None:
-    """Trouve OpenRGB, sans supposer ou il est.
+    """Trouve OpenRGB. L'exemplaire embarque passe avant tout le reste.
 
-    Un chemin explicite enregistre par l'utilisateur prime sur tout : une
-    installation portable peut vivre n'importe ou, et chercher indefiniment
-    sur les disques couterait plus cher que de demander une fois.
+    Ordre voulu :
+      1. celui livre avec l'application -- il est de la version attendue, et
+         il ne demande aucune installation ;
+      2. un chemin explicitement enregistre par l'utilisateur ;
+      3. une installation deja presente sur la machine, s'il y en a une.
 
-    Le dossier de l'application est cherche EN DERNIER, et volontairement :
-    dans l'executable packagee, il est efface et recree a chaque
-    reconstruction. Ce qu'on y pose disparait a la mise a jour suivante.
+    Chercher sur l'ensemble des disques n'est jamais fait : ca couterait plus
+    cher que de demander une fois ou se trouve le fichier.
     """
-    from assistant import config, settings
+    from assistant import settings
+
+    integre = _embarque()
+    if integre is not None:
+        return integre
 
     force = settings.get("openrgb_chemin", "")
     if force and Path(force).is_file():
@@ -86,13 +121,27 @@ def _executable() -> Path | None:
     if trouve:
         return Path(trouve)
 
-    for chemin in CANDIDATS + [config.ROOT / "OpenRGB" / "OpenRGB.exe"]:
+    for chemin in CANDIDATS:
         try:
             if chemin.is_file():
                 return chemin
         except OSError:      # chemin invalide sur cette machine
             continue
     return None
+
+
+def source() -> str:
+    """D'ou vient l'OpenRGB utilise : embarque, enregistre, ou du systeme."""
+    if _embarque() is not None:
+        return "livre avec l'assistant"
+    exe = _executable()
+    if exe is None:
+        return "absent"
+    from assistant import settings
+
+    if settings.get("openrgb_chemin", "") == str(exe):
+        return "chemin enregistre"
+    return "installe sur la machine"
 
 
 def definir_chemin(chemin: str) -> str:
@@ -283,13 +332,15 @@ def liste() -> str:
             "  l'automatisation Windows : ses commandes sont des images\n"
             "  dessinees. Il n'y a rien a piloter de l'exterieur.\n\n"
             "  OpenRGB parle au materiel lui-meme et couvre la plupart des\n"
-            "  marques derriere une seule interface. Il est libre et\n"
-            "  fonctionne hors ligne.\n\n"
-            "  OU L'INSTALLER : sur le PC, normalement. PAS dans le dossier\n"
-            "  de l'assistant : celui-ci est efface et recree a chaque\n"
-            "  reconstruction de l'executable, et ce qu'on y pose disparait.\n"
-            "  Une fois installe il est trouve tout seul ; s'il est portable\n"
-            "  et range ailleurs, dis \"OpenRGB est dans <chemin>\".\n\n"
+            "  marques derriere une seule interface. Il est libre, portable\n"
+            "  et fonctionne hors ligne.\n\n"
+            "  RIEN N'EST A INSTALLER SUR LE PC. L'outil se pose DANS\n"
+            "  l'application :\n\n"
+            f"      {OUTIL_EMBARQUE}\n\n"
+            "  Depuis cet emplacement il part avec l'assistant, se retrouve\n"
+            "  dans l'executable a la reconstruction, et s'en va avec lui :\n"
+            "  aucune entree dans Program Files, aucune cle de registre,\n"
+            "  aucun desinstalleur de plus.\n\n"
             "  Ferme le logiciel du fabricant avant de t'en servir : deux\n"
             "  programmes sur le meme controleur font clignoter l'eclairage."
             + _ce_qui_existe_deja()
