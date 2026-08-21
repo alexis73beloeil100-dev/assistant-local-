@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import subprocess
 import threading
+import time
 
 from assistant import safety
 
@@ -284,6 +285,224 @@ def cancel_shutdown() -> str:
     if not ok:
         return "Aucun arret n'etait programme."
     return "Arret annule."
+
+
+# --- Lecture en cours : musique, films, videos -------------------------------
+#
+# On envoie les touches multimedia du clavier, pas des commandes a une
+# application precise. C'est ce qui fait qu'une seule implementation pilote
+# Spotify, VLC, YouTube dans le navigateur, Netflix et le lecteur Windows :
+# toutes ecoutent ces touches. Cibler une application par son nom aurait
+# demande un pilote par application, et aurait casse a chaque mise a jour.
+
+_TOUCHES_MEDIA = {
+    "play": (0xB3, "Lecture / pause"),
+    "pause": (0xB3, "Lecture / pause"),
+    "suivant": (0xB0, "Piste suivante"),
+    "precedent": (0xB1, "Piste precedente"),
+    "stop": (0xB2, "Arret de la lecture"),
+}
+
+_SYNONYMES_MEDIA = {
+    "lecture": "play", "lire": "play", "jouer": "play", "reprendre": "play",
+    "pause": "pause", "arreter": "stop", "arret": "stop",
+    "suivante": "suivant", "suivant": "suivant", "next": "suivant",
+    "avance": "suivant", "changer": "suivant", "passer": "suivant",
+    "precedente": "precedent", "precedent": "precedent", "retour": "precedent",
+    "back": "precedent", "recommencer": "precedent",
+}
+
+KEYEVENTF_KEYUP = 0x0002
+
+
+def _frapper(code: int) -> None:
+    import ctypes
+
+    ctypes.windll.user32.keybd_event(code, 0, 0, 0)
+    ctypes.windll.user32.keybd_event(code, 0, KEYEVENTF_KEYUP, 0)
+
+
+def media(action: str) -> str:
+    """Pilote la lecture en cours, quelle que soit l'application.
+
+    Aucune confirmation : mettre en pause n'est pas une modification de la
+    machine, et demander l'accord pour chaque "pause" serait insupportable.
+    """
+    demande = (action or "").strip().lower()
+    cle = _SYNONYMES_MEDIA.get(demande, demande)
+    if cle not in _TOUCHES_MEDIA:
+        return ("Actions possibles : play, pause, suivant, precedent, stop.")
+
+    code, libelle = _TOUCHES_MEDIA[cle]
+    try:
+        _frapper(code)
+    except Exception as exc:  # noqa: BLE001
+        return f"Touche multimedia impossible : {type(exc).__name__}: {exc}"
+    return (f"{libelle}. Si rien ne bouge, c'est qu'aucune application ne "
+            "lit quoi que ce soit.")
+
+
+# --- Ecrire au clavier -------------------------------------------------------
+#
+# Le texte est injecte en Unicode, caractere par caractere, et non par des
+# codes de touches. Un code de touche depend de la disposition du clavier :
+# la meme frappe donne "a" en AZERTY et "q" en QWERTY, et tous les accents
+# seraient perdus.
+
+_cible_precedente = 0
+
+
+def memoriser_cible(hwnd: int) -> None:
+    """Retient la fenetre qui avait le focus avant la notre.
+
+    Sans cela, "tape bonjour" ecrirait dans l'assistant lui-meme : au moment
+    ou l'utilisateur clique ou parle, c'est notre fenetre qui est au premier
+    plan, pas celle ou il veut ecrire.
+    """
+    global _cible_precedente
+    if hwnd:
+        _cible_precedente = int(hwnd)
+
+
+def _rendre_le_focus() -> bool:
+    if not _cible_precedente:
+        return False
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        if not user32.IsWindow(_cible_precedente):
+            return False
+        user32.SetForegroundWindow(_cible_precedente)
+        time.sleep(0.15)      # laisser Windows effectuer la bascule
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def taper(texte: str, ask=None) -> str:
+    """Ecrit un texte dans la fenetre active, comme au clavier.
+
+    **Sans demander confirmation.** Demander l'accord pour un texte que
+    l'utilisateur vient de dicter ou d'ecrire lui-meme n'apporte rien : il
+    connait deja le contenu, et une fenetre de plus entre la demande et la
+    frappe rend la fonction inutilisable pour ce a quoi elle sert -- dicter
+    dans un logiciel qui ne connait pas la dictee.
+
+    L'action reste JOURNALISEE : on peut toujours savoir ce qui a ete tape et
+    quand. C'est la trace qui compte ici, pas la barriere.
+    """
+    texte = texte or ""
+    if not texte:
+        return "Rien a taper."
+
+    action = safety.Action(
+        kind="clavier",
+        summary=f"Taper {len(texte)} caractere(s) dans la fenetre active",
+        # Prefixe volontaire. `targets` est le champ compare aux chemins
+        # proteges : un texte commencant par "C:\\Windows" aurait ete refuse
+        # comme si on modifiait le dossier systeme, alors qu'on ne fait que
+        # l'ecrire. Le prefixe le sort de l'espace des chemins.
+        targets=[f"texte: {texte[:200]}"],
+        reversible=False,
+        details="Le texte part dans l'application au premier plan.",
+    )
+    try:
+        # La demande de l'utilisateur EST l'accord.
+        safety.guard(action, ask=ask or (lambda _texte: True))
+    except safety.Refused as exc:
+        return str(exc)
+
+    rendu = _rendre_le_focus()
+    try:
+        _injecter(texte)
+    except Exception as exc:  # noqa: BLE001
+        return f"Frappe impossible : {type(exc).__name__}: {exc}"
+
+    ou = "dans la fenetre precedente" if rendu else "dans la fenetre active"
+    return f"{len(texte)} caractere(s) tapes {ou}."
+
+
+def _injecter(texte: str) -> None:
+    """Envoie le texte en Unicode via SendInput."""
+    import ctypes
+    from ctypes import wintypes
+
+    class ENTREE_CLAVIER(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD),
+                    ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD),
+                    ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+
+    class _UNION(ctypes.Union):
+        _fields_ = [("ki", ENTREE_CLAVIER)]
+
+    class ENTREE(ctypes.Structure):
+        _fields_ = [("type", wintypes.DWORD), ("u", _UNION)]
+
+    ENTREE_TYPE_CLAVIER = 1
+    UNICODE = 0x0004
+
+    user32 = ctypes.windll.user32
+    for caractere in texte:
+        for drapeaux in (UNICODE, UNICODE | KEYEVENTF_KEYUP):
+            entree = ENTREE(
+                type=ENTREE_TYPE_CLAVIER,
+                u=_UNION(ki=ENTREE_CLAVIER(
+                    wVk=0, wScan=ord(caractere), dwFlags=drapeaux,
+                    time=0, dwExtraInfo=None)),
+            )
+            user32.SendInput(1, ctypes.byref(entree), ctypes.sizeof(entree))
+        # Une rafale sans pause fait perdre des caracteres aux applications
+        # qui traitent leur file d'evenements lentement.
+        time.sleep(0.004)
+
+
+# --- Ouvrir le bon reglage Windows -------------------------------------------
+#
+# Chaque entree du pupitre pointe vers l'endroit EXACT du systeme, pas vers la
+# page d'accueil des parametres. "Ou est-ce qu'on regle ca ?" est la question
+# qui fait perdre le plus de temps dans Windows.
+
+REGLAGES = {
+    "son": ("ms-settings:sound", "Parametres du son"),
+    "peripheriques_audio": ("ms-settings:sound-devices",
+                            "Peripheriques audio"),
+    "melangeur": ("ms-settings:apps-volume",
+                  "Volume par application"),
+    "alimentation": ("ms-settings:powersleep",
+                     "Alimentation et mise en veille"),
+    "profils_alimentation": ("powercfg.cpl", "Profils d'alimentation"),
+    "affichage": ("ms-settings:display", "Affichage"),
+    "demarrage": ("ms-settings:startupapps", "Applications au demarrage"),
+    "applications": ("ms-settings:appsfeatures",
+                     "Applications installees"),
+    "stockage": ("ms-settings:storagesense", "Stockage"),
+    "bluetooth": ("ms-settings:bluetooth", "Bluetooth et appareils"),
+    "reseau": ("ms-settings:network-status", "Reseau"),
+    "confidentialite_micro": ("ms-settings:privacy-microphone",
+                              "Acces au microphone"),
+    "notifications": ("ms-settings:notifications", "Notifications"),
+    "gestionnaire": ("taskmgr.exe", "Gestionnaire des taches"),
+    "peripheriques": ("devmgmt.msc", "Gestionnaire de peripheriques"),
+    "disques": ("cleanmgr.exe", "Nettoyage de disque"),
+}
+
+
+def ouvrir_reglage(cle: str) -> str:
+    """Ouvre la page de reglages Windows correspondante."""
+    entree = REGLAGES.get((cle or "").strip().lower())
+    if entree is None:
+        return ("Reglages connus : " + ", ".join(sorted(REGLAGES)))
+
+    cible, libelle = entree
+    try:
+        # explorer.exe sait ouvrir aussi bien une URI ms-settings: qu'un .cpl
+        # ou un .msc ; os.startfile echoue sur certaines de ces formes.
+        subprocess.Popen(["explorer.exe", cible],
+                         creationflags=CREATE_NO_WINDOW)
+    except OSError as exc:
+        return f"Ouverture impossible : {exc}"
+    return f"{libelle} ouvert."
 
 
 # --- Vue d'ensemble ---------------------------------------------------------

@@ -13,10 +13,11 @@ from typing import Callable
 import requests
 
 from assistant import config
+from assistant import connaissance
 from assistant import selftest
 from assistant.skills import (apps, cleanup, content, control, desk, files,
-                              fixes, gamemode, games, hardware, reminders,
-                              shell, system, vision)
+                              fixes, gamemode, games, hardware, inventaire,
+                              reminders, shell, system, vision)
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -241,6 +242,16 @@ TOOLS: list[Tool] = [
         effect=True,
     ),
     Tool(
+        "desinstaller_jeu",
+        "Ouvre la desinstallation d'un jeu, via son launcher. N'efface rien "
+        "directement : c'est Steam, Epic ou Ubisoft qui agit, sinon leur "
+        "bibliotheque devient incoherente. Demande confirmation.",
+        _obj({"nom": {**STR, "description": "Nom du jeu a desinstaller"}},
+             ["nom"]),
+        lambda nom: games.desinstaller(nom),
+        effect=True,
+    ),
+    Tool(
         "lire_fichier",
         "Lit le CONTENU d'un fichier (texte, code, config, PDF, Word, Excel, "
         "PowerPoint) pour repondre a une question dessus. Donne le chemin "
@@ -433,6 +444,40 @@ TOOLS: list[Tool] = [
         effect=True,
     ),
     Tool(
+        "lecture_media",
+        "Pilote ce qui joue en ce moment : musique, film, video, quelle que "
+        "soit l'application (Spotify, VLC, YouTube, Netflix). Actions : play, "
+        "pause, suivant, precedent, stop. Sert pour \"mets la musique\", "
+        "\"change de morceau\", \"pause le film\", \"chanson suivante\".",
+        _obj({"action": {**STR, "description":
+                         "play, pause, suivant, precedent ou stop"}},
+             ["action"]),
+        lambda action: control.media(action),
+        effect=True,
+    ),
+    Tool(
+        "taper_au_clavier",
+        "Ecrit un texte dans l'application ou l'utilisateur travaille, comme "
+        "s'il l'avait tape. Sert a dicter dans un logiciel qui ne connait pas "
+        "la dictee. La frappe part immediatement, sans confirmation : ecris "
+        "exactement ce que l'utilisateur a demande, rien de plus.",
+        _obj({"texte": {**STR, "description": "Le texte exact a taper"}},
+             ["texte"]),
+        lambda texte: control.taper(texte),
+        effect=True,
+    ),
+    Tool(
+        "ouvrir_reglage_windows",
+        "Ouvre directement la page de reglages Windows concernee, plutot que "
+        "d'expliquer ou cliquer. Cles : son, peripheriques_audio, melangeur, "
+        "alimentation, profils_alimentation, affichage, demarrage, "
+        "applications, stockage, bluetooth, reseau, confidentialite_micro, "
+        "notifications, gestionnaire, peripheriques, disques.",
+        _obj({"cle": STR}, ["cle"]),
+        lambda cle: control.ouvrir_reglage(cle),
+        effect=True,
+    ),
+    Tool(
         "sorties_audio",
         "Liste les peripheriques de sortie audio et indique celui utilise.",
         _obj({}),
@@ -591,6 +636,37 @@ TOOLS: list[Tool] = [
         lambda: gamemode.apercu(),
     ),
     Tool(
+        "ce_que_je_sais",
+        "Interroge tout ce que l'assistant a appris de CETTE machine au "
+        "demarrage : materiel, disques, logiciels installes, services, taches "
+        "planifiees, pilotes, jeux, programmes de demarrage. Sert des qu'une "
+        "question porte sur ce qui est installe ou configure ici -- \"est-ce "
+        "que j'ai tel logiciel\", \"quel pilote pour ma carte\", \"quels "
+        "services tournent\". Beaucoup plus rapide qu'un nouveau releve. "
+        "Sans argument, rend un resume de ce qui est connu.",
+        _obj({"sujet": {**STR, "description":
+                        "Mots recherches, par exemple \"nvidia\" ou \"steam\""}}),
+        lambda sujet="": connaissance.rapport(sujet),
+    ),
+    Tool(
+        "inventaire_logiciel",
+        "Liste ce qui est installe sur la machine : logiciels, services, "
+        "taches planifiees, pilotes tiers, navigateurs.",
+        _obj({}),
+        lambda: inventaire.resume(),
+    ),
+    Tool(
+        "oublier",
+        "Efface ce que l'assistant a appris, en totalite ou sur un sujet. "
+        "Sujets : materiel, disques, logiciels, services, jeux, session...",
+        _obj({"sujet": STR}),
+        lambda sujet=None: (
+            f"{connaissance.oublier(sujet)} fait(s) oublie(s)."
+            + (" Tout se reconstruira au prochain demarrage."
+               if not sujet else "")),
+        effect=True,
+    ),
+    Tool(
         "etat_index",
         "Indique quand l'index des fichiers a ete construit et ce qu'il contient.",
         _obj({}),
@@ -724,6 +800,19 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
             if on_tool:
                 on_tool(name, args)
             result = dispatch(name, args, dry_run=dry_run)
+
+            # Ce qu'un outil vient de decouvrir reste disponible pour la suite
+            # de la session : une question posee deux fois ne relance pas le
+            # meme releve. En memoire vive, comme le reste.
+            if not dry_run:
+                try:
+                    from assistant import apprentissage
+
+                    apprentissage.apprendre_de_la_session(
+                        str(args)[:80], name, result)
+                except Exception:  # noqa: BLE001 - jamais bloquant
+                    pass
+
             convo.append({"role": "tool", "name": name, "content": result})
 
     # Limite atteinte : on coupe l'acces aux outils et on exige une reponse.

@@ -27,6 +27,14 @@ class Panel:
     # cocher, boutons) au lieu de texte. Le texte reste utilisable par le
     # modele de langage, l'interface prend l'autre chemin.
     interactif: str = ""
+    # Libelle court, pour la grille d'icones de la barre laterale. Un ou deux
+    # mots : au-dela, la cellule tronque et deux entrees deviennent
+    # indiscernables. `label` reste le titre complet, affiche en tete du
+    # panneau ouvert.
+    court: str = ""
+    # Icone dessinee sous ce nom (voir assistant.icons). Une icone vaut un
+    # coup d'oeil la ou un libelle demande une lecture.
+    icone: str = ""
 
 
 
@@ -340,6 +348,37 @@ def _demarrage() -> str:
     return "\n".join(L)
 
 
+def _connaissance() -> str:
+    from assistant import apprentissage, connaissance
+    from assistant.skills import inventaire
+
+    morceaux = [connaissance.rapport(), ""]
+    if apprentissage.echecs:
+        morceaux.append("SOURCES EN ECHEC")
+        morceaux.append("")
+        for nom, raison in apprentissage.echecs.items():
+            morceaux.append(f"  {nom} : {raison}")
+        morceaux.append("")
+    if inventaire.pret():
+        morceaux.append(inventaire.resume())
+    else:
+        morceaux.append("L'inventaire logiciel est encore en cours.")
+    morceaux += [
+        "",
+        "CE QU'IL N'APPRENDRA JAMAIS",
+        "",
+        "  Le contenu de tes fichiers. Il retient qu'un fichier existe, pas",
+        "  ce qu'il y a dedans.",
+        "",
+        "  Ce qui ressemble a un mot de passe, une cle d'API ou un jeton,",
+        "  meme si tu le lui dictes.",
+        "",
+        "  Et rien de tout cela n'est ecrit sur le disque : demande",
+        "  \"oublie tout\" pour vider la memoire immediatement.",
+    ]
+    return "\n".join(morceaux)
+
+
 def _autotest() -> str:
     from assistant import selftest
 
@@ -437,37 +476,57 @@ def _journal() -> str:
 
 PANELS: list[Panel] = [
     Panel("accueil", "Par ou commencer",
-          "ce qu'il sait faire, avec des exemples", _accueil),
+          "ce qu'il sait faire, avec des exemples", _accueil,
+          court="Debuter", icone="boussole"),
     Panel("configuration", "Ma configuration",
-          "carte mere, CPU, RAM, GPU, disques, Windows", _configuration),
+          "carte mere, CPU, RAM, GPU, disques, Windows", _configuration,
+          court="Config", icone="puce"),
     Panel("problemes", "Problemes detectes",
-          "disques, materiel, journal Windows", _problemes),
+          "disques, materiel, journal Windows", _problemes,
+          court="Sante", icone="alerte"),
     Panel("etat", "Etat en direct",
-          "charge CPU par coeur, RAM, GPU, processus", _etat, live=True),
+          "charge CPU par coeur, RAM, GPU, processus", _etat, live=True,
+          court="En direct", icone="pouls"),
     Panel("lenteurs", "Pourquoi ca rame",
-          "ce qui sature la machine maintenant", _lenteurs, live=True),
-    Panel("jeux", "Mes jeux", "tous launchers confondus", _jeux),
-    Panel("espace", "Espace disque", "ce qui prend de la place", _espace),
-    Panel("fichiers", "Mes fichiers", "index et surveillance", _fichiers),
+          "ce qui sature la machine maintenant", _lenteurs, live=True,
+          court="Lenteurs", icone="jauge"),
+    Panel("jeux", "Mes jeux", "tailles, booster, desinstaller", _jeux,
+          interactif="ludotheque", court="Jeux", icone="manette"),
+    Panel("espace", "Espace disque", "ce qui prend de la place", _espace,
+          court="Espace", icone="disque"),
+    Panel("fichiers", "Mes fichiers", "index et surveillance", _fichiers,
+          court="Fichiers", icone="dossier"),
     Panel("demarrage", "Demarrage de Windows",
           "cocher ce qui se lance avec la session", _demarrage,
-          interactif="startup"),
+          interactif="startup", court="Session", icone="alimentation"),
     Panel("correctifs", "Ce que je peux reparer",
-          "actions disponibles", _correctifs),
+          "actions disponibles", _correctifs,
+          court="Reparer", icone="cle"),
     Panel("controle", "Controle du PC",
-          "volume, sortie audio, alimentation", _controle, live=True),
+          "son, lecture, clavier, alimentation", _controle, live=True,
+          interactif="pupitre", court="Controle", icone="curseurs"),
     Panel("applications", "Mes applications",
-          "tout ce qui peut etre ouvert", _applications),
+          "tout ce qui peut etre ouvert", _applications,
+          court="Apps", icone="grille"),
     Panel("modejeu", "Mode jeu",
-          "preparer la machine avant de jouer", _mode_jeu, live=True),
+          "preparer la machine avant de jouer", _mode_jeu, live=True,
+          court="Mode jeu", icone="fusee"),
     Panel("alertes", "Minuteurs et alertes",
-          "rappels et surveillances", _alertes, live=True),
-    Panel("notes", "Mes notes", "ce que tu as dicte", _notes, live=True),
+          "rappels et surveillances", _alertes, live=True,
+          court="Alertes", icone="cloche"),
+    Panel("notes", "Mes notes", "ce que tu as dicte", _notes, live=True,
+          court="Notes", icone="note"),
     Panel("commandes", "Commandes Windows",
-          "ce qui est autorise et refuse", _commandes),
+          "ce qui est autorise et refuse", _commandes,
+          court="Console", icone="terminal"),
     Panel("journal", "Journal des actions",
-          "tout ce qui a ete fait ou refuse", _journal, live=True),
-    Panel("autotest", "Autotest", "verifier que tout fonctionne", _autotest),
+          "tout ce qui a ete fait ou refuse", _journal, live=True,
+          court="Journal", icone="registre"),
+    Panel("connaissance", "Ce qu'il sait de ce PC",
+          "appris au demarrage, en memoire vive", _connaissance, live=True,
+          court="Su", icone="cerveau"),
+    Panel("autotest", "Autotest", "verifier que tout fonctionne", _autotest,
+          court="Autotest", icone="bouclier"),
 ]
 
 BY_KEY = {p.key: p for p in PANELS}

@@ -55,19 +55,68 @@ RED         = "#FF6B78"
 
 _UI = "Bahnschrift SemiBold"
 _UI_LEGER = "Bahnschrift"
-_MONO = "Cascadia Mono"
+
+# Cascadia Mono SemiBold, pas Cascadia Mono. Meme famille, meme chasse -- donc
+# les colonnes des relevés restent alignees au pixel -- mais une graisse
+# au-dessus. Sur fond sombre, le trait normal "brule" et se lit mal ; c'est la
+# meme correction que celle deja faite sur les libelles de l'interface.
+#
+# La variante est verifiee presente avant usage (voir mono_disponible) : sur
+# une machine ou elle manque, Tk se rabat silencieusement sur une police
+# proportionnelle et tous les tableaux partent en accordeon.
+_MONO = "Cascadia Mono SemiBold"
+_MONO_REPLI = "Cascadia Mono"
 
 FONT_UI        = (_UI, 11)
 FONT_UI_SMALL  = (_UI, 10)
-FONT_UI_TINY   = (_UI_LEGER, 10)
+# Les libelles des cases de navigation. En Bahnschrift maigre ils s'effacaient
+# a cote de leur icone ; en demi-gras, l'icone et le mot ont le meme poids.
+FONT_UI_TINY   = (_UI, 9)
 FONT_TITLE     = (_UI, 16)
 FONT_LABEL     = (_UI, 11)
 FONT_INPUT     = (_UI, 12)
 
-# Les sorties de mesure sont des colonnes alignees : elles exigent une
-# largeur fixe, sinon les tailles et les chemins partent en accordeon.
+
+def mono_disponible(nom: str) -> bool:
+    """La police est-elle reellement installee ?
+
+    Tk ne signale pas une famille absente : il en substitue une autre, souvent
+    proportionnelle, et les colonnes des relevés se decalent sans que rien
+    n'explique pourquoi. On verifie donc avant de choisir.
+    """
+    try:
+        import tkinter.font as tkfont
+
+        return nom in set(tkfont.families())
+    except Exception:  # noqa: BLE001 - pas de racine Tk : on verra plus tard
+        return True
+
+
+def police_mono() -> str:
+    return _MONO if mono_disponible(_MONO) else _MONO_REPLI
+
+
+# Les sorties de mesure sont des colonnes alignees : elles exigent une largeur
+# fixe, sinon les tailles et les chemins partent en accordeon.
+#
+# Resolues a la construction de la fenetre, pas a l'import : interroger la
+# liste des polices demande une racine Tk, qui n'existe pas encore ici.
 FONT_MONO      = (_MONO, 10)
 FONT_MONO_BOLD = (_MONO, 10, "bold")
+FONT_MONO_TITRE = (_MONO, 11, "bold")
+
+
+def resoudre_polices() -> None:
+    """Retombe sur la graisse normale si la demi-grasse manque.
+
+    Appele une fois, apres la creation de la fenetre.
+    """
+    global FONT_MONO, FONT_MONO_BOLD, FONT_MONO_TITRE
+    famille = police_mono()
+    FONT_MONO = (famille, 10)
+    FONT_MONO_BOLD = (famille, 10, "bold")
+    FONT_MONO_TITRE = (famille, 11, "bold")
+
 
 # Les titres de section : capitales espacees, comme une legende d'instrument.
 FONT_HUD       = (_UI, 9)

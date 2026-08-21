@@ -51,6 +51,8 @@ def test_les_outils_qui_agissent_sont_marques():
         "verrouiller_session", "mettre_en_veille", "eteindre_ou_redemarrer",
         "mode_jeu", "quitter_mode_jeu", "copier", "enregistrer_capture",
         "ouvrir_dans_explorateur", "annuler_arret",
+        "lecture_media", "taper_au_clavier", "ouvrir_reglage_windows",
+        "desinstaller_jeu", "oublier",
     }
     marques = {o.name for o in llm.TOOLS if o.effect}
     manquants = doivent_agir - marques

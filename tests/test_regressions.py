@@ -474,3 +474,142 @@ def test_la_boucle_vocale_est_conservee_pour_pouvoir_l_arreter():
     # AttributeError et ne verifiait donc rien du tout.
     source = inspect.getsource(gui.AssistantWindow._basculer_ecoute)
     assert "self.boucle_vocale = boucle" in source
+
+
+# --- La connaissance de la machine -------------------------------------------
+
+def test_le_filtre_a_secrets_ne_mange_pas_la_connaissance_utile():
+    """Un filtre trop large est pire qu'absent.
+
+    La premiere version refusait toute occurrence de "token" ou toute longue
+    chaine alphanumerique. Elle ecartait le service Windows TokenBroker, trois
+    chemins d'installation NVIDIA a cause de leurs GUID, et quatre services
+    dont le nom depasse 28 caracteres. Huit faits perdus en silence, sur une
+    machine qu'on croyait entierement apprise.
+    """
+    from assistant import connaissance
+
+    doivent_passer = [
+        "TokenBroker  Gestionnaire de comptes web",
+        "VSStandardCollectorService150  Visual Studio",
+        "CredentialEnrollmentManagerUserSvc_90017",
+        r"C:\Program Files\NVIDIA Corporation\Installer2"
+        r"\Display.Driver.{3CEE3F49-EAF7-4433-951C-DB00289A4ED8}",
+    ]
+    for texte in doivent_passer:
+        assert not connaissance._sensible(texte), texte
+
+
+def test_un_vrai_secret_n_est_jamais_retenu():
+    from assistant import connaissance
+
+    doivent_etre_refuses = [
+        "mot de passe : hunter2",
+        "le mot de passe est Tr0ub4dor",
+        "api_key=sk_live_51H8xKfL2eZvKY1o2C0ab",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+    ]
+    for texte in doivent_etre_refuses:
+        assert connaissance._sensible(texte), texte
+        assert not connaissance.apprendre("test", "cle", texte)
+
+
+def test_la_connaissance_n_ecrit_rien_sur_le_disque():
+    """L'exigence de l'utilisateur, verifiee dans le code lui-meme."""
+    import inspect
+
+    from assistant import connaissance
+
+    source = inspect.getsource(connaissance)
+    for interdit in ("open(", "write_text", "Path(", "json.dump"):
+        assert interdit not in source, (
+            f"{interdit} dans connaissance.py : la connaissance doit vivre "
+            "en memoire vive uniquement")
+
+
+def test_une_source_d_apprentissage_qui_echoue_est_signalee():
+    """Les jeux ont manque a l'appel sans que rien ne le dise.
+
+    Le code lisait jeu.path quand le champ s'appelle install_dir. Le try/except
+    qui isole chaque source avalait l'AttributeError, et le panneau affichait
+    une machine "entierement apprise" a laquelle il manquait les jeux.
+    """
+    from assistant import apprentissage
+
+    def casse():
+        raise AttributeError("champ inexistant")
+
+    origine = apprentissage.SOURCES
+    apprentissage.SOURCES = (("source de test", casse),)
+    try:
+        apprentissage.tout_apprendre()
+        assert "source de test" in apprentissage.echecs
+        assert "AttributeError" in apprentissage.echecs["source de test"]
+    finally:
+        apprentissage.SOURCES = origine
+
+
+def test_les_champs_lus_sur_un_jeu_existent_vraiment():
+    """Fige le defaut ci-dessus : le nom de champ doit rester juste."""
+    from assistant.skills.games import Game
+
+    attendus = {"name", "launcher", "install_dir", "size_bytes"}
+    assert attendus <= set(Game.__dataclass_fields__)
+
+
+def test_la_connaissance_se_vide_a_la_demande():
+    from assistant import connaissance
+
+    connaissance.apprendre("test_oubli", "cle", "valeur")
+    assert connaissance.chercher("valeur")
+    connaissance.oublier("test_oubli")
+    assert not [f for f in connaissance.chercher("valeur")
+                if f.sujet == "test_oubli"]
+
+
+# --- La frappe au clavier ----------------------------------------------------
+
+def test_taper_n_attend_aucune_confirmation():
+    """Demander l'accord pour un texte qu'on vient de dicter n'apporte rien.
+
+    Une fenetre de plus entre la demande et la frappe rend la fonction
+    inutilisable pour ce a quoi elle sert : dicter dans un logiciel qui ne
+    connait pas la dictee.
+    """
+    import inspect
+
+    from assistant.skills import control
+
+    source = inspect.getsource(control.taper)
+    assert "lambda _texte: True" in source, (
+        "taper() doit accepter d'office ; seule la journalisation compte")
+
+
+def test_taper_un_chemin_systeme_n_est_pas_pris_pour_une_modification():
+    """`targets` est le champ compare aux chemins proteges.
+
+    Ecrire "C:\Windows\System32" dans un editeur aurait ete refuse comme si
+    on modifiait le dossier systeme. Le texte est donc prefixe pour sortir de
+    l'espace des chemins.
+    """
+    from assistant import safety
+    from assistant.skills import control
+
+    action = safety.Action(
+        kind="clavier", summary="test",
+        targets=[f"texte: {chr(92)}".join(["C:", "Windows", "System32"])])
+    assert not safety.is_protected("texte: C:\Windows\System32")
+    # Et le vrai chemin, lui, reste protege.
+    assert safety.is_protected("C:\Windows\System32")
+    assert callable(control.taper)
+
+
+def test_taper_reste_journalise():
+    """Sans confirmation, la trace est la seule garantie qui subsiste."""
+    import inspect
+
+    from assistant.skills import control
+
+    source = inspect.getsource(control.taper)
+    assert "safety.Action" in source and "safety.guard" in source

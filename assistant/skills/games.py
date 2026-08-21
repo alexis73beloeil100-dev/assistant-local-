@@ -380,6 +380,73 @@ def find(query: str, games: list[Game] | None = None) -> list[tuple[float, Game]
     return [item for item in scored if item[0] >= 0.45]
 
 
+def uri_desinstallation(jeu: "Game") -> str:
+    """L'URI qui ouvre la desinstallation du launcher, si elle existe.
+
+    Chaque launcher gere ses propres fichiers : passer par lui plutot que par
+    Windows garantit que la bibliotheque reste coherente et que le jeu peut
+    etre reinstalle sans retelecharger ce qui reste sur le disque.
+    """
+    if jeu.launcher == "steam":
+        return f"steam://uninstall/{jeu.game_id}"
+    if jeu.launcher == "epic":
+        return f"com.epicgames.launcher://apps/{jeu.game_id}?action=uninstall"
+    if jeu.launcher == "ubisoft":
+        return f"uplay://uninstall/{jeu.game_id}"
+    return ""
+
+
+def desinstaller(nom: str, ask=None) -> str:
+    """Ouvre la desinstallation du jeu, apres accord explicite.
+
+    On n'efface RIEN nous-memes. Supprimer les fichiers a la main laisserait
+    le launcher persuade que le jeu est installe, et la reinstallation
+    echouerait de facon incomprehensible. On ouvre donc la desinstallation
+    officielle, et c'est elle qui agit.
+
+    Contrairement a la frappe au clavier, celle-ci demande confirmation : on
+    parle de dizaines de gigaoctets a retelecharger.
+    """
+    from assistant import safety
+
+    correspondances = find(nom)
+    if not correspondances:
+        return f"Aucun jeu installe ne ressemble a \"{nom}\"."
+    if len(correspondances) > 1 and correspondances[1][0] > correspondances[0][0] - 0.08:
+        options = ", ".join(g.name for _, g in correspondances[:4])
+        return f"Plusieurs jeux correspondent : {options}. Lequel ?"
+
+    jeu = correspondances[0][1]
+    taille = (f"{jeu.size_bytes / 1e9:.1f} Go"
+              if jeu.size_bytes else "taille inconnue")
+
+    action = safety.Action(
+        kind="jeu",
+        summary=f"Desinstaller {jeu.name} ({taille})",
+        targets=[f"jeu: {jeu.name} — {jeu.launcher}"],
+        reversible=False,
+        details=f"Le desinstalleur de {jeu.launcher} va s'ouvrir. "
+                f"Reinstaller demandera de retelecharger {taille}.",
+    )
+    try:
+        safety.guard(action, ask=ask)
+    except safety.Refused as exc:
+        return str(exc)
+
+    uri = uri_desinstallation(jeu)
+    try:
+        if uri:
+            os.startfile(uri)
+            return (f"Desinstallation de {jeu.name} ouverte dans "
+                    f"{jeu.launcher}. Confirme dans sa fenetre.")
+        subprocess.Popen(["explorer.exe", "ms-settings:appsfeatures"])
+        return (f"{jeu.launcher} ne propose pas de desinstallation directe. "
+                "J'ai ouvert la liste des applications installees : "
+                f"cherches-y {jeu.name}.")
+    except OSError as exc:
+        return f"Ouverture impossible : {exc}"
+
+
 def launch(query: str) -> tuple[bool, str]:
     """Lance le jeu qui correspond le mieux.
 

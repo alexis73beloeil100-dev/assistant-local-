@@ -18,27 +18,105 @@ leurs resultats dans une file que la fenetre vide vingt fois par seconde.
 from __future__ import annotations
 
 import queue
+import re
 import subprocess
 import sys
 import threading
 import tkinter as tk
 from pathlib import Path
 
-from assistant import llm, panels, theme as t
+from assistant import apprentissage, connaissance, llm, panels, theme as t
 from assistant.index import db, scanner, watcher
 from assistant.skills import games, hardware
 from assistant.voice import stt, tts, wake
-from assistant.widgets import (LevelMeter, Message, RoundButton, ScrollArea,
-                               StatusDot)
+from assistant.widgets import (Message, NavCell, PulseRing, RoundButton,
+                               ScrollArea, StatusDot)
 
 TITLE = "Assistant local"
 SUBTITLE = "tout reste sur cette machine"
 CHAT_KEY = "conversation"
 
+# Barre laterale : trois colonnes de 62 px, plus la barre de defilement et les
+# marges. Dix-huit panneaux tiennent alors en six rangees, sans defilement,
+# contre plus d'une hauteur de fenetre en liste.
+RAIL_COLONNES = 3
+CELLULE_LARGEUR = 58
+RAIL_LARGEUR = RAIL_COLONNES * (CELLULE_LARGEUR + 2) + 22
+
+# --- Reconnaissance des formes dans un releve --------------------------------
+#
+# Les competences rendent du texte brut, sans balises -- c'est ce qui permet de
+# l'envoyer tel quel au modele. On reconnait donc les formes a l'affichage.
+
+# Un filet de separation : "-----" ou "=====".
+_REGLE = re.compile(r"^[-=]{3,}$")
+
+# Une barre d'occupation, telle que system.py et panels.py les tracent.
+_BARRE = re.compile(r"#*\.*")
+
+# Une mesure chiffree avec son unite. Les unites sont listees explicitement :
+# un motif large attraperait les numeros de version, les identifiants Steam et
+# les pids, qui ne sont pas des mesures.
+_MESURE = re.compile(
+    r"\d+(?:[ .,]\d+)*\s?(?:%|Go/s|Mo/s|Ko/s|Go|Mo|Ko|To|GHz|MHz|"
+    r"\bW\b|ms|\bh\b|\bC\b|coeurs?|threads?|jours?|fichiers?)"
+)
+
+
+def _decouper(ligne: str, base: str) -> list[tuple[str, str]]:
+    """Decoupe une ligne en morceaux, chacun avec son tag.
+
+    Ce qui merite d'etre distingue : les barres d'occupation, dont le plein et
+    le vide n'ont pas le meme poids, et les mesures chiffrees, qui sont ce
+    qu'on vient chercher dans un releve.
+    """
+    marques: list[tuple[int, int, str]] = []
+
+    for trouve in _BARRE.finditer(ligne):
+        texte = trouve.group()
+        # finditer sur un motif entierement optionnel rend aussi des chaines
+        # vides a chaque position : on ne garde que les vraies barres.
+        if len(texte) < 6 or "#" not in texte and "." not in texte:
+            continue
+        if not set(texte) <= {"#", "."}:
+            continue
+        debut = trouve.start()
+        plein = texte.count("#")
+        if plein:
+            marques.append((debut, debut + plein, "barre_pleine"))
+        if plein < len(texte):
+            marques.append((debut + plein, trouve.end(), "barre_vide"))
+
+    for trouve in _MESURE.finditer(ligne):
+        if any(d < trouve.end() and trouve.start() < f for d, f, _ in marques):
+            continue
+        marques.append((trouve.start(), trouve.end(), "mesure"))
+
+    if not marques:
+        return [(ligne, base)]
+
+    marques.sort()
+    morceaux: list[tuple[str, str]] = []
+    curseur = 0
+    for debut, fin, tag in marques:
+        if debut > curseur:
+            morceaux.append((ligne[curseur:debut], base))
+        morceaux.append((ligne[debut:fin], tag))
+        curseur = fin
+    if curseur < len(ligne):
+        morceaux.append((ligne[curseur:], base))
+    return morceaux
+
 
 class AssistantWindow(tk.Tk):
     def __init__(self):
         super().__init__()
+        # Avant tout widget : interroger la liste des polices exige une racine
+        # Tk, qui vient seulement d'exister. Si la demi-grasse manque sur cette
+        # machine, on retombe sur la graisse normale plutot que de laisser Tk
+        # substituer une police proportionnelle en silence -- ce qui
+        # decalerait toutes les colonnes des relevés.
+        t.resoudre_polices()
         self.title(TITLE)
         self.geometry("1120x740")
         self.minsize(860, 560)
@@ -63,7 +141,35 @@ class AssistantWindow(tk.Tk):
         self._build()
         self.after(50, self._drain)
         self._brancher_confirmation()
+        # "Tape bonjour" doit ecrire dans l'application ou l'utilisateur
+        # travaille, pas dans l'assistant : on retient donc la fenetre qui
+        # prend le focus quand il quitte la notre.
+        self.bind("<FocusOut>", self._retenir_fenetre_cible)
         self._boot()
+
+    def _retenir_fenetre_cible(self, _e=None) -> None:
+        """Note la fenetre au premier plan, si elle n'est pas la notre.
+
+        On compare les processus et non les identifiants de fenetre : Tk
+        n'expose pas le HWND de la fenetre principale mais celui d'un widget
+        enfant, et la comparaison directe echouerait toujours.
+        """
+        try:
+            import ctypes
+            import os
+
+            from assistant.skills import control
+
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetForegroundWindow()
+            if not hwnd:
+                return
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value != os.getpid():
+                control.memoriser_cible(hwnd)
+        except Exception:  # noqa: BLE001 - jamais bloquant
+            pass
 
     # =====================================================================
     # Construction
@@ -122,9 +228,18 @@ class AssistantWindow(tk.Tk):
         tk.Frame(self, bg=t.ACCENT_DEEP, height=1).pack(fill="x")
 
     def _build_sidebar(self, parent) -> None:
-        side = tk.Frame(parent, bg=t.SURFACE, width=240)
+        """Grille d'icones plutot que liste de menus.
+
+        Dix-huit destinations en lignes titre + sous-titre depassaient la
+        hauteur de la fenetre : il fallait faire defiler un menu pour trouver
+        une page. En grille de trois colonnes, tout tient d'un coup d'oeil et
+        la barre est deux fois plus etroite.
+        """
+        side = tk.Frame(parent, bg=t.SURFACE, width=RAIL_LARGEUR)
         side.pack(side="left", fill="y")
         side.pack_propagate(False)
+
+        tk.Frame(parent, bg=t.ACCENT_DEEP, width=1).pack(side="left", fill="y")
 
         self._build_sidebar_bottom(side)
 
@@ -132,124 +247,101 @@ class AssistantWindow(tk.Tk):
         liste.pack(fill="both", expand=True)
         interieur = liste.inner
 
-        self._nav_entry(interieur, CHAT_KEY, "Conversation",
-                        "poser une question libre", entete="PARLER")
+        self._entete_rail(interieur, "parler")
+        self._cellule(interieur, CHAT_KEY, "Parler", "parole",
+                      colonne=None)
 
-        tk.Label(interieur, text=t.espacer("consulter"), bg=t.SURFACE,
+        self._entete_rail(interieur, "consulter")
+
+        grille = tk.Frame(interieur, bg=t.SURFACE)
+        grille.pack(fill="x", padx=(t.PAD, 0))
+        for index, panel in enumerate(panels.PANELS):
+            self._cellule(grille, panel.key, panel.court or panel.label,
+                          panel.icone, colonne=index % RAIL_COLONNES,
+                          ligne=index // RAIL_COLONNES)
+
+    def _entete_rail(self, parent, texte: str) -> None:
+        tk.Label(parent, text=t.espacer(texte), bg=t.SURFACE,
                  fg=t.ACCENT_DEEP, font=t.FONT_HUD, anchor="w").pack(
-            fill="x", padx=t.PAD_L, pady=(t.PAD_L, 4))
+            fill="x", padx=t.PAD_L, pady=(t.PAD_L, 2))
 
-        for panel in panels.PANELS:
-            self._nav_entry(interieur, panel.key, panel.label, panel.subtitle)
-
-    def _nav_entry(self, parent, key: str, label: str, subtitle: str,
-                   entete: str | None = None) -> None:
-        if entete:
-            tk.Label(parent, text=t.espacer(entete), bg=t.SURFACE,
-                     fg=t.ACCENT_DEEP, font=t.FONT_HUD, anchor="w").pack(
-                fill="x", padx=t.PAD_L, pady=(t.PAD_L, 4))
-
-        ligne = tk.Frame(parent, bg=t.SURFACE, cursor="hand2")
-        ligne.pack(fill="x")
-
-        # Liseret vertical a gauche : marque la selection sans remplir la
-        # ligne d'un aplat, qui donnerait l'aspect d'un menu Windows.
-        liseret = tk.Frame(ligne, bg=t.SURFACE, width=3)
-        liseret.pack(side="left", fill="y")
-
-        corps = tk.Frame(ligne, bg=t.SURFACE)
-        corps.pack(side="left", fill="x", expand=True)
-
-        titre = tk.Label(corps, text=label, bg=t.SURFACE, fg=t.TEXT_DIM,
-                         font=t.FONT_LABEL, anchor="w")
-        titre.pack(fill="x", padx=(t.PAD_L - 3, t.PAD_L), pady=(6, 0))
-        sous = tk.Label(corps, text=subtitle, bg=t.SURFACE, fg=t.TEXT_FAINT,
-                        font=t.FONT_UI_TINY, anchor="w")
-        sous.pack(fill="x", padx=(t.PAD_L - 3, t.PAD_L), pady=(0, 6))
-
-        ligne.titre = titre        # type: ignore[attr-defined]
-        ligne.sous = sous          # type: ignore[attr-defined]
-        ligne.corps = corps        # type: ignore[attr-defined]
-        ligne.liseret = liseret    # type: ignore[attr-defined]
-        ligne.actif = False        # type: ignore[attr-defined]
-
-        for widget in (ligne, corps, titre, sous):
-            widget.bind("<Button-1>", lambda _e, k=key: self.show(k))
-            widget.bind("<Enter>", lambda _e, l=ligne: self._hover(l, True))
-            widget.bind("<Leave>", lambda _e, l=ligne: self._hover(l, False))
-
-        self._nav[key] = ligne
-
-    def _hover(self, ligne, dedans: bool) -> None:
-        if ligne.actif:            # type: ignore[attr-defined]
-            return
-        couleur = t.SURFACE_2 if dedans else t.SURFACE
-        ligne.configure(bg=couleur)
-        ligne.corps.configure(bg=couleur)    # type: ignore[attr-defined]
-        ligne.titre.configure(bg=couleur)    # type: ignore[attr-defined]
-        ligne.sous.configure(bg=couleur)     # type: ignore[attr-defined]
-        ligne.liseret.configure(             # type: ignore[attr-defined]
-            bg=t.ACCENT_DEEP if dedans else couleur)
+    def _cellule(self, parent, key: str, texte: str, icone: str,
+                 colonne: int | None, ligne: int = 0) -> None:
+        case = NavCell(parent, icone=icone, texte=texte,
+                       command=lambda k=key: self.show(k),
+                       largeur=CELLULE_LARGEUR)
+        if colonne is None:
+            case.pack(padx=t.PAD_L, pady=(2, 0), anchor="w")
+        else:
+            case.grid(row=ligne, column=colonne, padx=1, pady=1)
+        self._nav[key] = case
 
     def _build_sidebar_bottom(self, side) -> None:
-        bottom = tk.Frame(side, bg=t.SURFACE)
-        bottom.pack(side="bottom", fill="x", pady=t.PAD_L)
+        """L'anneau d'ecoute, et le strict minimum autour.
 
-        tk.Label(bottom, text=t.espacer("micro"), bg=t.SURFACE,
-                 fg=t.ACCENT_DEEP, font=t.FONT_HUD, anchor="w").pack(
-            fill="x", padx=t.PAD_L, pady=(0, 4))
+        Le bloc precedent empilait un selecteur de micro, un vu-metre, une
+        ligne d'aide, deux liens et deux cases : plus de deux cents pixels de
+        reglages sous un menu deja trop long. Tout est regroupe autour d'un
+        seul objet, qu'on regarde au lieu de le lire.
+        """
+        bottom = tk.Frame(side, bg=t.SURFACE)
+        bottom.pack(side="bottom", fill="x", pady=(0, t.PAD_L))
+
+        tk.Frame(bottom, bg=t.BORDER, height=1).pack(fill="x", pady=(0, t.PAD))
+
+        # L'anneau EST l'interrupteur : un clic dessus bascule l'ecoute. Une
+        # case a cocher a cote d'un objet de cette taille serait le seul
+        # element qu'on ne penserait pas a toucher.
+        self.anneau = PulseRing(bottom, taille=104)
+        self.anneau.pack(pady=(0, 2))
+        self.anneau.configure(cursor="hand2")
+        self.anneau.bind("<Button-1>", lambda _e: self._basculer_depuis_anneau())
+
+        self.ecoute_etat = tk.Label(bottom, text=f'"{wake.WAKE_PHRASE}" — coupe',
+                                    bg=t.SURFACE, fg=t.TEXT_FAINT,
+                                    font=t.FONT_UI_TINY)
+        self.ecoute_etat.pack(pady=(0, t.PAD))
+
+        tk.Checkbutton(
+            bottom, text=" Repondre a voix haute", variable=self.speak,
+            bg=t.SURFACE, fg=t.TEXT_DIM, font=t.FONT_UI_TINY,
+            selectcolor=t.SURFACE_2, activebackground=t.SURFACE,
+            activeforeground=t.TEXT, highlightthickness=0, bd=0,
+            anchor="w", cursor="hand2",
+        ).pack(fill="x", padx=t.PAD)
 
         self.mics = stt.microphones()
-        noms = [nom[:28] for _i, nom in self.mics] or ["aucun micro"]
+        noms = [nom[:22] for _i, nom in self.mics] or ["aucun micro"]
         self.mic_choice = tk.StringVar(value=noms[0])
         picker = tk.OptionMenu(bottom, self.mic_choice, *noms,
                                command=self._on_mic_change)
-        picker.configure(bg=t.SURFACE_2, fg=t.TEXT, font=t.FONT_UI_TINY,
+        picker.configure(bg=t.SURFACE, fg=t.TEXT_FAINT, font=t.FONT_UI_TINY,
                          activebackground=t.BORDER, activeforeground=t.TEXT,
                          highlightthickness=0, bd=0, anchor="w",
                          relief="flat", cursor="hand2")
         picker["menu"].configure(bg=t.SURFACE_2, fg=t.TEXT,
                                  font=t.FONT_UI_TINY,
                                  activebackground=t.ACCENT_SOFT)
-        picker.pack(fill="x", padx=t.PAD_L)
-
-        self.meter = LevelMeter(bottom, width=180)
-        self.meter.pack(padx=t.PAD_L, pady=(6, 2), anchor="w")
+        picker.pack(fill="x", padx=t.PAD)
 
         self.mic_hint = tk.Label(bottom, text="", bg=t.SURFACE,
                                  fg=t.TEXT_FAINT, font=t.FONT_UI_TINY,
                                  anchor="w")
-        self.mic_hint.pack(fill="x", padx=t.PAD_L, pady=(0, t.PAD))
+        self.mic_hint.pack(fill="x", padx=t.PAD)
 
-        for texte, action in (("Tester le micro", self.test_micro),
-                              ("Composants et installation",
-                               self.open_installer)):
-            lien = tk.Label(bottom, text=texte, bg=t.SURFACE, fg=t.ACCENT,
-                            font=t.FONT_UI_TINY, anchor="w", cursor="hand2")
-            lien.pack(fill="x", padx=t.PAD_L, pady=(0, 6))
+        liens = tk.Frame(bottom, bg=t.SURFACE)
+        liens.pack(fill="x", padx=t.PAD, pady=(4, 0))
+        for texte, action in (("Tester", self.test_micro),
+                              ("Composants", self.open_installer)):
+            lien = tk.Label(liens, text=texte, bg=t.SURFACE, fg=t.ACCENT,
+                            font=t.FONT_UI_TINY, cursor="hand2")
+            lien.pack(side="left", padx=(0, t.PAD))
             lien.bind("<Button-1>", lambda _e, a=action: a())
 
-        tk.Checkbutton(
-            bottom, text=f" Ecoute permanente ({wake.WAKE_PHRASE})",
-            variable=self.ecoute, command=self._basculer_ecoute,
-            bg=t.SURFACE, fg=t.TEXT_DIM, font=t.FONT_UI_SMALL,
-            selectcolor=t.SURFACE_2, activebackground=t.SURFACE,
-            activeforeground=t.TEXT, highlightthickness=0, bd=0,
-            anchor="w", cursor="hand2",
-        ).pack(fill="x", padx=t.PAD_L)
-
-        self.ecoute_etat = tk.Label(bottom, text="", bg=t.SURFACE,
-                                    fg=t.TEXT_FAINT, font=t.FONT_UI_TINY,
-                                    anchor="w")
-        self.ecoute_etat.pack(fill="x", padx=t.PAD_L, pady=(0, t.PAD))
-
-        tk.Checkbutton(
-            bottom, text=" Repondre a voix haute", variable=self.speak,
-            bg=t.SURFACE, fg=t.TEXT_DIM, font=t.FONT_UI_SMALL,
-            selectcolor=t.SURFACE_2, activebackground=t.SURFACE,
-            activeforeground=t.TEXT, highlightthickness=0, bd=0,
-            anchor="w", cursor="hand2",
-        ).pack(fill="x", padx=t.PAD_L)
+    def _basculer_depuis_anneau(self) -> None:
+        """L'anneau sert d'interrupteur : il inverse l'etat puis applique."""
+        self.ecoute.set(not self.ecoute.get())
+        self._basculer_ecoute()
 
     # --- vue panneau ------------------------------------------------------
 
@@ -287,10 +379,23 @@ class AssistantWindow(tk.Tk):
         self.panel_text.pack(fill="both", expand=True)
         barre.configure(command=self.panel_text.yview)
 
-        self.panel_text.tag_configure("grave", foreground=t.RED)
-        self.panel_text.tag_configure("attention", foreground=t.AMBER)
-        self.panel_text.tag_configure("titre", foreground=t.ACCENT)
+        self.panel_text.tag_configure("grave", foreground=t.RED,
+                                      font=t.FONT_MONO_BOLD)
+        self.panel_text.tag_configure("attention", foreground=t.AMBER,
+                                      font=t.FONT_MONO_BOLD)
+        self.panel_text.tag_configure("titre", foreground=t.ACCENT,
+                                      font=t.FONT_MONO_TITRE,
+                                      spacing1=6, spacing3=2)
         self.panel_text.tag_configure("remede", foreground=t.TEXT_DIM)
+        # Les filets de separation : presents, mais ils ne doivent pas peser
+        # autant que ce qu'ils separent.
+        self.panel_text.tag_configure("regle", foreground=t.ACCENT_DEEP)
+        # Une mesure est ce qu'on vient chercher dans un releve : elle doit
+        # sauter aux yeux au milieu de sa phrase.
+        self.panel_text.tag_configure("mesure", foreground=t.ACCENT,
+                                      font=t.FONT_MONO_BOLD)
+        self.panel_text.tag_configure("barre_pleine", foreground=t.ACCENT)
+        self.panel_text.tag_configure("barre_vide", foreground=t.BORDER)
 
         # Accueil des panneaux interactifs : ils remplacent la zone de texte
         # quand le panneau affiche de vrais widgets.
@@ -306,27 +411,51 @@ class AssistantWindow(tk.Tk):
         self.panel_text.tag_bind("exemple", "<Button-1>", self._cliquer_exemple)
 
     def _render_panel(self, texte: str) -> None:
+        """Met en forme un releve en texte brut.
+
+        Les competences rendent du texte aligne, sans balises : c'est ce qui
+        permet de l'envoyer tel quel au modele. La mise en valeur se fait donc
+        ici, a la lecture, en reconnaissant les formes -- titres en capitales,
+        filets, barres d'occupation, mesures chiffrees.
+        """
         self.panel_text.configure(state="normal")
         self.panel_text.delete("1.0", "end")
+
         for ligne in texte.splitlines():
             depouille = ligne.strip()
-            tag = ""
+
             if ligne.startswith(panels.EXEMPLE):
                 # On retire le marqueur a l'affichage : l'utilisateur voit
                 # la phrase telle qu'il la dirait, pas un code interne.
                 self.panel_text.insert(
                     "end", "  " + ligne[len(panels.EXEMPLE):] + "\n", "exemple")
                 continue
+
+            if depouille and _REGLE.match(depouille):
+                self.panel_text.insert("end", ligne + "\n", "regle")
+                continue
+
+            base = ""
             if "[GRAVE]" in ligne:
-                tag = "grave"
+                base = "grave"
             elif "[A SURVEILLER]" in ligne or "/!\\" in ligne:
-                tag = "attention"
+                base = "attention"
             elif depouille.startswith("->"):
-                tag = "remede"
+                base = "remede"
             elif (depouille and len(depouille) > 8
                   and depouille == depouille.upper()):
-                tag = "titre"
-            self.panel_text.insert("end", ligne + "\n", tag)
+                base = "titre"
+
+            # Un titre ou une alerte se lit d'un bloc : y colorier des mesures
+            # au milieu casserait la ligne au lieu de la mettre en valeur.
+            if base in ("titre", "grave", "attention"):
+                self.panel_text.insert("end", ligne + "\n", base)
+                continue
+
+            for morceau, tag in _decouper(ligne, base):
+                self.panel_text.insert("end", morceau, tag)
+            self.panel_text.insert("end", "\n")
+
         self.panel_text.configure(state="disabled")
         self.panel_text.yview_moveto(0)
 
@@ -354,6 +483,14 @@ class AssistantWindow(tk.Tk):
                 from assistant.optimiser import StartupOptimizer
 
                 widget = StartupOptimizer(self.panel_widget_host, self)
+            elif panel.interactif == "pupitre":
+                from assistant.pupitre import Pupitre
+
+                widget = Pupitre(self.panel_widget_host, self)
+            elif panel.interactif == "ludotheque":
+                from assistant.ludotheque import Ludotheque
+
+                widget = Ludotheque(self.panel_widget_host, self)
             else:
                 return
             self.panel_widgets[panel.key] = widget
@@ -459,17 +596,8 @@ class AssistantWindow(tk.Tk):
 
     def show(self, key: str) -> None:
         self.current = key
-        for cle, ligne in self._nav.items():
-            actif = cle == key
-            ligne.actif = actif        # type: ignore[attr-defined]
-            fond = t.ACCENT_SOFT if actif else t.SURFACE
-            ligne.configure(bg=fond)
-            ligne.corps.configure(bg=fond)   # type: ignore[attr-defined]
-            ligne.titre.configure(     # type: ignore[attr-defined]
-                bg=fond, fg=t.ACCENT if actif else t.TEXT_DIM)
-            ligne.sous.configure(bg=fond)    # type: ignore[attr-defined]
-            ligne.liseret.configure(         # type: ignore[attr-defined]
-                bg=t.ACCENT if actif else fond)
+        for cle, case in self._nav.items():
+            case.set_actif(cle == key)
 
         self.panel_view.pack_forget()
         self.chat_view.pack_forget()
@@ -542,7 +670,14 @@ class AssistantWindow(tk.Tk):
                         self._render_panel(texte)
                 elif kind == "level":
                     niveau, seuil = payload
-                    self.meter.update_level(niveau, seuil)
+                    # L'anneau attend une fraction de 0 a 1. On rapporte au
+                    # seuil plutot qu'a une echelle absolue : la parole vit
+                    # dans le bas de la plage du micro, et une echelle
+                    # lineaire la rendrait invisible.
+                    plein = max(seuil * 3, 1e-4)
+                    self.anneau.set_niveau(min(niveau / plein, 1.0))
+                    self.anneau.set_couleur(
+                        t.GREEN if niveau > seuil else t.ACCENT)
                 elif kind == "ecouteinfo":
                     texte, couleur = payload
                     self.ecoute_etat.configure(text=texte, fg=couleur)
@@ -598,6 +733,13 @@ class AssistantWindow(tk.Tk):
             panels.prime(["configuration", "problemes", "jeux", "demarrage",
                           "correctifs"])
             self.post("info", hardware.summary())
+
+            # L'inventaire logiciel : ce qui est installe, les services, les
+            # taches, les pilotes. Comme le reste, il vit en memoire vive et
+            # se refait a chaque demarrage -- rien n'est ecrit sur le disque.
+            self.post("status", ("Inventaire logiciel", t.AMBER))
+            apprentissage.tout_apprendre()
+            self.post("info", connaissance.rapport().splitlines()[0])
 
             if not db.is_ready():
                 self.post("status", ("Scan des fichiers", t.AMBER))
@@ -698,11 +840,11 @@ class AssistantWindow(tk.Tk):
 
     def _on_mic_change(self, choix: str) -> None:
         for index, nom in self.mics:
-            if nom[:28] == choix:
+            if nom[:22] == choix:
                 self.mic_device = index
                 break
         self.mic_hint.configure(text="")
-        self.meter.reset()
+        self.anneau.set_niveau(0.0)
 
     def test_micro(self) -> None:
         if self.busy:
@@ -744,6 +886,7 @@ class AssistantWindow(tk.Tk):
             self.post("error", "Le micro est deja en cours d'utilisation.")
             return
 
+        self.anneau.set_actif(True)
         self.mic_btn.set_text("Terminer")
         self.send_btn.set_enabled(False)
         self.post("status", ("Parle, puis clique Terminer", t.ACCENT))
@@ -760,7 +903,11 @@ class AssistantWindow(tk.Tk):
 
         def work():
             audio = enregistreur.stop()
-            self.meter.reset()
+            self.anneau.set_niveau(0.0)
+            # La dictee a allume l'anneau ; l'ecoute permanente, elle, le
+            # garde allume tant que la case est active.
+            if not self.ecoute.get():
+                self.post("appel", lambda: self.anneau.set_actif(False))
 
             if enregistreur.error:
                 self.post("error", f"Micro : {enregistreur.error}")
@@ -810,10 +957,13 @@ class AssistantWindow(tk.Tk):
             if self.boucle_vocale is not None:
                 self.boucle_vocale.stop()
                 self.boucle_vocale = None
-            self.ecoute_etat.configure(text="", fg=t.TEXT_FAINT)
+            self.anneau.set_actif(False)
+            self.ecoute_etat.configure(text=f'"{wake.WAKE_PHRASE}" — coupe',
+                                       fg=t.TEXT_FAINT)
             self.post("status", ("Pret", t.GREEN))
             return
 
+        self.anneau.set_actif(True)
         self.ecoute_etat.configure(text="chargement du mot-cle ...",
                                    fg=t.TEXT_FAINT)
 
@@ -843,13 +993,18 @@ class AssistantWindow(tk.Tk):
                 self.post("ecouteinfo", (message[:34], t.TEXT_FAINT))
 
             def sur_score(score: float) -> None:
-                # Un temoin permanent : l'utilisateur voit sa voix bouger le
-                # chiffre, et sait donc si le micro et le detecteur marchent,
-                # meme quand le mot-cle n'est pas reconnu.
-                couleur = t.GREEN if score >= boucle.threshold else t.TEXT_FAINT
+                # Un temoin permanent : l'utilisateur voit sa voix faire
+                # respirer l'anneau, et sait donc que le micro et le detecteur
+                # marchent, meme quand le mot-cle n'est pas reconnu.
+                atteint = score >= boucle.threshold
+                couleur = t.GREEN if atteint else t.TEXT_FAINT
                 self.post("ecouteinfo",
                           (f'"{wake.WAKE_PHRASE}" — {score:.2f} '
                            f'/ {boucle.threshold:.2f}', couleur))
+                self.post("appel", lambda: (
+                    self.anneau.set_niveau(min(score / boucle.threshold, 1.0)),
+                    self.anneau.set_couleur(t.GREEN if atteint else t.ACCENT),
+                ))
 
             try:
                 self.post("ecouteinfo",
@@ -867,6 +1022,9 @@ class AssistantWindow(tk.Tk):
                 self.post("status", (f"Ecoute impossible : {exc}"[:70], t.RED))
                 self.after(0, lambda: self.ecoute.set(False))
 
+            # La boucle s'est arretee, pour une raison ou une autre : l'anneau
+            # ne doit pas continuer a tourner comme si on ecoutait encore.
+            self.post("appel", lambda: self.anneau.set_actif(False))
             self.boucle_vocale = None
 
         threading.Thread(target=demarrer, name="ecoute", daemon=True).start()
