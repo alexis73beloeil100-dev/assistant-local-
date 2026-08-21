@@ -536,6 +536,16 @@ TOOLS: list[Tool] = [
         lambda: rgb.liste(),
     ),
     Tool(
+        "neutraliser_les_logiciels_rgb",
+        "Empeche DURABLEMENT les logiciels du fabricant de reprendre "
+        "l'eclairage : leur demarrage passe de automatique a manuel, et leurs "
+        "programmes de demarrage sont retires. A utiliser quand ils reviennent "
+        "apres chaque redemarrage. Reversible : l'ancien reglage est memorise.",
+        _obj({}),
+        lambda: rgb.liberer_durablement(),
+        effect=True,
+    ),
+    Tool(
         "reprendre_le_controle_rgb",
         "Ferme les logiciels du fabricant qui gardent la main sur l'eclairage "
         "(RGB Fusion, Aura, iCUE, Synapse) et leurs services. A appeler quand "

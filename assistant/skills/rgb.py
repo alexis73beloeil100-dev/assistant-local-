@@ -174,10 +174,13 @@ def disponible() -> bool:
 # que son nom contient "RGB" est le genre de chose qui fait tomber une session
 # Windows.
 SERVICES_CONCURRENTS = {
-    "MyService1": "GIGABYTE Adjust",
+    # Gigabyte : AdjustService heberge RGB Fusion et le relance. C'est LE
+    # service a neutraliser sur cette famille de cartes meres.
+    "MyService1": "GIGABYTE Adjust (heberge RGB Fusion)",
     "GvLedService": "Gigabyte LED",
     "Razer Chroma SDK Server": "Razer Chroma (serveur)",
     "Razer Chroma SDK Service": "Razer Chroma",
+    "Razer Chroma SDK Diagnostic Service": "Razer Chroma (diagnostic)",
     "Razer Chroma Stream Server": "Razer Chroma (flux)",
     "RzActionSvc": "Razer Synapse",
     "CorsairDeviceControlService": "Corsair iCUE",
@@ -188,6 +191,18 @@ SERVICES_CONCURRENTS = {
     "Micro Star SCM": "MSI Mystic Light",
     "LGHUBUpdaterService": "Logitech G HUB",
 }
+
+# Liste blanche STRICTE, et rien d'autre ne sera jamais touche.
+#
+# Une recherche par motif attrapait "MSiSCSI" et "msiserver" -- l'initiateur
+# iSCSI et le programme d'installation de Windows -- parce que leur nom
+# commence par les memes lettres que MSI. Arreter l'un ou l'autre casse la
+# session. Les noms sont donc ecrits en toutes lettres, un par un.
+JAMAIS_TOUCHER = {"MSiSCSI", "msiserver", "RpcSs", "DcomLaunch", "EventLog"}
+
+# Programmes de demarrage qui relancent un logiciel d'eclairage.
+DEMARRAGE_CONCURRENT = ("RzAppEngine", "RazerAppEngine", "RGBFusion",
+                        "iCUE", "LightingService", "ArmouryCrate")
 
 
 def conflits() -> tuple[list[str], list[str]]:
@@ -212,6 +227,144 @@ def conflits() -> tuple[list[str], list[str]]:
         if nom in actifs:
             services.append(nom)
     return programmes, services
+
+
+def liberer_durablement(ask=None) -> str:
+    """Empeche les logiciels d'eclairage de revenir au demarrage.
+
+    Les arreter ne suffit pas : Windows les relance a la session suivante.
+    Constate apres un redemarrage -- six services en demarrage automatique,
+    deux entrees de demarrage, et RazerAppEngine en douze instances, tous
+    revenus.
+
+    On passe donc leur demarrage de "automatique" a "manuel", en MEMORISANT
+    l'ancien reglage. C'est exactement le mecanisme deja utilise pour les
+    programmes de demarrage : reversible, et la sauvegarde est ce qui rend le
+    retour en arriere possible.
+
+    Manuel plutot que desactive : le service reste lancable a la demande, donc
+    le logiciel du fabricant refonctionne des qu'on le rouvre.
+    """
+    from assistant import safety, settings
+
+    _programmes, actifs = conflits()
+    a_traiter = [s for s in SERVICES_CONCURRENTS
+                 if s not in JAMAIS_TOUCHER and _mode_demarrage(s) == "Auto"]
+
+    if not a_traiter and not actifs:
+        return "Aucun logiciel d'eclairage ne se relance au demarrage."
+
+    action = safety.Action(
+        kind="service",
+        summary="Empecher les logiciels d'eclairage de revenir au demarrage",
+        targets=[SERVICES_CONCURRENTS.get(s, s) for s in a_traiter],
+        reversible=True,
+        details="Leur demarrage passe de automatique a manuel. L'ancien "
+                "reglage est memorise : rendre_le_controleur() le remet. Les "
+                "logiciels restent utilisables en les ouvrant a la main.",
+    )
+    try:
+        safety.guard(action, ask=ask)
+    except safety.Refused as exc:
+        return str(exc)
+
+    # La sauvegarde AVANT de toucher quoi que ce soit : sans elle, le retour
+    # en arriere est impossible.
+    memoire = dict(settings.get("rgb_services_sauvegarde", {}) or {})
+    for service in a_traiter:
+        memoire.setdefault(service, _mode_demarrage(service))
+    settings.set("rgb_services_sauvegarde", memoire)
+
+    lignes = ["Get-Service | Out-Null"]
+    for service in a_traiter:
+        lignes.append(
+            f"Set-Service -Name '{service}' -StartupType Manual "
+            "-ErrorAction SilentlyContinue")
+        lignes.append(
+            f"Stop-Service -Name '{service}' -Force "
+            "-ErrorAction SilentlyContinue")
+    for nom in CONCURRENTS:
+        court = nom.rsplit(".", 1)[0]
+        lignes.append(
+            f"Get-Process '{court}' -ErrorAction SilentlyContinue | "
+            "Stop-Process -Force -ErrorAction SilentlyContinue")
+
+    resultat = _executer_eleve(lignes)
+    if resultat:
+        return resultat
+
+    # Les programmes de demarrage passent par le mecanisme existant, qui
+    # sauvegarde deja leur commande exacte.
+    from assistant.skills import fixes, system
+
+    retires = []
+    for item in system.startup_items():
+        nom = str(item.get("name", ""))
+        if any(marque.lower() in nom.lower()
+               for marque in DEMARRAGE_CONCURRENT):
+            issue = fixes.desactiver_demarrage(nom, ask=lambda _t: True)
+            if issue.ok:
+                retires.append(nom)
+
+    restants_p, restants_s = conflits()
+    lignes_finales = ["Logiciels d'eclairage neutralises :", ""]
+    for service in a_traiter:
+        lignes_finales.append(
+            f"  service  {SERVICES_CONCURRENTS.get(service, service)}"
+            "  -> demarrage manuel")
+    for nom in retires:
+        lignes_finales.append(f"  demarrage  {nom}  -> retire")
+    lignes_finales.append("")
+    if restants_p or restants_s:
+        lignes_finales.append(
+            "Tournent encore : "
+            + ", ".join(restants_p + [SERVICES_CONCURRENTS.get(s, s)
+                                      for s in restants_s]))
+    lignes_finales.append("")
+    lignes_finales.append("REDEMARRE pour que ce soit effectif : les services "
+                          "deja lances gardent le controleur jusque-la.")
+    lignes_finales.append("Tout est reversible : \"rends le controle du RGB\".")
+    return "\n".join(lignes_finales)
+
+
+def _mode_demarrage(service: str) -> str:
+    """Mode de demarrage d'un service : Auto, Manual, Disabled, ou vide."""
+    try:
+        resultat = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command",
+             f"(Get-CimInstance Win32_Service -Filter \"Name='{service}'\")"
+             ".StartMode"],
+            capture_output=True, text=True, timeout=20,
+            encoding="utf-8", errors="replace",
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return ""
+    return (resultat.stdout or "").strip()
+
+
+def _executer_eleve(lignes: list[str]) -> str:
+    """Execute des commandes en administrateur. Rend un message d'erreur, ou ''."""
+    import tempfile
+    from pathlib import Path as _Path
+
+    with tempfile.TemporaryDirectory() as dossier:
+        script = _Path(dossier) / "rgb.ps1"
+        script.write_text("\n".join(lignes), encoding="utf-8")
+        try:
+            subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-Command",
+                 "Start-Process powershell -Verb RunAs -Wait -WindowStyle "
+                 "Hidden -ArgumentList "
+                 "'-NoProfile','-ExecutionPolicy','Bypass','-File',"
+                 f"'{script}'"],
+                capture_output=True, text=True, timeout=240,
+                creationflags=CREATE_NO_WINDOW,
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            return f"Elevation impossible : {type(exc).__name__}: {exc}"
+    return ""
 
 
 def liberer(ask=None) -> str:
@@ -329,28 +482,38 @@ def _arreter_eleve(services: list[str]) -> str:
 
 
 def rendre_le_controleur() -> str:
-    """Relance les services d'eclairage arretes, sans attendre un redemarrage."""
-    _programmes, actifs = conflits()
-    a_relancer = [s for s in SERVICES_CONCURRENTS if s not in actifs]
-    if not a_relancer:
-        return "Tous les services d'eclairage tournent deja."
+    """Rend le controleur au logiciel du fabricant, exactement comme avant.
 
-    commandes = "; ".join(
-        f"Start-Service -Name '{s}' -ErrorAction SilentlyContinue"
-        for s in a_relancer)
-    try:
-        subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-             "-Command",
-             f"Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden "
-             f"-ArgumentList '-NoProfile','-Command','{commandes}'"],
-            capture_output=True, text=True, timeout=180,
-            creationflags=CREATE_NO_WINDOW,
-        )
-    except (subprocess.SubprocessError, OSError) as exc:
-        return f"Impossible : {type(exc).__name__}: {exc}"
-    return ("Services d'eclairage relances. Le logiciel du fabricant reprendra "
-            "la main sur le controleur.")
+    On remet le mode de demarrage MEMORISE, pas un mode suppose : un service
+    qui etait en manuel a l'origine ne doit pas se retrouver en automatique
+    parce qu'on aurait devine.
+    """
+    from assistant import settings
+
+    memoire = dict(settings.get("rgb_services_sauvegarde", {}) or {})
+    if not memoire:
+        return ("Rien a rendre : aucun service d'eclairage n'a ete neutralise "
+                "par l'assistant.")
+
+    lignes = []
+    for service, mode in memoire.items():
+        if service in JAMAIS_TOUCHER or not mode:
+            continue
+        lignes.append(
+            f"Set-Service -Name '{service}' -StartupType "
+            f"{'Automatic' if mode.lower().startswith('auto') else mode} "
+            "-ErrorAction SilentlyContinue")
+        lignes.append(
+            f"Start-Service -Name '{service}' -ErrorAction SilentlyContinue")
+
+    erreur = _executer_eleve(lignes)
+    if erreur:
+        return erreur
+
+    settings.set("rgb_services_sauvegarde", {})
+    remis = ", ".join(SERVICES_CONCURRENTS.get(s, s) for s in memoire)
+    return (f"Controleur rendu au logiciel du fabricant : {remis}. "
+            "Leur mode de demarrage d'origine est retabli.")
 
 
 def concurrents_actifs() -> list[str]:
