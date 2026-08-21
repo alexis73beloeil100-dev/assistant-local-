@@ -17,7 +17,7 @@ from assistant import connaissance
 from assistant import selftest
 from assistant.skills import (apps, cleanup, content, control, desk, files,
                               fixes, gamemode, games, hardware, inventaire,
-                              reminders, shell, system, vision)
+                              reminders, rgb, shell, system, vision)
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -525,6 +525,25 @@ TOOLS: list[Tool] = [
         "ecran HDMI.",
         _obj({"nom": STR}, ["nom"]),
         lambda nom: control.set_audio_output(nom),
+        effect=True,
+    ),
+    Tool(
+        "eclairage_rgb",
+        "Liste les peripheriques RGB de cette machine et les modes que chacun "
+        "propose reellement : carte mere, carte graphique, memoire, clavier, "
+        "souris, ventilateurs, toutes marques confondues.",
+        _obj({}),
+        lambda: rgb.liste(),
+    ),
+    Tool(
+        "changer_eclairage_rgb",
+        "Change le mode d'eclairage RGB, par son nom tel qu'il apparait dans "
+        "eclairage_rgb (statique, respiration, arc-en-ciel...). Sans "
+        "peripherique, applique a tous ceux qui connaissent ce mode. Une "
+        "couleur est acceptee en hexadecimal, par exemple FF0000.",
+        _obj({"mode": STR, "peripherique": STR, "couleur": STR}, ["mode"]),
+        lambda mode, peripherique="", couleur="": rgb.changer_mode(
+            mode, peripherique, couleur),
         effect=True,
     ),
     Tool(

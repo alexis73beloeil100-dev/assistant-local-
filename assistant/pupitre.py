@@ -85,9 +85,102 @@ class Pupitre(tk.Frame):
     def _construire(self) -> None:
         self._section_son()
         self._section_lecture()
+        self._section_eclairage()
         self._section_clavier()
         self._section_alimentation()
         self._section_raccourcis()
+
+    # --- eclairage RGB ------------------------------------------------------
+
+    def _section_eclairage(self) -> None:
+        """Les modes RGB, decouverts et non codes en dur.
+
+        Rien ici ne connait Gigabyte, Asus ou Corsair : les peripheriques et
+        leurs modes sont demandes au materiel au moment de l'affichage. Sur
+        une autre machine, la section se remplit avec ce qui s'y trouve.
+        """
+        cadre = self._section("eclairage rgb")
+        self.cadre_rgb = cadre
+
+        self.etat_rgb = tk.Label(
+            cadre, text="lecture des peripheriques ...", bg=t.SURFACE,
+            fg=t.TEXT_FAINT, font=t.FONT_UI_TINY, anchor="w",
+            justify="left", wraplength=620)
+        self.etat_rgb.pack(fill="x", padx=t.PAD_L, pady=(t.PAD, 4))
+
+        self.modes_rgb = tk.Frame(cadre, bg=t.SURFACE)
+        self.modes_rgb.pack(fill="x", padx=t.PAD_L, pady=(0, t.PAD))
+
+    def _charger_rgb(self) -> None:
+        def travail():
+            from assistant.skills import rgb
+
+            if not rgb.disponible():
+                message = ("Pilotage RGB indisponible : OpenRGB n'est pas "
+                           "installe. Les logiciels des fabricants n'ont "
+                           "aucune ligne de commande ; OpenRGB parle au "
+                           "materiel lui-meme et couvre la plupart des "
+                           "marques. Il est libre et fonctionne hors ligne.")
+                self.window.post("appel",
+                                 lambda: self._afficher_rgb([], message))
+                return
+            trouves, erreur = rgb.peripheriques()
+            concurrents = rgb.concurrents_actifs()
+            if not erreur and concurrents:
+                erreur = (", ".join(concurrents) + " tourne en meme temps : "
+                          "deux logiciels sur le meme controleur font "
+                          "clignoter l'eclairage au hasard.")
+            self.window.post("appel",
+                             lambda: self._afficher_rgb(trouves, erreur))
+
+        threading.Thread(target=travail, daemon=True).start()
+
+    def _afficher_rgb(self, peripheriques, message: str) -> None:
+        for enfant in self.modes_rgb.winfo_children():
+            enfant.destroy()
+
+        if not peripheriques:
+            self.etat_rgb.configure(text=message or "Aucun peripherique RGB.")
+            return
+
+        self.etat_rgb.configure(
+            text=f"{len(peripheriques)} peripherique(s)."
+                 + (f"  {message}" if message else ""),
+            fg=t.AMBER if message else t.TEXT_DIM)
+
+        for peripherique in peripheriques:
+            entete = tk.Frame(self.modes_rgb, bg=t.SURFACE)
+            entete.pack(fill="x", pady=(4, 0))
+            tk.Label(entete, text=peripherique.nom, bg=t.SURFACE, fg=t.TEXT,
+                     font=t.FONT_UI_TINY, anchor="w").pack(side="left")
+            if peripherique.mode_actif:
+                tk.Label(entete, text=peripherique.mode_actif, bg=t.SURFACE,
+                         fg=t.ACCENT, font=t.FONT_UI_TINY).pack(side="right")
+
+            rangee = tk.Frame(self.modes_rgb, bg=t.SURFACE)
+            rangee.pack(fill="x", pady=(2, 2))
+            for mode in peripherique.modes[:10]:
+                _LigneCliquable(
+                    rangee, mode,
+                    lambda m=mode, p=peripherique: self._mode_rgb(p, m),
+                    active=(mode == peripherique.mode_actif),
+                ).pack(side="left", padx=(0, 2))
+
+    def _mode_rgb(self, peripherique, mode: str) -> None:
+        self.etat_rgb.configure(text=f"{peripherique.nom} -> {mode} ...",
+                                fg=t.AMBER)
+
+        def travail():
+            from assistant.skills import rgb
+
+            message = rgb.changer_mode(mode, peripherique.nom)
+            self.window.post("appel", lambda: (
+                self.etat_rgb.configure(text=message.replace("\n", "  ")[:180],
+                                        fg=t.TEXT_DIM),
+                self._charger_rgb(),
+            ))
+
+        threading.Thread(target=travail, daemon=True).start()
 
     # --- son --------------------------------------------------------------
 
@@ -325,6 +418,9 @@ class Pupitre(tk.Frame):
                 niveau, coupe, actuelle, appareils, profil))
 
         threading.Thread(target=travail, daemon=True).start()
+        # L'eclairage a son propre fil : interroger le controleur RGB peut
+        # prendre plusieurs secondes, et le volume ne doit pas attendre.
+        self._charger_rgb()
 
     def _afficher(self, niveau, coupe, actuelle, appareils, profil) -> None:
         self.occupe = True       # le .set() ci-dessous ne doit rien declencher

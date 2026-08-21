@@ -308,3 +308,56 @@ def test_le_modele_sait_qu_il_peut_se_servir_du_panneau():
     from assistant import llm
 
     assert "panneau" in llm.SYSTEM_PROMPT
+
+
+# --- L'eclairage RGB, toutes marques ------------------------------------------
+
+def test_le_pilotage_rgb_ne_connait_aucune_marque():
+    """Il doit marcher sur la machine de n'importe qui.
+
+    Lire le profil de RGB Fusion aurait pilote une seule carte mere, d'une
+    seule marque. Et ca n'aurait meme pas marche : ce fichier n'a pas bouge
+    d'un octet pendant qu'on changeait de mode a l'ecran -- le reglage part
+    directement dans le controleur, il n'y a rien a intercepter.
+    """
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb)
+    # Aucun chemin ni format proprietaire ne doit servir de cible.
+    for interdit in ("Pro1.xml", "GIGABYTE\\RGBFusion", "Pattern_Type",
+                     "Area_info"):
+        assert interdit not in source, f"{interdit} : pilotage lie a une marque"
+
+
+def test_les_modes_rgb_sont_decouverts_et_non_listes_en_dur():
+    """Chaque materiel offre ses propres modes : les figer serait faux
+    partout ailleurs."""
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.peripheriques)
+    assert "--list-devices" in source, "les modes doivent etre demandes"
+    for mode_code_en_dur in ("COLOR CYCLE", "Digital Wave", "DOUBLE FLASH"):
+        assert mode_code_en_dur not in inspect.getsource(rgb)
+
+
+def test_sans_openrgb_l_assistant_explique_au_lieu_d_echouer():
+    from assistant.skills import rgb
+
+    texte = rgb.liste()
+    assert isinstance(texte, str) and texte.strip()
+    if not rgb.disponible():
+        assert "OpenRGB" in texte
+        assert "libre" in texte or "hors ligne" in texte
+
+
+def test_les_logiciels_concurrents_sont_signales():
+    """Deux programmes sur le meme controleur font clignoter l'eclairage au
+    hasard. Le savoir evite une heure de recherche."""
+    from assistant.skills import rgb
+
+    assert len(rgb.CONCURRENTS) >= 6, "plusieurs marques doivent etre couvertes"
+    assert isinstance(rgb.concurrents_actifs(), list)
