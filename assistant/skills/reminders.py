@@ -331,7 +331,10 @@ def _nom_de_programme(phrase: str) -> str:
 
     brut = unicodedata.normalize("NFKD", phrase.lower())
     brut = "".join(c for c in brut if not unicodedata.combining(c))
-    mots = [m for m in re.split(r"[^a-z0-9._-]+", brut) if m]
+    # On coupe aussi sur le trait d'union : "previens-moi" reste sinon un
+    # seul mot, absent de la liste des mots vides, et se fait prendre pour le
+    # nom du programme.
+    mots = [m for m in re.split(r"[^a-z0-9._]+", brut) if m]
     candidats = [m for m in mots if m not in MOTS_VIDES and len(m) > 2]
     if not candidats:
         return ""

@@ -323,11 +323,15 @@ def _acces_refuse(sortie: str) -> bool:
     import re
 
     texte = sortie.lower()
+    # Le caractere a la place de l'accent est note ".?" et non "\W?" : un
+    # accent correctement decode ("è") est une LETTRE, que \W ne matche pas.
+    # La premiere version ne reconnaissait donc que les messages abimes, et
+    # echouait sur une machine ou l'encodage fonctionne.
     motifs = (
-        r"acc\W?s\s+refus",          # "Acces refuse", accent casse ou non
+        r"acc.?s\s+refus",           # "Acces refuse" / "Accès refusé"
         r"access\s+is\s+denied",
         r"access\s+denied",
-        r"erreur\s+syst\W?me\s+5",   # "L'erreur systeme 5 s'est produite"
+        r"erreur\s+syst.?me\s+5",    # "L'erreur système 5 s'est produite"
         r"system\s+error\s+5",
         r"zugriff\s+verweigert",
     )

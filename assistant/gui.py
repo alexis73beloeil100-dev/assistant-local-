@@ -100,7 +100,9 @@ class AssistantWindow(tk.Tk):
         left.pack(side="left", padx=t.PAD_L)
         tk.Label(left, text=TITLE, bg=t.SURFACE, fg=t.TEXT,
                  font=t.FONT_TITLE).pack(side="left", pady=t.PAD_L)
-        tk.Label(left, text="  " + SUBTITLE, bg=t.SURFACE, fg=t.TEXT_FAINT,
+        from assistant import __version__
+        tk.Label(left, text=f"  {SUBTITLE}   v{__version__}",
+                 bg=t.SURFACE, fg=t.TEXT_FAINT,
                  font=t.FONT_UI_SMALL).pack(side="left", pady=t.PAD_L)
 
         right = tk.Frame(header, bg=t.SURFACE)

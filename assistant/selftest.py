@@ -41,8 +41,11 @@ def _timed(fn):
 # --- Verifications ----------------------------------------------------------
 
 def check_environnement():
+    from assistant import __version__
+
     gele = getattr(sys, "frozen", False)
-    return OK, (f"Python {sys.version_info.major}.{sys.version_info.minor}, "
+    return OK, (f"version {__version__}, "
+                f"Python {sys.version_info.major}.{sys.version_info.minor}, "
                 f"{'executable packagee' if gele else 'sources'}"), ""
 
 
