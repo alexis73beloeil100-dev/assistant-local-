@@ -693,3 +693,47 @@ def test_un_texte_mal_lu_est_signale_comme_douteux():
     assert vision.SEUIL_SUR > 0.5
     source = inspect.getsource(vision.read_text)
     assert "(?)" in source
+
+
+def test_un_inventaire_rate_ne_passe_pas_inapercu():
+    """La connaissance tombait de ~700 faits a 245, sans un mot.
+
+    inventaire.collect() rend un dictionnaire VIDE quand il echoue, il ne
+    leve pas. Le try/except qui isole chaque source ne voyait donc rien : la
+    plus grosse source -- services, logiciels, pilotes, taches -- disparaissait
+    en silence, et l'assistant repondait "je ne sais pas" sur des logiciels
+    pourtant installes.
+
+    245 = tout sauf l'inventaire. C'est le compte exact qu'a vu l'utilisateur.
+    """
+    from assistant import apprentissage
+    from assistant.skills import inventaire
+
+    vrai = inventaire.collect
+    inventaire.collect = lambda force=False: {}
+    try:
+        apprentissage.tout_apprendre()
+        assert "inventaire logiciel" in apprentissage.echecs, (
+            "un inventaire vide doit etre signale, pas avale")
+    finally:
+        inventaire.collect = vrai
+
+
+def test_une_source_ratee_peut_etre_rattrapee():
+    """Sinon elle le restait jusqu'a la fermeture de l'application."""
+    from assistant import apprentissage
+
+    apprentissage.echecs.clear()
+    assert "Rien a rattraper" in apprentissage.reessayer()
+
+    appels = []
+    origine = apprentissage.SOURCES
+    apprentissage.SOURCES = (("source de test", lambda: appels.append(1)),)
+    apprentissage.echecs["source de test"] = "panne simulee"
+    try:
+        apprentissage.reessayer()
+        assert appels, "la source en echec doit etre rejouee"
+        assert not apprentissage.echecs, "elle doit sortir de la liste"
+    finally:
+        apprentissage.SOURCES = origine
+        apprentissage.echecs.clear()

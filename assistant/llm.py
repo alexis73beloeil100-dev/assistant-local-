@@ -683,6 +683,16 @@ TOOLS: list[Tool] = [
         lambda sujet="": connaissance.rapport(sujet),
     ),
     Tool(
+        "reapprendre_la_machine",
+        "Refait le releve de la machine quand la connaissance semble "
+        "incomplete : moins de faits que d'habitude, ou un logiciel installe "
+        "que tu ne trouves pas. Ne repete que les sources qui avaient echoue.",
+        _obj({}),
+        lambda: __import__("assistant.apprentissage",
+                           fromlist=["reessayer"]).reessayer(),
+        effect=True,
+    ),
+    Tool(
         "inventaire_logiciel",
         "Liste ce qui est installe sur la machine : logiciels, services, "
         "taches planifiees, pilotes tiers, navigateurs.",

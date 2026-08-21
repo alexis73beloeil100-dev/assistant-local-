@@ -352,12 +352,25 @@ def _connaissance() -> str:
     from assistant import apprentissage, connaissance
     from assistant.skills import inventaire
 
+    # Une source ratee au demarrage restait ratee jusqu'a la fermeture. On
+    # retente ici, a l'ouverture du panneau : c'est le moment ou l'utilisateur
+    # regarde justement ce qui est connu.
+    rattrapage = apprentissage.reessayer() if apprentissage.echecs else ""
+
     morceaux = [connaissance.rapport(), ""]
+    if rattrapage:
+        morceaux.append("RATTRAPAGE")
+        morceaux.append("")
+        for ligne in rattrapage.splitlines():
+            morceaux.append(f"  {ligne}")
+        morceaux.append("")
     if apprentissage.echecs:
         morceaux.append("SOURCES EN ECHEC")
         morceaux.append("")
         for nom, raison in apprentissage.echecs.items():
             morceaux.append(f"  {nom} : {raison}")
+        morceaux.append("")
+        morceaux.append("  Rouvre ce panneau pour reessayer.")
         morceaux.append("")
     if inventaire.pret():
         morceaux.append(inventaire.resume())

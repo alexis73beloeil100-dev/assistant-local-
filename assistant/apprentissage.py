@@ -104,9 +104,21 @@ def _applications() -> None:
 
 
 def _inventaire() -> None:
+    """Inventaire logiciel : de loin la plus grosse source de faits.
+
+    collect() rend un dictionnaire VIDE quand il echoue, il ne leve pas. Le
+    try/except qui isole les sources ne voyait donc rien, et l'echec passait
+    inapercu : la connaissance tombait de ~700 faits a 245 -- tout sauf les
+    services, logiciels, pilotes et taches -- sans qu'aucun message ne le
+    signale. On transforme donc le silence en erreur explicite.
+    """
     from assistant.skills import inventaire
 
-    inventaire.collect()      # se range lui-meme dans la connaissance
+    donnees = inventaire.collect()      # se range lui-meme dans la connaissance
+    if not donnees:
+        raise RuntimeError(
+            inventaire._erreur
+            or "l'inventaire n'a rien rendu, sans erreur signalee")
 
 
 # L'ordre compte : le materiel d'abord, parce que c'est ce qu'on demande le
@@ -142,6 +154,41 @@ def tout_apprendre(on_progress=None) -> int:
         except Exception as exc:  # noqa: BLE001 - une source muette vaut mieux qu'un plantage
             echecs[nom] = f"{type(exc).__name__}: {exc}"
     return connaissance.total()
+
+
+def reessayer() -> str:
+    """Repasse sur les seules sources qui avaient echoue.
+
+    Sans cela, une source ratee au demarrage le restait jusqu'a la fermeture
+    de l'application : l'assistant tournait toute la journee avec 245 faits au
+    lieu de 700, et repondait "je ne sais pas" sur des logiciels installes.
+    """
+    if not echecs:
+        return f"Rien a rattraper : {connaissance.total()} faits connus."
+
+    a_refaire = dict(echecs)
+    avant = connaissance.total()
+    rattrapees, restantes = [], {}
+
+    for nom, source in SOURCES:
+        if nom not in a_refaire:
+            continue
+        try:
+            source()
+            rattrapees.append(nom)
+        except Exception as exc:  # noqa: BLE001
+            restantes[nom] = f"{type(exc).__name__}: {exc}"
+
+    echecs.clear()
+    echecs.update(restantes)
+
+    gagnes = connaissance.total() - avant
+    lignes = []
+    if rattrapees:
+        lignes.append(f"Rattrape : {', '.join(rattrapees)} (+{gagnes} faits).")
+    for nom, raison in restantes.items():
+        lignes.append(f"Echoue encore : {nom} — {raison[:120]}")
+    return "\n".join(lignes)
 
 
 def en_arriere_plan(on_done=None) -> threading.Thread:
