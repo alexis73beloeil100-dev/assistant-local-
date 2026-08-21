@@ -29,7 +29,9 @@ DEMANDE_NOMBRE = 0
 DEMANDE_DONNEES = 1
 DEMANDE_VERSION = 40
 NOM_CLIENT = 50
+MODE_PERSONNALISE = 1100
 CHANGER_MODE = 1101
+ECRIRE_LEDS = 1050
 
 # Version du protocole qu'on sait parler. Le serveur repond avec la sienne, et
 # on prend la plus basse des deux : c'est ainsi qu'un client reste compatible
@@ -57,6 +59,7 @@ class Peripherique:
     detail: str = ""
     modes: list[str] = field(default_factory=list)
     mode_actif: str = ""
+    nb_leds: int = 0
     # Octets bruts de chaque mode, tels que le serveur les a envoyes.
     #
     # On les renvoie tels quels pour changer de mode, au lieu de reconstruire
@@ -150,9 +153,36 @@ def _decoder(donnees: bytes, index: int, version: int) -> Peripherique:
         modes.append(nom_mode)
         position += taille
 
+    # Apres les modes viennent les zones, puis les LED, puis leurs couleurs.
+    # On a besoin du NOMBRE de LED : changer un mode ne suffit pas toujours a
+    # allumer quoi que ce soit, et il faut alors ecrire les couleurs une par
+    # une. Sans ce compte, impossible de composer le paquet.
+    nb_leds = 0
+    try:
+        (nb_zones,) = struct.unpack_from("<H", donnees, position)
+        position += 2
+        for _ in range(nb_zones):
+            _nom_zone, position = _lire_texte(donnees, position)
+            position += 4                    # type
+            position += 4 * 3                # leds_min, leds_max, leds_count
+            # La longueur de la matrice est sur SEIZE bits, pas trente-deux.
+            # Lue en 32 bits, elle avale les octets suivants et le compte de
+            # LED ressort a zero -- sans erreur, ce qui est le pire cas.
+            (taille_matrice,) = struct.unpack_from("<H", donnees, position)
+            position += 2 + taille_matrice
+            if version >= 4:
+                (nb_segments,) = struct.unpack_from("<H", donnees, position)
+                position += 2
+                for _ in range(nb_segments):
+                    _nom_seg, position = _lire_texte(donnees, position)
+                    position += 4 * 3        # type, start_idx, leds_count
+        (nb_leds,) = struct.unpack_from("<H", donnees, position)
+    except (struct.error, IndexError):
+        nb_leds = 0                          # format inattendu : on s'en passe
+
     return Peripherique(
         index=index, nom=nom, genre=FAMILLES.get(famille, "inconnu"),
-        detail=detail, modes=modes, modes_bruts=bruts,
+        detail=detail, modes=modes, modes_bruts=bruts, nb_leds=nb_leds,
         mode_actif=modes[actif] if 0 <= actif < len(modes) else "",
     )
 
@@ -212,3 +242,27 @@ class Connexion:
         brut = peripherique.modes_bruts[index_mode]
         corps = struct.pack("<II", 8 + len(brut), index_mode) + brut
         _envoyer(self.sock, peripherique.index, CHANGER_MODE, corps)
+
+    def mode_personnalise(self, peripherique: Peripherique) -> None:
+        """Bascule le controleur en pilotage direct.
+
+        Beaucoup de peripheriques ignorent une couleur ecrite pendant qu'un
+        effet materiel tourne : l'effet la recouvre au cycle suivant. Il faut
+        d'abord leur dire qu'on prend la main.
+        """
+        _envoyer(self.sock, peripherique.index, MODE_PERSONNALISE)
+
+    def ecrire_couleurs(self, peripherique: Peripherique,
+                        couleurs: list[tuple[int, int, int]]) -> None:
+        """Ecrit une couleur par LED.
+
+        Le format d'OpenRGB range la couleur en 0x00BBGGRR, donc rouge, vert,
+        bleu puis un octet nul -- et non l'inverse. Se tromper d'ordre donne
+        du bleu quand on demande du rouge, ce qui ressemble a un bug de
+        materiel plutot qu'a une erreur d'encodage.
+        """
+        corps = struct.pack("<H", len(couleurs))
+        for rouge, vert, bleu in couleurs:
+            corps += struct.pack("<BBBB", rouge, vert, bleu, 0)
+        corps = struct.pack("<I", 4 + len(corps)) + corps
+        _envoyer(self.sock, peripherique.index, ECRIRE_LEDS, corps)
