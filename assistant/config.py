@@ -17,26 +17,96 @@ import sys
 
 
 def _root() -> Path:
-    """Dossier de travail de l'application.
+    """Dossier de l'application : la ou vivent le code et les outils livres.
 
     En sources, c'est la racine du projet. Dans l'executable packagee,
-    __file__ pointe a l'interieur de _internal (le dossier prive de
-    PyInstaller) : y ranger les reglages et les journaux les rendrait
-    introuvables pour l'utilisateur et effacables a la moindre mise a jour.
-    On se place donc a cote de l'executable.
+    __file__ pointe a l'interieur de _internal, le dossier prive de
+    PyInstaller : on se place donc a cote de l'executable.
+
+    ATTENTION : ce dossier est jetable. Il est efface et recree a chaque
+    reconstruction comme a chaque mise a jour. On n'y ecrit RIEN qu'on veuille
+    conserver -- voir DATA_DIR.
     """
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
 
 
+def _data_dir() -> Path:
+    """Dossier des donnees de l'utilisateur, qui doit survivre a tout.
+
+    Il etait a cote de l'executable, et disparaissait donc a chaque
+    reconstruction : PyInstaller efface dist/ avant de le remplir, et
+    l'installateur remplace le dossier d'installation. Les reglages, le
+    journal des actions et les notes repartaient de zero sans un mot.
+
+    Le plus grave etait startup_backup : il conserve la commande exacte des
+    programmes desactives au demarrage. Perdue, un programme desactive ne
+    peut plus JAMAIS etre reactive autrement qu'en le reinstallant.
+
+    On suit donc la convention de Windows : les donnees d'un utilisateur
+    vivent dans son profil, jamais a cote du programme.
+    """
+    force = os.environ.get("ASSISTANT_DATA")
+    if force:
+        return Path(force)
+
+    # APPDATA (Roaming) et non LOCALAPPDATA : l'installateur pose le programme
+    # dans %LOCALAPPDATA%\AssistantLocal, et son desinstalleur efface ce
+    # dossier entier. Y ranger les donnees reviendrait a les faire disparaitre
+    # a la premiere desinstallation -- le meme defaut, deplace d'un cran.
+    base = os.environ.get("APPDATA")
+    if base:
+        return Path(base) / "AssistantLocal"
+    # Sans APPDATA -- cas tres improbable -- on retombe sur le profil.
+    return Path.home() / ".assistantlocal"
+
+
 ROOT = _root()
-DATA_DIR = ROOT / "data"
+DATA_DIR = _data_dir()
 DB_PATH = DATA_DIR / "index.db"
 LOG_DIR = DATA_DIR / "logs"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _recuperer_anciennes_donnees() -> list[str]:
+    """Rapatrie les donnees laissees a cote de l'executable.
+
+    Sans cette reprise, la correction elle-meme aurait fait perdre les
+    reglages qu'elle cherche a proteger : la nouvelle version aurait
+    simplement demarre sur un dossier vide.
+
+    On ne remplace jamais un fichier deja present dans le nouvel
+    emplacement : celui-ci fait foi.
+    """
+    import shutil
+
+    repris = []
+    for ancien in (ROOT / "data", Path(__file__).resolve().parent.parent / "data"):
+        try:
+            if not ancien.is_dir() or ancien.resolve() == DATA_DIR.resolve():
+                continue
+        except OSError:
+            continue
+
+        for source in ancien.rglob("*"):
+            if not source.is_file():
+                continue
+            cible = DATA_DIR / source.relative_to(ancien)
+            if cible.exists():
+                continue
+            try:
+                cible.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, cible)
+                repris.append(str(source.relative_to(ancien)))
+            except OSError:
+                continue
+    return repris
+
+
+DONNEES_REPRISES = _recuperer_anciennes_donnees()
 
 # --- Indexation -------------------------------------------------------------
 

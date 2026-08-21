@@ -1,4 +1,4 @@
-# Assistant local
+﻿# Assistant local
 
 Assistant vocal et textuel qui connaît cette machine. **Rien ne sort du PC** :
 le modèle de langage, la reconnaissance vocale et la synthèse tournent tous
@@ -202,7 +202,7 @@ Six correctifs, **tous réversibles**, tous soumis à confirmation :
 processus système (`lsass`, `csrss`, `explorer`…) ou redémarrer un service
 critique (`RpcSs`, `DcomLaunch`…). Ces actions font tomber la session Windows.
 
-Tout est journalisé dans `data/logs/actions.jsonl` — accepté **comme** refusé.
+Tout est journalisé dans `%APPDATA%\AssistantLocal\logs\actions.jsonl` — accepté **comme** refusé.
 
 ### Images et captures d'écran
 
@@ -376,7 +376,7 @@ qu'il veut. Toute modification passe par `assistant/safety.py` :
 
 - elle est décrite en clair avant d'être faite ;
 - elle attend un accord explicite ;
-- elle est journalisée dans `data/logs/actions.jsonl`, acceptée **comme**
+- elle est journalisée dans `%APPDATA%\AssistantLocal\logs\actions.jsonl`, acceptée **comme**
   refusée.
 
 Certains chemins sont refusés même si tu confirmes — voir `PROTECTED_PATHS`
@@ -409,10 +409,24 @@ assistant/
     tts.py           voix Windows Hortense
     wake.py          mot-clé + raccourci global
   startup.py         démarrage automatique avec Windows
-data/
-  logs/actions.jsonl journal des actions
-  logs/assistant.log sortie du lancement automatique
 ```
+
+**Les données ne vivent pas dans le dossier du programme.** Celui-ci est
+effacé et recréé à chaque reconstruction, et supprimé à la désinstallation.
+Elles sont dans ton profil, où rien ne les touche :
+
+```
+%APPDATA%\AssistantLocal\
+  settings.json        réglages, dont la commande des programmes désactivés
+  logs\actions.jsonl   journal des actions
+  logs\assistant.log   sortie du lancement automatique
+```
+
+C'est `startup_backup` qui rend ce choix indispensable : il conserve la
+commande exacte des programmes retirés du démarrage. Perdue, un programme
+désactivé ne peut plus jamais être réactivé autrement qu'en le réinstallant.
+Les données laissées à l'ancien emplacement sont rapatriées au premier
+lancement.
 
 Le modèle **ne touche jamais au disque lui-même**. Il choisit un outil dans le
 catalogue de `llm.py`, l'assistant l'exécute et lui rend le résultat. C'est ce

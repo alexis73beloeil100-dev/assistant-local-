@@ -79,8 +79,17 @@ Filename: "{app}\{#MonExe}"; \
     Flags: postinstall nowait skipifsilent unchecked
 
 [UninstallDelete]
-; Reglages et journaux crees par l'application apres l'installation :
-; sans cela, le dossier resterait avec quelques fichiers orphelins.
+; Fichiers crees par l'application dans son propre dossier : sans cela, le
+; dossier resterait avec quelques orphelins apres la desinstallation.
+;
+; On n'efface QUE ce qui est jetable. Les reglages, le journal des actions et
+; les notes vivent dans {userappdata}\AssistantLocal et sont volontairement
+; CONSERVES : ils contiennent notamment la commande exacte des programmes
+; desactives au demarrage. Les supprimer rendrait ces programmes
+; irrecuperables autrement qu'en les reinstallant.
+;
+; L'ancien dossier {app}\data est encore nettoye : il ne contient plus que des
+; copies rapatriees au premier lancement de la nouvelle version.
 Type: filesandordirs; Name: "{app}\data"
 Type: files; Name: "{app}\erreurs.log"
 

@@ -836,3 +836,59 @@ def test_l_apostrophe_typographique_ne_dedouble_pas_une_application():
 
     assert apps.canon("Observateur d'evenements") == \
         apps.canon("Observateur d’evenements")
+
+
+# --- Les reglages perdus a chaque reconstruction -----------------------------
+
+def test_les_donnees_ne_vivent_pas_dans_le_dossier_jetable():
+    """Reglages, journal et notes repartaient de zero a chaque reconstruction.
+
+    Ils etaient ranges a cote de l'executable. PyInstaller efface dist/ avant
+    de le remplir, et le desinstalleur efface {app}\data : les deux
+    emplacements etaient condamnes.
+
+    Le plus grave etait startup_backup, qui conserve la commande exacte des
+    programmes desactives au demarrage. Perdue, un programme desactive ne peut
+    plus jamais etre reactive autrement qu'en le reinstallant.
+    """
+    from assistant import config
+
+    assert config.DATA_DIR != config.ROOT / "data", (
+        "les donnees ne doivent pas etre a cote du programme")
+    # Et surtout pas dans l'arborescence effacee a la reconstruction.
+    assert config.ROOT not in config.DATA_DIR.parents
+    assert config.DATA_DIR.is_absolute()
+
+
+def test_les_donnees_sont_dans_le_profil_de_l_utilisateur():
+    """Convention Windows : les donnees d'un utilisateur vivent dans son
+    profil, jamais a cote du programme."""
+    import os
+
+    from assistant import config
+
+    profil = os.environ.get("APPDATA") or str(config.DATA_DIR.home())
+    assert str(config.DATA_DIR).lower().startswith(profil.lower())
+
+
+def test_le_dossier_d_installation_n_accueille_pas_les_donnees():
+    """L'installateur pose le programme dans %LOCALAPPDATA%\AssistantLocal et
+    son desinstalleur efface ce dossier. Y ranger les donnees deplacerait le
+    defaut d'un cran au lieu de le corriger."""
+    import os
+
+    from assistant import config
+
+    installation = os.environ.get("LOCALAPPDATA", "")
+    if installation:
+        cible = os.path.join(installation, "AssistantLocal").lower()
+        assert not str(config.DATA_DIR).lower().startswith(cible)
+
+
+def test_les_anciennes_donnees_sont_recuperees():
+    """Sans reprise, la correction aurait elle-meme fait perdre les reglages
+    qu'elle protege : la nouvelle version demarrerait sur un dossier vide."""
+    from assistant import config
+
+    assert hasattr(config, "DONNEES_REPRISES")
+    assert isinstance(config.DONNEES_REPRISES, list)
