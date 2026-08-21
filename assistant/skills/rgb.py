@@ -28,6 +28,11 @@ from pathlib import Path
 CREATE_NO_WINDOW = 0x08000000
 TIMEOUT = 30
 
+# Le serveur d'OpenRGB, seule voie utilisable depuis un programme : l'exe est
+# une application Qt graphique, sa sortie console n'arrive dans aucun tuyau.
+HOTE_SERVEUR = "127.0.0.1"
+PORT_SERVEUR = 6742
+
 # Emplacements ou OpenRGB s'installe, plus une copie portable posee a cote de
 # l'assistant. On cherche, on ne suppose pas.
 CANDIDATS = [
@@ -543,10 +548,9 @@ def concurrents_actifs() -> list[str]:
 def _serveur_actif(timeout: float = 0.6) -> bool:
     import socket
 
-    from assistant.skills.rgb_client import HOTE, PORT
-
     try:
-        with socket.create_connection((HOTE, PORT), timeout=timeout):
+        with socket.create_connection((HOTE_SERVEUR, PORT_SERVEUR),
+                                      timeout=timeout):
             return True
     except OSError:
         return False
@@ -571,15 +575,28 @@ def demarrer_serveur(attente: float = 20.0) -> tuple[bool, str]:
     if exe is None:
         return False, "OpenRGB introuvable."
 
+    # EN ADMINISTRATEUR, et c'est indispensable.
+    #
+    # L'eclairage d'une carte mere passe par le bus SMBus. La LECTURE y est
+    # permise a tout le monde -- d'ou une detection qui marchait sans rien
+    # demander -- mais l'ECRITURE exige les droits administrateur. Sans eux,
+    # la souris et la carte graphique repondaient, la carte mere restait
+    # muette : elles passent par l'USB et par le bus interne de la carte, qui
+    # n'ont pas cette restriction.
+    #
+    # Une seule demande, au premier usage du RGB dans la session. L'assistant
+    # lui-meme reste sans privileges : c'est sur ce point que repose tout son
+    # garde-fou.
     try:
-        subprocess.Popen(
-            [str(exe), "--server", "--noautoconnect"],
-            cwd=str(exe.parent),
-            creationflags=CREATE_NO_WINDOW | 0x00000008,   # detache
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
+        subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command",
+             f"Start-Process -FilePath '{exe}' "
+             "-ArgumentList '--server','--noautoconnect' "
+             "-Verb RunAs -WindowStyle Hidden"],
+            capture_output=True, text=True, timeout=120,
+            creationflags=CREATE_NO_WINDOW,
         )
-    except OSError as exc:
+    except (subprocess.SubprocessError, OSError) as exc:
         return False, f"Lancement impossible : {exc}"
 
     limite = time.time() + attente
@@ -595,10 +612,40 @@ def demarrer_serveur(attente: float = 20.0) -> tuple[bool, str]:
 # n'arrive dans aucun tuyau, on passe desormais par le serveur.
 
 
+@dataclass
+class Peripherique:
+    """Un materiel eclairable, tel que le SDK le rapporte."""
+
+    index: int
+    nom: str
+    genre: str = ""
+    modes: list = field(default_factory=list)
+    mode_actif: str = ""
+    nb_leds: int = 0
+
+
+def _client():
+    """Ouvre une session avec le serveur OpenRGB.
+
+    On passe par le SDK officiel et non par un client ecrit a la main. Le
+    format binaire du protocole m'a piege QUATRE fois : champ fabricant ajoute
+    en version 1, longueur de matrice lue sur 32 bits au lieu de 16, et un
+    decalage qui faisait ressortir le nombre de LED a zero -- sans lever
+    d'erreur, donc sans rien signaler.
+
+    Ce zero etait exactement le blocage : sans le nombre de LED, impossible
+    d'ecrire les couleurs. Or changer le mode ne suffit pas sur une carte
+    mere, il faut pousser les couleurs derriere. La carte graphique et la
+    souris s'en accommodaient, la carte mere non -- d'ou un pilotage qui
+    marchait sur deux peripheriques sur trois.
+    """
+    from openrgb import OpenRGBClient
+
+    return OpenRGBClient(name="AssistantLocal")
+
+
 def peripheriques() -> tuple[list, str]:
     """Ce qui est reellement pilotable sur CETTE machine, et ses modes."""
-    from assistant.skills import rgb_client
-
     if not disponible():
         return [], "OpenRGB n'est pas livre avec l'assistant."
 
@@ -607,10 +654,22 @@ def peripheriques() -> tuple[list, str]:
         return [], message
 
     try:
-        with rgb_client.Connexion() as lien:
-            trouves = lien.peripheriques()
-    except rgb_client.Erreur as exc:
-        return [], str(exc)
+        client = _client()
+        trouves = [
+            Peripherique(
+                index=materiel.id,
+                nom=materiel.name,
+                genre=str(getattr(materiel.type, "name", "")).lower(),
+                modes=[m.name for m in materiel.modes],
+                mode_actif=(materiel.modes[materiel.active_mode].name
+                            if 0 <= materiel.active_mode < len(materiel.modes)
+                            else ""),
+                nb_leds=len(materiel.leds),
+            )
+            for materiel in client.devices
+        ]
+    except Exception as exc:  # noqa: BLE001 - le SDK leve des types varies
+        return [], f"Serveur OpenRGB injoignable : {type(exc).__name__}: {exc}"
 
     if not trouves:
         concurrents = concurrents_actifs()
@@ -620,6 +679,34 @@ def peripheriques() -> tuple[list, str]:
                       "le controleur : ferme-le.")
         return [], ("Aucun peripherique RGB detecte." + detail)
     return trouves, ""
+
+
+# Couleurs nommees, pour qu'on puisse dire "passe le RGB en rouge" sans
+# connaitre l'hexadecimal.
+COULEURS = {
+    "rouge": (255, 0, 0), "vert": (0, 255, 0), "bleu": (0, 0, 255),
+    "blanc": (255, 255, 255), "jaune": (255, 255, 0),
+    "cyan": (0, 255, 255), "magenta": (255, 0, 255), "rose": (255, 105, 180),
+    "orange": (255, 100, 0), "violet": (140, 0, 255), "noir": (0, 0, 0),
+}
+
+
+def _couleur(demande: str):
+    """Traduit un nom de couleur ou un code hexadecimal."""
+    from openrgb.utils import RGBColor
+
+    texte = str(demande).strip().lower().lstrip("#")
+    if texte in COULEURS:
+        return RGBColor(*COULEURS[texte])
+    if len(texte) == 6:
+        try:
+            return RGBColor(int(texte[0:2], 16), int(texte[2:4], 16),
+                            int(texte[4:6], 16))
+        except ValueError:
+            pass
+    raise ValueError(
+        f"Couleur inconnue : {demande}. Attendu un nom "
+        f"({', '.join(sorted(COULEURS))}) ou un code comme FF0000.")
 
 
 def _trouver(nom: str, liste: list[str]) -> str | None:
@@ -772,24 +859,34 @@ def changer_mode(mode: str, peripherique: str = "", couleur: str = "") -> str:
             return f"Aucun peripherique ne correspond a \"{peripherique}\". " \
                    f"Connus : {noms}."
 
-    from assistant.skills import rgb_client
-
     faits, ignores = [], []
     try:
-        with rgb_client.Connexion() as lien:
-            for cible in cibles:
-                exact = _trouver(mode, cible.modes)
-                if exact is None:
-                    ignores.append(
-                        f"{cible.nom} (modes : {', '.join(cible.modes)})")
-                    continue
-                try:
-                    lien.changer_mode(cible, cible.modes.index(exact))
-                    faits.append(f"{cible.nom} -> {exact}")
-                except (rgb_client.Erreur, OSError, IndexError) as exc:
-                    ignores.append(f"{cible.nom} : {type(exc).__name__}")
-    except rgb_client.Erreur as exc:
-        return str(exc)
+        client = _client()
+        par_index = {m.id: m for m in client.devices}
+        for cible in cibles:
+            exact = _trouver(mode, cible.modes)
+            if exact is None:
+                ignores.append(
+                    f"{cible.nom} (modes : {', '.join(cible.modes)})")
+                continue
+            materiel = par_index.get(cible.index)
+            if materiel is None:
+                ignores.append(f"{cible.nom} : disparu depuis la lecture")
+                continue
+            try:
+                materiel.set_mode(exact)
+                # La couleur APRES le mode, et seulement si elle est demandee.
+                # Changer le mode ne pousse aucune couleur : c'est ce qui
+                # faisait qu'une carte mere ne bougeait pas alors que la
+                # souris et la carte graphique suivaient.
+                if couleur:
+                    materiel.set_color(_couleur(couleur))
+                faits.append(f"{cible.nom} -> {exact}"
+                             + (f" en {couleur}" if couleur else ""))
+            except Exception as exc:  # noqa: BLE001
+                ignores.append(f"{cible.nom} : {type(exc).__name__}: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        return f"Serveur OpenRGB injoignable : {type(exc).__name__}: {exc}"
 
     lignes = []
     if faits:

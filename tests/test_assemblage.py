@@ -340,24 +340,53 @@ def test_les_modes_rgb_sont_decouverts_et_non_listes_en_dur():
     """
     import inspect
 
-    from assistant.skills import rgb, rgb_client
-
-    # Les modes viennent du serveur, pas d'une liste ecrite ici.
-    assert "modes" in inspect.getsource(rgb_client._decoder)
-    for en_dur in ("COLOR CYCLE", "Digital Wave", "DOUBLE FLASH",
-                   "Spectrum Cycle", "Breathing"):
-        assert en_dur not in inspect.getsource(rgb)
-        assert en_dur not in inspect.getsource(rgb_client)
-
-
-def test_sans_openrgb_l_assistant_explique_au_lieu_d_echouer():
     from assistant.skills import rgb
 
-    texte = rgb.liste()
-    assert isinstance(texte, str) and texte.strip()
-    if not rgb.disponible():
-        assert "OpenRGB" in texte
-        assert "libre" in texte or "hors ligne" in texte
+    source = inspect.getsource(rgb)
+    for en_dur in ("COLOR CYCLE", "Digital Wave", "DOUBLE FLASH",
+                   "Spectrum Cycle", "Breathing"):
+        assert en_dur not in source
+
+
+def test_le_pilotage_rgb_passe_par_le_sdk_officiel():
+    """Le protocole binaire a piege QUATRE fois un client ecrit a la main.
+
+    Le pire : le nombre de LED ressortait a zero sans lever d'erreur. Or sans
+    lui, impossible d'ecrire les couleurs -- et changer le mode ne suffit pas
+    sur une carte mere. La souris et la carte graphique suivaient, la carte
+    mere restait muette. Deux peripheriques sur trois, ce qui ressemblait a un
+    probleme de materiel plutot qu'a une erreur d'analyse.
+    """
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb._client)
+    assert "OpenRGBClient" in source, "le SDK officiel doit etre utilise"
+
+
+def test_le_serveur_rgb_est_lance_en_administrateur():
+    """L'ecriture sur le bus SMBus l'exige, la lecture non.
+
+    C'est ce qui faisait repondre la souris et la carte graphique -- USB et
+    bus interne, sans restriction -- pendant que la carte mere restait muette.
+    """
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb.demarrer_serveur)
+    assert "RunAs" in source
+
+
+def test_une_couleur_se_donne_par_son_nom_ou_en_hexadecimal():
+    from assistant.skills import rgb
+
+    assert "rouge" in rgb.COULEURS and "bleu" in rgb.COULEURS
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError):
+        rgb._couleur("mauve-turquoise")
 
 
 def test_les_logiciels_concurrents_sont_signales():
@@ -369,57 +398,12 @@ def test_les_logiciels_concurrents_sont_signales():
     assert isinstance(rgb.concurrents_actifs(), list)
 
 
-def test_le_pilotage_rgb_passe_par_le_serveur_pas_par_la_ligne_de_commande():
-    """OpenRGB.exe est une application Qt graphique.
+def test_les_services_critiques_de_windows_ne_sont_jamais_arretes():
+    """Une recherche par motif attrapait MSiSCSI et msiserver -- l'initiateur
+    iSCSI et le programme d'installation -- parce que leur nom commence comme
+    MSI. Arreter l'un ou l'autre casse la session."""
+    from assistant.skills import rgb
 
-    Mesure sur cette machine, avec et sans droits administrateur, avec et sans
-    console attachee : `--list-devices` rend ZERO caractere en 5,4 secondes a
-    chaque fois. Sa sortie n'arrive dans aucun tuyau, donc la ligne de commande
-    est inutilisable depuis un programme.
-
-    Le serveur est l'interface prevue pour ca : un port TCP et un protocole
-    documente.
-    """
-    import inspect
-
-    from assistant.skills import rgb, rgb_client
-
-    assert rgb_client.PORT == 6742
-    source = inspect.getsource(rgb.peripheriques)
-    assert "rgb_client" in source
-    assert "--list-devices" not in source
-
-
-def test_le_changement_de_mode_renvoie_les_octets_d_origine():
-    """Le format d'un mode a change entre les versions du protocole -- la
-    luminosite est apparue en version 3. Un client qui reserialise champ par
-    champ se casse a chaque evolution ; renvoyer les octets recus ne se casse
-    jamais.
-    """
-    import inspect
-
-    from assistant.skills import rgb_client
-
-    source = inspect.getsource(rgb_client.Connexion.changer_mode)
-    assert "modes_bruts" in source
-
-
-def test_le_fabricant_est_lu_dans_la_reponse_du_serveur():
-    """Champ insere en version 1 du protocole. L'oublier decale tout ce qui
-    suit, et les modes ressortent en charabia plutot qu'en erreur franche."""
-    import inspect
-
-    from assistant.skills import rgb_client
-
-    source = inspect.getsource(rgb_client._decoder)
-    assert "_fabricant" in source
-
-
-def test_les_familles_de_peripheriques_sont_celles_du_protocole():
-    """Un tableau decale d'un cran annoncait une carte graphique comme
-    "memoire" et une souris comme "boitier"."""
-    from assistant.skills import rgb_client
-
-    assert rgb_client.FAMILLES[0] == "carte mere"
-    assert rgb_client.FAMILLES[2] == "carte graphique"
-    assert rgb_client.FAMILLES[6] == "souris"
+    for critique in ("MSiSCSI", "msiserver", "RpcSs", "DcomLaunch"):
+        assert critique in rgb.JAMAIS_TOUCHER
+        assert critique not in rgb.SERVICES_CONCURRENTS

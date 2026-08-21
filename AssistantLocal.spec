@@ -52,6 +52,15 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 # de PyInstaller ne les voit pas -- meme piege que pour le paquet assistant.
 hiddenimports += ['win32com', 'win32com.client', 'pythoncom', 'pywintypes',
                   'win32api', 'win32gui', 'win32con']
+
+# Le SDK officiel d'OpenRGB. Importe a l'interieur des fonctions, donc
+# invisible a l'analyse statique -- meme piege que pour pywin32 et pour le
+# paquet assistant lui-meme. Sans lui, l'executable se construit sans erreur
+# et l'eclairage RGB cesse de fonctionner en silence.
+hiddenimports += ['openrgb', 'openrgb.orgb', 'openrgb.utils',
+                  'openrgb.network', 'openrgb.consts']
+tmp_ret = collect_all('openrgb')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('win32com')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
