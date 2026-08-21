@@ -216,3 +216,93 @@ def test_l_autotest_couvre_les_points_essentiels():
     essentiels = [nom for nom, _f, essentiel in selftest.VERIFICATIONS if essentiel]
     assert "Releve materiel" in essentiels
     assert "Disques" in essentiels
+
+
+# --- Le panneau affiche, joint a la conversation -----------------------------
+#
+# Les panneaux et la conversation s'ignoraient : le modele n'avait aucune idee
+# de ce qui etait affiche. Ces contrats verifient que la passerelle tient.
+
+def test_un_panneau_consulte_devient_du_contexte():
+    from assistant import panels
+
+    panels._cache["problemes"] = "PROBLEMES DETECTES\n\n  [GRAVE] Disque plein"
+    joint = panels.contexte("problemes")
+
+    assert joint is not None
+    libelle, contenu = joint
+    assert libelle == panels.BY_KEY["problemes"].label
+    assert "Disque plein" in contenu
+
+
+def test_un_panneau_jamais_ouvert_ne_declenche_aucun_calcul():
+    """contexte() ne doit lire que le cache.
+
+    Sinon une question sans rapport declencherait un releve materiel de six
+    secondes, simplement parce que l'utilisateur a effleure un menu.
+    """
+    from assistant import panels
+
+    panels._cache.pop("autotest", None)
+    assert panels.contexte("autotest") is None
+
+
+def test_l_accueil_n_est_jamais_joint():
+    """C'est un mode d'emploi, pas une donnee sur la machine.
+
+    Ses lignes d'exemple pourraient en plus etre prises pour des consignes.
+    """
+    from assistant import panels
+
+    panels._cache["accueil"] = "BIENVENUE\n>> Quelle est la configuration ?"
+    assert panels.contexte("accueil") is None
+
+
+def test_un_panneau_trop_long_est_coupe_par_le_bas():
+    """Les panneaux mettent l'essentiel en tete : on garde la tete."""
+    from assistant import panels
+
+    panels._cache["espace"] = "DEBUT IMPORTANT\n" + ("x" * panels.CONTEXTE_MAX * 2)
+    joint = panels.contexte("espace")
+
+    assert joint is not None
+    _libelle, contenu = joint
+    assert contenu.startswith("DEBUT IMPORTANT")
+    assert len(contenu) < panels.CONTEXTE_MAX + 200
+
+
+def test_le_contexte_est_presente_comme_une_donnee():
+    """Un panneau affiche du texte venu d'ailleurs -- noms de fichiers,
+    messages du journal Windows. Il ne doit jamais etre lu comme une consigne.
+    """
+    from assistant import llm
+
+    message = llm.message_de_contexte("Problemes detectes", "  [GRAVE] rien")
+
+    assert message["role"] == "system"
+    assert "DONNEE" in message["content"]
+    assert message["content"].startswith(llm.CONTEXTE_MARQUEUR)
+
+
+def test_le_contexte_est_remplace_et_jamais_empile():
+    """Cinq questions devant le meme panneau ne doivent pas laisser cinq
+    copies de son contenu dans l'historique."""
+    from assistant import llm
+
+    convo = [{"role": "system", "content": "regles"}]
+    for _ in range(5):
+        convo = llm.sans_contexte(convo)
+        convo.append(llm.message_de_contexte("Mes jeux", "un jeu"))
+        convo.append({"role": "user", "content": "et alors ?"})
+
+    contextes = [m for m in convo
+                 if str(m.get("content", "")).startswith(llm.CONTEXTE_MARQUEUR)]
+    assert len(contextes) == 1
+    assert convo[0]["content"] == "regles", "le message systeme doit survivre"
+
+
+def test_le_modele_sait_qu_il_peut_se_servir_du_panneau():
+    """Sans cette regle, il rappelle l'outil pour retrouver ce qu'il a deja."""
+    from assistant import llm
+
+    assert "panneau" in llm.SYSTEM_PROMPT

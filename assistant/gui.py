@@ -55,6 +55,10 @@ class AssistantWindow(tk.Tk):
         self.recorder: stt.Recorder | None = None
         self.ecoute = tk.BooleanVar(value=False)
         self.boucle_vocale: wake.VoiceLoop | None = None
+        # Dernier panneau consulte, joint aux questions suivantes. Ce n'est pas
+        # self.current : pour taper une question il faut revenir sur la
+        # conversation, donc le panneau est deja "ferme" au moment de l'envoi.
+        self._contexte_panneau: str | None = None
 
         self._build()
         self.after(50, self._drain)
@@ -384,7 +388,27 @@ class AssistantWindow(tk.Tk):
         self.chat.pack(fill="both", expand=True)
         self.chat.canvas.bind("<Configure>", self._on_resize, add="+")
 
-        bar = tk.Frame(self.chat_view, bg=t.BG)
+        # Temoin du panneau joint a la question. Il est VISIBLE, et retirable :
+        # l'assistant ne doit jamais lire par-dessus l'epaule de l'utilisateur
+        # sans que celui-ci le sache. C'est aussi ce qui rend le comportement
+        # previsible -- sans ce bandeau, une question sans rapport se
+        # retrouverait accompagnee d'un panneau consulte dix minutes plus tot,
+        # sans explication.
+        self.contexte_bar = tk.Frame(self.chat_view, bg=t.BG)
+        self.contexte_texte = tk.Label(
+            self.contexte_bar, text="", bg=t.BG, fg=t.TEXT_FAINT,
+            font=t.FONT_UI_TINY, anchor="w")
+        self.contexte_texte.pack(side="left")
+        self.contexte_retirer = tk.Label(
+            self.contexte_bar, text="  retirer", bg=t.BG, fg=t.ACCENT,
+            font=t.FONT_UI_TINY, cursor="hand2")
+        self.contexte_retirer.pack(side="left")
+        self.contexte_retirer.bind("<Button-1>",
+                                   lambda _e: self.oublier_contexte())
+
+        # Conserve : le temoin de contexte s'insere au-dessus de cette barre,
+        # et pack() sans reference le placerait en dessous.
+        bar = self._barre_saisie = tk.Frame(self.chat_view, bg=t.BG)
         bar.pack(fill="x", padx=t.PAD_L, pady=t.PAD_L)
 
         field = tk.Frame(bar, bg=t.SURFACE_2, highlightthickness=1,
@@ -403,6 +427,31 @@ class AssistantWindow(tk.Tk):
                                     bg=t.ACCENT, fg="#0b1220",
                                     hover_bg="#79b4ff")
         self.send_btn.pack(side="left", padx=(t.PAD, 0))
+
+    # =====================================================================
+    # Contexte joint aux questions
+    # =====================================================================
+
+    def _montrer_contexte(self) -> None:
+        """Affiche ou masque le bandeau du panneau joint."""
+        joint = None
+        if self._contexte_panneau:
+            joint = panels.contexte(self._contexte_panneau)
+
+        if joint is None:
+            self.contexte_bar.pack_forget()
+            return
+
+        libelle, _contenu = joint
+        self.contexte_texte.configure(text=f"Joint a ta question : {libelle}")
+        self.contexte_bar.pack(fill="x", padx=t.PAD_L, pady=(0, 4),
+                               before=self._barre_saisie)
+
+    def oublier_contexte(self) -> None:
+        """Detache le panneau, sur demande de l'utilisateur."""
+        self._contexte_panneau = None
+        self.convo = llm.sans_contexte(self.convo)
+        self._montrer_contexte()
 
     # =====================================================================
     # Navigation
@@ -427,8 +476,15 @@ class AssistantWindow(tk.Tk):
 
         if key == CHAT_KEY:
             self.chat_view.pack(fill="both", expand=True)
+            self._montrer_contexte()
             self.entry.focus_set()
             return
+
+        # Consulter un panneau le joint aux questions suivantes : c'est la
+        # sequence reelle -- on lit "Problemes detectes", on revient sur la
+        # conversation, on tape "corrige ca".
+        if key not in panels.SANS_CONTEXTE:
+            self._contexte_panneau = key
 
         panel = panels.BY_KEY.get(key)
         self.panel_title.configure(text=panel.label if panel else key)
@@ -604,7 +660,20 @@ class AssistantWindow(tk.Tk):
         self._set_busy(True)
         self.post("status", ("Reflexion", t.AMBER))
 
+        # Fige le contexte maintenant, sur le fil graphique. Le fil de travail
+        # met plusieurs secondes a repondre, pendant lesquelles l'utilisateur
+        # peut ouvrir un autre panneau : la question doit partir avec ce qu'il
+        # avait sous les yeux en l'ecrivant, pas avec ce qu'il regarde depuis.
+        joint = (panels.contexte(self._contexte_panneau)
+                 if self._contexte_panneau else None)
+
         def work():
+            # Le contexte est remplace, jamais empile : cinq questions devant
+            # le meme panneau ne doivent pas laisser cinq copies de son
+            # contenu dans l'historique.
+            self.convo = llm.sans_contexte(self.convo)
+            if joint is not None:
+                self.convo.append(llm.message_de_contexte(*joint))
             self.convo.append({"role": "user", "content": question})
             try:
                 reponse, self.convo = llm.chat(

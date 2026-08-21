@@ -185,19 +185,6 @@ def _jeux() -> str:
     return "\n".join(L)
 
 
-def _espace() -> str:
-    from assistant.index import db
-    from assistant.skills import cleanup, files
-
-    if not db.is_ready():
-        return ("Le scan des fichiers est encore en cours.\n"
-                "Cette page sera disponible dans quelques secondes.")
-
-    morceaux = [files.index_status(), ""]
-    morceaux.append(cleanup.report())
-    return "\n".join(morceaux)
-
-
 def _fichiers() -> str:
     from assistant.index import db, watcher
     from assistant.skills import files
@@ -525,3 +512,46 @@ def invalidate(key: str | None = None) -> None:
         _cache.clear()
     else:
         _cache.pop(key, None)
+
+
+# --- Passerelle vers la conversation ----------------------------------------
+#
+# Les panneaux et la conversation s'ignoraient : on ouvrait "Problemes
+# detectes", on tapait "corrige ca", et le modele n'avait aucune idee de ce qui
+# etait affiche. Il rappelait alors l'outil pour retrouver ce que
+# l'utilisateur avait deja sous les yeux -- lentement, et parfois en changeant
+# un chiffre au passage.
+
+# Taille maximale du contenu transmis au modele.
+#
+# On coupe par le bas : tous les panneaux mettent l'essentiel en tete -- le
+# resume, les problemes graves, les plus gros dossiers -- et la queue n'est que
+# du detail. Couper par le haut priverait le modele de la reponse.
+CONTEXTE_MAX = 6000
+
+# L'accueil est un mode d'emploi, pas une donnee sur la machine. Le transmettre
+# n'apporterait que du bruit, et ses lignes d'exemple pourraient etre prises
+# pour des consignes.
+SANS_CONTEXTE = {"accueil"}
+
+
+def contexte(key: str) -> tuple[str, str] | None:
+    """Ce que l'utilisateur a sous les yeux, pret a etre lu par le modele.
+
+    Rend (libelle, contenu), ou None si ce panneau n'a rien a apporter.
+
+    Ne calcule jamais rien : on ne rend que ce qui est deja en cache. Un
+    panneau jamais ouvert ne doit pas declencher un releve de six secondes
+    parce que l'utilisateur a pose une question sans rapport.
+    """
+    panel = BY_KEY.get(key)
+    if panel is None or key in SANS_CONTEXTE:
+        return None
+
+    texte = _cache.get(key)
+    if not texte or not texte.strip():
+        return None
+
+    if len(texte) > CONTEXTE_MAX:
+        texte = texte[:CONTEXTE_MAX].rstrip() + "\n[... suite non transmise]"
+    return panel.label, texte
