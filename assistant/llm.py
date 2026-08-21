@@ -27,6 +27,12 @@ Regles :
 - Pour toute question sur des fichiers, l'etat de la machine ou les jeux, tu
   DOIS appeler un outil. Tu n'inventes jamais un chemin, une taille ou un
   nom de jeu : si tu ne l'as pas lu dans un resultat d'outil, tu ne le sais pas.
+- Cette regle vaut aussi quand PERSONNE NE TE DEMANDE RIEN. Ne cite jamais
+  spontanement un processeur, une carte graphique, une quantite de memoire ou
+  un jeu installe pour meubler une salutation. Les seuls chiffres exacts sont
+  ceux du bloc [machine reelle] ci-dessous ; tout le reste doit venir d'un
+  outil. Un materiel "typique" ou "probable" n'existe pas : c'est une
+  invention, et elle sera prise pour un fait.
 - UN SEUL outil suffit presque toujours. Des qu'un outil t'a rendu un
   resultat exploitable, tu REPONDS. Tu n'en appelles un deuxieme que si le
   premier a rendu une erreur ou une liste vide. Enchainer les outils "pour
@@ -814,7 +820,10 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
     on redemande une reponse au modele **sans lui proposer d'outils**. Il a
     deja tous les resultats sous les yeux, il ne lui reste qu'a les formuler.
     """
-    convo = list(messages)
+    # La carte de la machine est jointe a chaque tour, ici et pas dans
+    # l'interface : la ligne de commande et la boucle vocale passent aussi par
+    # cette fonction, et doivent en beneficier autant.
+    convo = avec_carte_machine(list(messages))
 
     for _ in range(max_rounds):
         message = _call(convo, with_tools=True)
@@ -925,6 +934,102 @@ def trim_conversation(messages: list[dict]) -> list[dict]:
         corps.pop(0)
 
     return ([systeme] if systeme else []) + corps
+
+
+# --- La carte de la machine --------------------------------------------------
+#
+# Le defaut le plus grave rencontre a l'usage. Sur un simple "bonjour",
+# l'assistant a annonce : "J'ai appris votre configuration au demarrage :
+# processeur Intel Core i7-12700K, 32 Go de RAM, carte graphique NVIDIA RTX
+# 3080". La machine est un Ryzen 7 5800X avec une RTX 5060 Ti. Tout etait
+# invente, et presente comme un fait appris.
+#
+# La regle "n'invente jamais, appelle un outil" ne suffisait pas : sur une
+# salutation, le modele n'appelle aucun outil, et comble le vide avec du
+# plausible. Un modele de langage ne repond pas "je ne sais pas" a une
+# question a laquelle il pense pouvoir repondre.
+#
+# La seule correction fiable est de mettre les vrais chiffres DANS son
+# contexte, des le premier mot. On ne peut pas inventer ce qu'on a sous les
+# yeux.
+
+CARTE_MARQUEUR = "[machine reelle]"
+
+
+def carte_machine() -> str:
+    """Les caracteristiques reelles de cette machine, en quelques lignes.
+
+    Volontairement courte : elle est jointe a CHAQUE tour de conversation, et
+    doit tenir dans le contexte sans le manger. Le detail complet reste
+    accessible par les outils.
+    """
+    from assistant.skills import hardware
+
+    donnees = hardware.collect()
+    if not donnees:
+        return ("Le releve de la machine n'est pas encore termine. Tu ne "
+                "connais donc AUCUNE caracteristique de ce PC : appelle "
+                "configuration_machine avant d'en citer une.")
+
+    machine = donnees.get("machine", {})
+    cpu = donnees.get("cpu", {})
+    systeme = donnees.get("os", {})
+
+    lignes = [
+        f"Processeur       {str(cpu.get('name', '?')).strip()} "
+        f"({cpu.get('cores', '?')} coeurs / {cpu.get('threads', '?')} threads)",
+        f"Memoire vive     {machine.get('ram_gb', '?')} Go sur "
+        f"{len(donnees.get('ram') or [])} barrette(s)",
+    ]
+    for carte in donnees.get("gpu") or []:
+        lignes.append(f"Carte graphique  {carte.get('name', '?')} — pilote "
+                      f"{carte.get('driver', '?')}")
+    lignes.append(f"Carte mere       {machine.get('board', '?')}")
+
+    volumes = [v for v in donnees.get("volumes") or []
+               if (v.get("size_gb") or 0) >= 20]
+    for volume in volumes:
+        lignes.append(
+            f"Disque {volume.get('letter')}:        "
+            f"{volume.get('free_gb', 0):.0f} Go libres sur "
+            f"{volume.get('size_gb', 0):.0f} Go")
+
+    lignes.append(f"Windows          {systeme.get('caption', '?')} build "
+                  f"{systeme.get('build', '?')}")
+    return "\n".join(lignes)
+
+
+def message_carte_machine() -> dict:
+    return {
+        "role": "system",
+        "content": (
+            f"{CARTE_MARQUEUR} Voici les caracteristiques REELLES de la "
+            "machine sur laquelle tu tournes, relevees par l'application "
+            "elle-meme.\n\n"
+            + carte_machine()
+            + "\n\nCe sont les seuls chiffres exacts. Si on te demande la "
+            "configuration, reponds a partir de ceux-la. N'en cite JAMAIS "
+            "d'autres de memoire : tout processeur ou carte graphique que tu "
+            "crois connaitre sans l'avoir lu ici ou dans un resultat d'outil "
+            "est une invention."
+        ),
+    }
+
+
+def avec_carte_machine(messages: list[dict]) -> list[dict]:
+    """Insere la carte a jour juste apres les regles, et retire l'ancienne.
+
+    Remplacee a chaque tour plutot qu'ajoutee : l'espace disque change, et
+    empiler dix cartes remplirait le contexte de doublons.
+    """
+    propre = [
+        m for m in messages
+        if not (m.get("role") == "system"
+                and str(m.get("content", "")).startswith(CARTE_MARQUEUR))
+    ]
+    if not propre:
+        return propre
+    return [propre[0], message_carte_machine()] + propre[1:]
 
 
 # --- Contexte du panneau affiche --------------------------------------------

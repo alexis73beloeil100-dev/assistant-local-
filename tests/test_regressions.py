@@ -737,3 +737,54 @@ def test_une_source_ratee_peut_etre_rattrapee():
     finally:
         apprentissage.SOURCES = origine
         apprentissage.echecs.clear()
+
+
+# --- La configuration inventee -----------------------------------------------
+
+def test_les_vrais_chiffres_de_la_machine_sont_dans_le_contexte():
+    """Sur un simple "bonjour", l'assistant a annonce un i7-12700K et une
+    RTX 3080. La machine est un Ryzen 7 5800X avec une RTX 5060 Ti.
+
+    La regle "n'invente jamais, appelle un outil" ne suffisait pas : sur une
+    salutation le modele n'appelle aucun outil, et comble le vide avec du
+    plausible. La seule correction fiable est de mettre les vrais chiffres
+    dans son contexte des le premier mot.
+    """
+    from assistant import llm
+
+    convo = llm.avec_carte_machine(llm.new_conversation())
+    cartes = [m for m in convo
+              if str(m.get("content", "")).startswith(llm.CARTE_MARQUEUR)]
+    assert len(cartes) == 1, "la carte doit etre jointe, une seule fois"
+    assert convo[0]["role"] == "system", "les regles restent en tete"
+
+
+def test_la_carte_machine_est_remplacee_et_jamais_empilee():
+    """Elle est jointe a chaque tour : l'empiler remplirait le contexte."""
+    from assistant import llm
+
+    convo = llm.new_conversation()
+    for _ in range(5):
+        convo = llm.avec_carte_machine(convo)
+        convo.append({"role": "user", "content": "et alors ?"})
+
+    cartes = [m for m in convo
+              if str(m.get("content", "")).startswith(llm.CARTE_MARQUEUR)]
+    assert len(cartes) == 1
+
+
+def test_le_modele_est_prevenu_quand_le_releve_n_est_pas_pret(monkeypatch):
+    """Au tout debut, le releve tourne encore. Le modele doit le savoir plutot
+    que de supposer -- c'est exactement le moment ou il inventait."""
+    from assistant import llm
+    from assistant.skills import hardware
+
+    monkeypatch.setattr(hardware, "collect", lambda force=False: {})
+    texte = llm.carte_machine()
+    assert "AUCUNE" in texte and "configuration_machine" in texte
+
+
+def test_meubler_une_salutation_est_explicitement_interdit():
+    from assistant import llm
+
+    assert "PERSONNE NE TE DEMANDE RIEN" in llm.SYSTEM_PROMPT
