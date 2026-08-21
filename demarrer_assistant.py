@@ -1,4 +1,7 @@
-"""Lanceur silencieux, utilise par le demarrage automatique de Windows.
+"""Lanceur de secours, quand l'executable n'a pas encore ete construit.
+
+Le demarrage automatique doit pointer sur dist/AssistantLocal.exe : c'est ce
+que startup.command() inscrit. Ce script ne sert que depuis les sources.
 
 Lance par pythonw.exe, il n'y a pas de console : tout ce qui serait affiche
 part dans data/logs/assistant.log, sinon la moindre erreur au demarrage
@@ -24,9 +27,12 @@ def main() -> int:
     print(f"\n=== demarrage {datetime.now().isoformat(timespec='seconds')} ===")
 
     try:
-        from assistant.main import main as run
+        # La FENETRE, pas la boucle vocale. assistant.main ouvrait l'ecoute
+        # sans interface : au demarrage de Windows, l'utilisateur n'avait
+        # rien a l'ecran et croyait que rien ne s'etait lance.
+        from assistant.gui import main as run
 
-        return run([])
+        return run()
     except Exception:
         import traceback
 

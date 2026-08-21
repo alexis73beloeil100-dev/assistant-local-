@@ -13,6 +13,8 @@ from pathlib import Path
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "AssistantLocal"
 
+import sys
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # L'executable packagee est la cible preferee : c'est ce que l'utilisateur
@@ -25,6 +27,19 @@ PYTHONW = ROOT / ".venv" / "Scripts" / "pythonw.exe"
 GUI_LAUNCHER = ROOT / "AssistantLocal.py"
 
 
+def cible() -> Path | None:
+    """L'executable a inscrire, ou None s'il faut passer par les sources.
+
+    Une fois l'application emballee, __file__ pointe DANS _internal, le
+    dossier prive de PyInstaller : ROOT y designe un chemin qui n'a aucun
+    sens, et les constantes ci-dessus deviennent fausses. sys.executable est
+    alors la seule reference juste -- c'est l'exe lui-meme.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve()
+    return EXE if EXE.exists() else None
+
+
 def command() -> str:
     """La commande a inscrire au demarrage.
 
@@ -33,8 +48,9 @@ def command() -> str:
     ca donnait un processus invisible que l'utilisateur ne pouvait ni voir
     ni utiliser.
     """
-    if EXE.exists():
-        return f'"{EXE}"'
+    exe = cible()
+    if exe is not None:
+        return f'"{exe}"'
     return f'"{PYTHONW}" "{GUI_LAUNCHER}"'
 
 
@@ -49,7 +65,8 @@ def status() -> tuple[bool, str]:
 
 
 def enable() -> str:
-    if not EXE.exists() and not (PYTHONW.exists() and GUI_LAUNCHER.exists()):
+    executable = cible()
+    if executable is None and not (PYTHONW.exists() and GUI_LAUNCHER.exists()):
         return (
             "Aucune cible lancable trouvee.\n"
             f"  Ni {EXE}\n  ni {GUI_LAUNCHER}"
@@ -58,9 +75,9 @@ def enable() -> str:
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
         winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, command())
 
-    cible = "l'executable" if EXE.exists() else "la fenetre Python"
+    quoi = "l'executable" if executable is not None else "la fenetre Python"
     return (
-        f"Demarrage automatique active, sur {cible}.\n"
+        f"Demarrage automatique active, sur {quoi}.\n"
         "  La fenetre de l'assistant s'ouvrira avec ta session Windows et\n"
         "  reconstruira sa connaissance des fichiers en memoire (40 secondes).\n"
         "  Pour l'enlever : double-clic sur DESACTIVER-demarrage-auto.bat"

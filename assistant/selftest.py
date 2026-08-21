@@ -278,6 +278,34 @@ def check_jeux():
     return OK, f"{len(trouves)} jeu(x)", ""
 
 
+def check_demarrage_auto():
+    """L'entree de demarrage Windows pointe-t-elle sur la bonne cible ?
+
+    Elle est ecrite une fois et ne se met jamais a jour toute seule. Apres un
+    changement de lanceur, elle continue d'ouvrir l'ancien -- ici, la boucle
+    vocale lancee depuis les sources par pythonw, qui ouvrait une console a
+    chaque appel systeme au lieu d'afficher la fenetre. Rien ne prevenait :
+    l'application se lancait, mais pas la bonne.
+    """
+    from assistant import startup
+
+    actif, inscrit = startup.status()
+    if not actif:
+        return ABSENT, "non inscrit au demarrage de Windows", (
+            "Facultatif. Pour l'activer : menu Composants, ou "
+            "ACTIVER-demarrage-auto.bat"
+        )
+
+    attendu = startup.command()
+    if inscrit.strip().lower() != attendu.strip().lower():
+        return PARTIEL, "l'entree pointe sur une ancienne cible", (
+            f"Inscrit : {inscrit[:70]}\n"
+            f"       Attendu : {attendu[:70]}\n"
+            "       Relance ACTIVER-demarrage-auto.bat pour la corriger."
+        )
+    return OK, "pointe sur l'executable a jour", ""
+
+
 VERIFICATIONS = [
     ("Environnement", check_environnement, True),
     ("Ecriture des reglages", check_ecriture, True),
@@ -295,6 +323,7 @@ VERIFICATIONS = [
     ("Applications", check_applications, True),
     ("Inventaire logiciel", check_inventaire, True),
     ("Eclairage RGB", check_rgb, False),
+    ("Demarrage Windows", check_demarrage_auto, False),
 ]
 
 

@@ -18,6 +18,9 @@ import psutil
 from assistant import config
 from assistant.util import human_size
 
+# Empeche Windows d'ouvrir une console pour les programmes appeles en fond.
+CREATE_NO_WINDOW = 0x08000000
+
 # Un processus au-dela de ce seuil occupe l'essentiel d'un coeur. Volontairement
 # sous 100 % : un processus qui oscille autour de 90 gene autant qu'un a 100,
 # et l'echantillonnage de psutil bruite la mesure de quelques points.
@@ -85,6 +88,11 @@ def gpu_info() -> dict | None:
         out = subprocess.run(
             [exe, f"--query-gpu={query}", "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=8, check=True,
+            # Sans ce drapeau, nvidia-smi ouvre une fenetre de console a
+            # chaque appel. Invisible depuis un terminal, tres visible depuis
+            # l'application : le releve GPU est refait au demarrage, a chaque
+            # ouverture de "Etat en direct" et a chaque diagnostic.
+            creationflags=CREATE_NO_WINDOW,
         ).stdout.strip().splitlines()[0]
     except (subprocess.SubprocessError, OSError, IndexError):
         return None

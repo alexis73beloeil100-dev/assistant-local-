@@ -30,8 +30,12 @@ def stop_app() -> None:
     aucun rapport apparent avec l'assistant. Le tuer est sans consequence,
     Ollama le relance a la demande suivante.
     """
+    # OpenRGB est livre DANS le bundle depuis que l'eclairage est gere : son
+    # serveur garde hidapi.dll ouverte tant qu'il tourne, et la
+    # reconstruction echoue sur un WinError 5 qui ne nomme que la DLL.
     for image in ("AssistantLocal.exe", "pythonw.exe",
-                  "llama-server.exe", "ollama.exe"):
+                  "llama-server.exe", "ollama.exe",
+                  "OpenRGB.exe", "openrgb.exe"):
         subprocess.run(["taskkill", "/IM", image, "/F"],
                        capture_output=True, text=True)
 
