@@ -491,6 +491,10 @@ class AssistantWindow(tk.Tk):
                 from assistant.ludotheque import Ludotheque
 
                 widget = Ludotheque(self.panel_widget_host, self)
+            elif panel.interactif == "reparation":
+                from assistant.reparation import Reparateur
+
+                widget = Reparateur(self.panel_widget_host, self)
             else:
                 return
             self.panel_widgets[panel.key] = widget
