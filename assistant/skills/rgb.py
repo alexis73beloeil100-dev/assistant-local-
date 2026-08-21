@@ -184,63 +184,85 @@ def concurrents_actifs() -> list[str]:
     return actifs
 
 
-def _appeler(arguments: list[str]) -> tuple[bool, str]:
+def _serveur_actif(timeout: float = 0.6) -> bool:
+    import socket
+
+    from assistant.skills.rgb_client import HOTE, PORT
+
+    try:
+        with socket.create_connection((HOTE, PORT), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def demarrer_serveur(attente: float = 20.0) -> tuple[bool, str]:
+    """Lance le serveur OpenRGB si besoin, et attend qu'il reponde.
+
+    Meme raison que pour Ollama : exiger de l'utilisateur qu'il lance un
+    programme avant l'assistant, c'est garantir qu'il oubliera, et que la
+    fonction paraitra cassee sans que rien n'explique pourquoi.
+
+    --noautoconnect empeche le serveur de se connecter a un autre serveur
+    OpenRGB : sans lui, deux instances se renvoient la balle.
+    """
+    import time
+
+    if _serveur_actif():
+        return True, "serveur deja actif"
+
     exe = _executable()
     if exe is None:
         return False, "OpenRGB introuvable."
+
     try:
-        resultat = subprocess.run(
-            [str(exe), *arguments], capture_output=True, text=True,
-            timeout=TIMEOUT, encoding="utf-8", errors="replace",
-            creationflags=CREATE_NO_WINDOW,
+        subprocess.Popen(
+            [str(exe), "--server", "--noautoconnect"],
+            cwd=str(exe.parent),
+            creationflags=CREATE_NO_WINDOW | 0x00000008,   # detache
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
         )
-    except (subprocess.SubprocessError, OSError) as exc:
-        return False, f"{type(exc).__name__}: {exc}"
-    return resultat.returncode == 0, (
-        (resultat.stdout or "") + (resultat.stderr or "")).strip()
+    except OSError as exc:
+        return False, f"Lancement impossible : {exc}"
+
+    limite = time.time() + attente
+    while time.time() < limite:
+        if _serveur_actif():
+            return True, "serveur demarre"
+        time.sleep(0.5)
+    return False, (f"Le serveur OpenRGB n'a pas repondu apres {attente:.0f} s.")
 
 
-# La ligne des modes ressemble a :
-#   Modes: [Direct] 'Static' 'Breathing' 'Flashing'
-# Le mode actif est entre crochets, les autres entre apostrophes. On accepte
-# les deux formes plutot que d'imposer un format : la sortie a change entre
-# les versions d'OpenRGB, et un analyseur trop strict casserait a la
-# prochaine.
-_MODE = re.compile(r"\[([^\]]+)\]|'([^']+)'")
-_ENTETE = re.compile(r"^\s*(\d+)\s*:\s*(.+?)\s*$")
+# Il y avait ici deux expressions regulieres qui analysaient la sortie texte
+# d'OpenRGB. Elles sont parties avec la ligne de commande : cette sortie
+# n'arrive dans aucun tuyau, on passe desormais par le serveur.
 
 
-def peripheriques() -> tuple[list[Peripherique], str]:
+def peripheriques() -> tuple[list, str]:
     """Ce qui est reellement pilotable sur CETTE machine, et ses modes."""
-    ok, sortie = _appeler(["--list-devices"])
+    from assistant.skills import rgb_client
+
+    if not disponible():
+        return [], "OpenRGB n'est pas livre avec l'assistant."
+
+    ok, message = demarrer_serveur()
     if not ok:
-        return [], sortie or "OpenRGB n'a pas repondu."
+        return [], message
 
-    trouves: list[Peripherique] = []
-    courant: Peripherique | None = None
-
-    for ligne in sortie.splitlines():
-        entete = _ENTETE.match(ligne)
-        if entete and not ligne.startswith((" ", "\t")):
-            courant = Peripherique(int(entete.group(1)), entete.group(2))
-            trouves.append(courant)
-            continue
-        if courant is None:
-            continue
-
-        depouille = ligne.strip()
-        if depouille.lower().startswith("type:"):
-            courant.genre = depouille.split(":", 1)[1].strip()
-        elif depouille.lower().startswith("modes:"):
-            for actif, autre in _MODE.findall(depouille):
-                nom = actif or autre
-                courant.modes.append(nom)
-                if actif:
-                    courant.mode_actif = actif
+    try:
+        with rgb_client.Connexion() as lien:
+            trouves = lien.peripheriques()
+    except rgb_client.Erreur as exc:
+        return [], str(exc)
 
     if not trouves:
-        return [], ("OpenRGB n'a detecte aucun peripherique RGB. "
-                    "L'acces au bus demande souvent les droits administrateur.")
+        concurrents = concurrents_actifs()
+        detail = ""
+        if concurrents:
+            detail = (f" {', '.join(concurrents)} tourne et garde la main sur "
+                      "le controleur : ferme-le.")
+        return [], ("Aucun peripherique RGB detecte." + detail)
     return trouves, ""
 
 
@@ -394,20 +416,24 @@ def changer_mode(mode: str, peripherique: str = "", couleur: str = "") -> str:
             return f"Aucun peripherique ne correspond a \"{peripherique}\". " \
                    f"Connus : {noms}."
 
+    from assistant.skills import rgb_client
+
     faits, ignores = [], []
-    for cible in cibles:
-        exact = _trouver(mode, cible.modes)
-        if exact is None:
-            ignores.append(f"{cible.nom} (modes : {', '.join(cible.modes)})")
-            continue
-        arguments = ["--device", str(cible.index), "--mode", exact]
-        if couleur:
-            arguments += ["--color", couleur.lstrip("#")]
-        ok, sortie = _appeler(arguments)
-        if ok:
-            faits.append(f"{cible.nom} -> {exact}")
-        else:
-            ignores.append(f"{cible.nom} : {sortie[:80]}")
+    try:
+        with rgb_client.Connexion() as lien:
+            for cible in cibles:
+                exact = _trouver(mode, cible.modes)
+                if exact is None:
+                    ignores.append(
+                        f"{cible.nom} (modes : {', '.join(cible.modes)})")
+                    continue
+                try:
+                    lien.changer_mode(cible, cible.modes.index(exact))
+                    faits.append(f"{cible.nom} -> {exact}")
+                except (rgb_client.Erreur, OSError, IndexError) as exc:
+                    ignores.append(f"{cible.nom} : {type(exc).__name__}")
+    except rgb_client.Erreur as exc:
+        return str(exc)
 
     lignes = []
     if faits:
