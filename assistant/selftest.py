@@ -296,14 +296,32 @@ def check_demarrage_auto():
             "ACTIVER-demarrage-auto.bat"
         )
 
-    attendu = startup.command()
-    if inscrit.strip().lower() != attendu.strip().lower():
-        return PARTIEL, "l'entree pointe sur une ancienne cible", (
+    # Ce qui compte, c'est que l'entree lance QUELQUE CHOSE.
+    #
+    # Comparer a startup.command() -- c'est-a-dire "moi" -- revenait a exiger
+    # que le demarrage designe l'exemplaire en train de s'auto-tester. Sur une
+    # machine ou l'application installee coexiste avec une version de
+    # developpement, chacune declarait l'autre fautive. L'autotest annoncait
+    # un defaut la ou l'utilisateur avait fait un choix.
+    import shlex
+    from pathlib import Path
+
+    try:
+        morceaux = shlex.split(inscrit, posix=False)
+        cible = Path(morceaux[0].strip('"')) if morceaux else None
+    except ValueError:
+        cible = None
+
+    if cible is None or not cible.exists():
+        return PARTIEL, "l'entree pointe sur un fichier disparu", (
             f"Inscrit : {inscrit[:70]}\n"
-            f"       Attendu : {attendu[:70]}\n"
+            "       Ce fichier n'existe plus : rien ne se lancera.\n"
             "       Relance ACTIVER-demarrage-auto.bat pour la corriger."
         )
-    return OK, "pointe sur l'executable a jour", ""
+
+    if inscrit.strip().lower() == startup.command().strip().lower():
+        return OK, "pointe sur cet exemplaire", ""
+    return OK, f"pointe sur un autre exemplaire ({cible.parent.name})", ""
 
 
 VERIFICATIONS = [

@@ -136,23 +136,46 @@ def _detecter_processus() -> list[Reparation]:
 
 
 def _detecter_demarrage() -> list[Reparation]:
-    """Entree de demarrage Windows qui pointe sur une ancienne cible."""
+    """Entree de demarrage Windows qui pointe sur une cible DISPARUE.
+
+    Le defaut a reparer, c'est une entree qui ne lance plus rien : le dossier
+    a ete deplace, l'exemplaire efface. Pas une entree qui designe un AUTRE
+    exemplaire valide.
+
+    La version precedente comparait a `startup.command()`, c'est-a-dire "moi".
+    Sur une machine ou coexistent l'application installee et une version de
+    developpement -- ce qui est le cas normal quand on la fabrique -- chacune
+    voyait l'autre comme une erreur et proposait de prendre sa place. Ouvrir
+    ce panneau depuis la mauvaise copie suffisait a defaire le choix de
+    l'utilisateur, en lui annoncant qu'on reparait quelque chose.
+    """
+    import shlex
+    from pathlib import Path
+
     from assistant import startup
 
     try:
         actif, inscrit = startup.status()
-        attendu = startup.command()
     except Exception:  # noqa: BLE001
         return []
 
-    if not actif or inscrit.strip().lower() == attendu.strip().lower():
+    if not actif or not inscrit.strip():
         return []
+
+    try:
+        morceaux = shlex.split(inscrit, posix=False)
+        cible = Path(morceaux[0].strip('"')) if morceaux else None
+    except ValueError:
+        cible = None
+
+    if cible is not None and cible.exists():
+        return []          # elle lance quelque chose : ce n'est pas un defaut
 
     return [Reparation(
         cle="demarrage",
         titre="Corriger le demarrage automatique",
-        detail="L'entree inscrite dans Windows pointe sur une ancienne cible. "
-               "Elle lance donc autre chose que l'application actuelle.",
+        detail=f"L'entree inscrite dans Windows pointe sur un fichier qui "
+               f"n'existe plus ({cible}). Elle ne lance donc rien du tout.",
         action=lambda: startup.enable(),
         risque="sans risque",
     )]

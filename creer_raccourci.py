@@ -14,14 +14,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 EXE = ROOT / "dist" / "AssistantLocal" / "AssistantLocal.exe"
-NAME = "Assistant local.lnk"
+
+# Le nom dit DE QUEL exemplaire il s'agit.
+#
+# Deux copies coexistent sur la machine de developpement : celle que produit
+# reconstruire.py, dans dist/, et celle que pose l'installateur dans
+# %LOCALAPPDATA%. Elles portaient le meme nom de raccourci -- impossible de
+# savoir laquelle on lancait, et une reconstruction ecrasait silencieusement
+# le raccourci de l'autre.
+NAME = "Assistant local (developpement).lnk"
 
 VBS = """
 Set shell = CreateObject("WScript.Shell")
 Set link = shell.CreateShortcut("{lnk}")
 link.TargetPath = "{target}"
 link.WorkingDirectory = "{workdir}"
-link.Description = "Assistant local - tout reste sur cette machine"
+link.Description = "Assistant local - version de developpement (dist)"
 link.IconLocation = "{target}, 0"
 link.Save
 """

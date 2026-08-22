@@ -1488,3 +1488,49 @@ def test_reconstruire_previent_avant_de_tuer():
     assert "note_larret_deliberee()" in texte
     # L'ordre compte : noter APRES avoir tue ne trouverait plus personne.
     assert texte.index("note_larret_deliberee()\n    stop_app()") > 0
+
+
+# --- Deux exemplaires sur la meme machine -----------------------------------
+
+def test_le_raccourci_de_developpement_porte_son_nom():
+    """Les deux copies -- dist/ et l'installation -- posaient un raccourci du
+    MEME nom sur le Bureau. Impossible de savoir laquelle on lancait, et une
+    reconstruction ecrasait silencieusement celui de l'autre."""
+    import creer_raccourci
+
+    assert "developpement" in creer_raccourci.NAME.lower()
+    assert creer_raccourci.NAME.endswith(".lnk")
+
+
+def test_un_demarrage_vers_un_autre_exemplaire_n_est_pas_un_defaut(tmp_path,
+                                                                   monkeypatch):
+    """La detection comparait l'entree de demarrage a startup.command(),
+    c'est-a-dire a SOI. Sur une machine ou l'application installee coexiste
+    avec la version de developpement, chacune declarait l'autre fautive et
+    proposait de prendre sa place -- en annoncant qu'elle reparait.
+
+    On verifie le COMPORTEMENT, pas le texte du code : une premiere version de
+    ce test cherchait "startup.command()" dans la source et le trouvait... dans
+    le commentaire qui explique pourquoi on ne s'en sert plus.
+    """
+    from assistant import reparation, startup
+
+    autre = tmp_path / "ailleurs" / "AssistantLocal.exe"
+    autre.parent.mkdir(parents=True)
+    autre.write_text("", encoding="utf-8")
+
+    # Un AUTRE exemplaire, bien present : ce n'est pas un defaut.
+    monkeypatch.setattr(startup, "status", lambda: (True, f'"{autre}"'))
+    assert reparation._detecter_demarrage() == []
+
+    # Une cible disparue : la, il y a bien quelque chose a reparer.
+    monkeypatch.setattr(
+        startup, "status",
+        lambda: (True, f'"{tmp_path / "efface" / "AssistantLocal.exe"}"'))
+    trouvees = reparation._detecter_demarrage()
+    assert len(trouvees) == 1
+    assert trouvees[0].cle == "demarrage"
+
+    # Pas de demarrage automatique du tout : rien a signaler non plus.
+    monkeypatch.setattr(startup, "status", lambda: (False, ""))
+    assert reparation._detecter_demarrage() == []
