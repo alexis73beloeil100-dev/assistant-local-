@@ -420,6 +420,129 @@ FAMILLES = {
 }
 
 
+def _fenetres_visibles() -> list[tuple[int, str]]:
+    """Les fenetres de premier niveau visibles : (pid, titre).
+
+    Passe par pywin32, deja embarque pour l'enumeration des applications du
+    Store. Rend une liste vide plutot que de lever : ne pas pouvoir lister les
+    fenetres doit degrader la fermeture, pas la casser.
+    """
+    try:
+        import win32gui
+        import win32process
+    except ImportError:
+        return []
+
+    trouvees: list[tuple[int, str]] = []
+
+    def vrai_pid(handle, pid):
+        """Demele le cas des applications du Store.
+
+        Une application UWP n'affiche pas sa propre fenetre : Windows la loge
+        dans un cadre tenu par ApplicationFrameHost.exe. Le pid de la fenetre
+        visible est donc celui de l'HOTE, partage par toutes les applications
+        du Store -- le suivre reviendrait a fermer la calculatrice en fermant
+        aussi les Parametres.
+
+        Le vrai programme tient une fenetre ENFANT, la CoreWindow. On la
+        cherche, et on garde le pid qui differe de celui de l'hote.
+        """
+        try:
+            import psutil
+
+            if psutil.Process(pid).name().lower() != "applicationframehost.exe":
+                return pid
+        except Exception:  # noqa: BLE001
+            return pid
+
+        interne = {"pid": pid}
+
+        def enfant(h_enfant, _e):
+            try:
+                _f, p = win32process.GetWindowThreadProcessId(h_enfant)
+                if p and p != pid:
+                    interne["pid"] = p
+            except Exception:  # noqa: BLE001
+                pass
+
+        try:
+            win32gui.EnumChildWindows(handle, enfant, None)
+        except Exception:  # noqa: BLE001
+            pass
+        return interne["pid"]
+
+    def visiter(handle, _extra):
+        try:
+            if not win32gui.IsWindowVisible(handle):
+                return
+            titre = win32gui.GetWindowText(handle)
+            if not titre:
+                return
+            _fil, pid = win32process.GetWindowThreadProcessId(handle)
+            trouvees.append((vrai_pid(handle, pid), titre))
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        win32gui.EnumWindows(visiter, None)
+    except Exception:  # noqa: BLE001
+        return []
+    return trouvees
+
+
+def _processus_de_l_application(nom: str) -> tuple[str, ...]:
+    """Les noms de processus d'une application designee par son nom affiche.
+
+    Deux chemins, dans cet ordre :
+
+      1. la FENETRE. On cherche une fenetre visible dont le titre correspond
+         au nom demande, ou au nom exact que le catalogue lui donne. C'est le
+         seul lien fiable pour une application du Store -- son identifiant
+         (`Microsoft.WindowsCalculator_...!App`) ne dit rien de son processus,
+         qui s'appelle CalculatorApp.exe. C'est aussi ce que l'utilisateur
+         designe : la fenetre qu'il a devant lui.
+
+      2. l'EXECUTABLE du catalogue, quand l'application est une application
+         classique et qu'aucune fenetre ne correspond -- elle peut etre
+         reduite dans la zone de notification.
+    """
+    import psutil
+
+    resultats = find(nom)
+    officiel = resultats[0][1] if resultats else None
+    recherches = {canon(nom)}
+    if officiel is not None:
+        recherches.add(canon(officiel.nom))
+
+    pids: set[int] = set()
+    for pid, titre in _fenetres_visibles():
+        titre_canon = canon(titre)
+        for cherche in recherches:
+            if cherche and (cherche in titre_canon or titre_canon in cherche):
+                pids.add(pid)
+                break
+
+    processus: set[str] = set()
+    for pid in pids:
+        try:
+            processus.add(psutil.Process(pid).name())
+        except Exception:  # noqa: BLE001
+            continue
+
+    # Les hotes partages de Windows ne sont jamais la cible : les fermer
+    # emporterait d'autres applications que celle demandee.
+    processus -= {"ApplicationFrameHost.exe", "explorer.exe", "svchost.exe"}
+
+    if processus:
+        return tuple(sorted(processus))
+
+    if officiel is not None and not officiel.est_store:
+        exe = os.path.basename(officiel.cible)
+        if exe.lower().endswith(".exe"):
+            return (exe,)
+    return ()
+
+
 def close_app(nom: str, ask=None) -> str:
     """Ferme une application, TOUS ses processus compris.
 
@@ -441,7 +564,22 @@ def close_app(nom: str, ask=None) -> str:
             break
 
     if cibles is None:
-        return str(fixes.arreter_processus(nom, ask=ask))
+        # Le nom AFFICHE n'est pas le nom du PROCESSUS.
+        #
+        # "ferme la calculatrice" arrivait ici tel quel, et la recherche
+        # cherchait un processus nomme "calculatrice". Il s'appelle
+        # CalculatorApp.exe. Idem "bloc-notes" contre Notepad.exe. L'assistant
+        # repondait "aucun processus ne correspond" sur une application
+        # ouverte sous les yeux de l'utilisateur -- et open_app, lui, savait
+        # parfaitement la trouver, parce qu'il passe par le catalogue.
+        #
+        # On resout donc comme a l'ouverture, puis on retrouve le programme
+        # par SA FENETRE : c'est le seul lien fiable pour une application du
+        # Store, dont l'identifiant ne dit rien du nom de processus. Et c'est
+        # ce que l'utilisateur designe quand il dit "ferme ca".
+        cibles = _processus_de_l_application(nom)
+        if not cibles:
+            return str(fixes.arreter_processus(nom, ask=ask))
 
     fermes, absents, refuses = [], [], []
     for processus in cibles:

@@ -1606,3 +1606,62 @@ def test_l_assistant_ne_ferme_plus_le_logiciel_du_fabricant_de_lui_meme():
     liste = inspect.getsource(rgb.liste)
     assert "Ferme-le avant de changer un mode" not in liste, (
         "l'affichage ne doit plus presenter une presence comme une gene")
+
+
+# --- "Ferme la calculatrice" ne fermait rien --------------------------------
+
+def test_fermer_une_application_traduit_le_nom_affiche():
+    """Signale par l'utilisateur le 22/08, et reproduit : il ouvre une
+    application, demande de la fermer, et l'assistant repond "aucun processus
+    ne correspond" -- sur une fenetre ouverte sous ses yeux.
+
+    open_app() passe par le catalogue pour traduire "calculatrice" en son
+    identifiant. close_app() ne le faisait pas : il cherchait un PROCESSUS
+    nomme "calculatrice", alors qu'il s'appelle CalculatorApp.exe. Idem
+    "bloc-notes" contre Notepad.exe.
+    """
+    import inspect
+
+    from assistant.skills import apps
+
+    source = inspect.getsource(apps.close_app)
+    assert "_processus_de_l_application" in source, (
+        "close_app doit resoudre le nom affiche, comme open_app")
+
+    resolution = inspect.getsource(apps._processus_de_l_application)
+    assert "find(nom)" in resolution, "il faut passer par le catalogue"
+    assert "_fenetres_visibles" in resolution, (
+        "la fenetre est le seul lien fiable pour une application du Store")
+
+
+def test_une_application_du_store_n_est_pas_confondue_avec_son_hote():
+    """Une application UWP n'affiche pas sa propre fenetre : Windows la loge
+    dans un cadre tenu par ApplicationFrameHost.exe, PARTAGE par toutes les
+    applications du Store. Suivre ce pid reviendrait a fermer les Parametres
+    en fermant la calculatrice.
+
+    Le vrai programme tient une fenetre ENFANT, la CoreWindow.
+    """
+    import inspect
+
+    from assistant.skills import apps
+
+    source = inspect.getsource(apps._fenetres_visibles)
+    assert "EnumChildWindows" in source, (
+        "il faut descendre dans la fenetre enfant pour trouver le vrai pid")
+
+    exclus = inspect.getsource(apps._processus_de_l_application)
+    assert "ApplicationFrameHost.exe" in exclus, (
+        "l'hote partage ne doit jamais etre une cible")
+
+
+def test_lister_les_fenetres_ne_casse_jamais_la_fermeture():
+    """Ne pas pouvoir enumerer les fenetres doit degrader la fermeture, pas
+    l'empecher : sans pywin32, on retombe sur l'ancien comportement."""
+    from assistant.skills import apps
+
+    fenetres = apps._fenetres_visibles()
+    assert isinstance(fenetres, list)
+    for element in fenetres[:5]:
+        assert isinstance(element, tuple) and len(element) == 2
+        assert isinstance(element[0], int) and isinstance(element[1], str)
