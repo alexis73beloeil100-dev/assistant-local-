@@ -407,3 +407,27 @@ def test_les_services_critiques_de_windows_ne_sont_jamais_arretes():
     for critique in ("MSiSCSI", "msiserver", "RpcSs", "DcomLaunch"):
         assert critique in rgb.JAMAIS_TOUCHER
         assert critique not in rgb.SERVICES_CONCURRENTS
+
+
+def test_les_deux_numeros_de_version_ne_divergent_pas():
+    """Le numero de version vit a DEUX endroits, et rien ne les reliait.
+
+    assistant/__init__.py sert a la fenetre et a l'autotest ; installateur.iss
+    sert a l'entree "Applications installees" de Windows. Les laisser diverger
+    donne le pire cas : une application qui s'annonce 1.0.1 dans sa fenetre et
+    1.0.0 dans le panneau de configuration, sans que personne sache laquelle
+    est vraie.
+    """
+    import re
+    from pathlib import Path
+
+    from assistant import __version__
+
+    racine = Path(__file__).resolve().parent.parent
+    iss = (racine / "installateur.iss").read_text(encoding="utf-8", errors="replace")
+    trouve = re.search(r'#define\s+MaVersion\s+"([^"]+)"', iss)
+
+    assert trouve, "installateur.iss ne definit plus MaVersion"
+    assert trouve.group(1) == __version__, (
+        f"installateur.iss annonce {trouve.group(1)} alors que le paquet "
+        f"annonce {__version__}")
