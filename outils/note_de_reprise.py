@@ -228,6 +228,26 @@ def construire(destination: Path) -> Path:
     F.append(Paragraph(
         "Une sortie vide veut dire que tout est aligne.", s["note"]))
 
+    F.append(Paragraph("Une mise a jour ne fait plus tout retelecharger",
+                       s["sous_section"]))
+    F.append(Paragraph(
+        "Sur les 2,68 Go livres, 1 986 Mo sont des bibliotheques CUDA qui "
+        "n'ont jamais bouge ; l'executable qui porte tout le travail en pese "
+        "24. <font face='Courier'>outils/paquet_maj.py</font> compile un "
+        "installateur qui ne transporte que les fichiers dont le contenu a "
+        "change, au lieu des 1,15 Go de l'installateur complet.",
+        s["corps"]))
+    F.append(Paragraph(
+        "La comparaison se fait par empreinte SHA-256, jamais par date : "
+        "PyInstaller reecrit l'integralite de dist/ a chaque construction, "
+        "donc tout parait modifie. Et un correctif d'un caractere ne change "
+        "pas la taille du fichier.", s["corps"]))
+    F.append(Paragraph(
+        "Rien ne se met a jour tout seul, et c'est voulu : une verification "
+        "automatique obligerait l'application a contacter un serveur, et "
+        "annulerait la promesse &laquo; aucune connexion sortante apres "
+        "l'installation &raquo;.", s["note"]))
+
     F.append(Paragraph("Le panneau Reparer", s["sous_section"]))
     F.append(Paragraph(
         "Il listait ce que l'assistant <i>savait</i> faire &mdash; un "
@@ -294,20 +314,39 @@ def construire(destination: Path) -> Path:
          "avec le modele et Whisper. Double la taille de l'installateur."],
     ], [58 * mm, 105 * mm], s))
 
-    F.append(Paragraph("Priorite 4 &mdash; les mises a jour",
+    F.append(Paragraph("Priorite 4 &mdash; la licence du binaire",
                        s["sous_section"]))
     F.append(Paragraph(
-        "Il n'existe aucun mecanisme. Livrer une correction impose de refaire "
-        "telecharger 1,13 Go, alors que ce qui change tient dans "
-        "l'executable de 25 Mo &mdash; les bibliotheques CUDA representent "
-        "78 % du poids et ne bougent jamais. Point deja acquis : "
-        "l'installateur a un <font face='Courier'>AppId</font> stable, donc "
-        "reinstaller met a jour en place sans creer de doublon.", s["corps"]))
+        "<b>La seule decision qui manque avant de publier.</b> Le code est "
+        "sous MIT, mais <font face='Courier'>openrgb-python</font> est en "
+        "<b>GPLv3</b> et il est <i>importe</i> par "
+        "<font face='Courier'>assistant/skills/rgb.py</font>. Importer, c'est "
+        "lier : le code reste MIT et reutilisable comme tel, mais le "
+        "<b>binaire distribue</b> doit etre transmis sous GPLv3, avec l'offre "
+        "de source. Annoncer &laquo; MIT &raquo; tout court sur "
+        "l'installateur serait inexact.", s["corps"]))
     F.append(Paragraph(
-        "Decision en attente de l'utilisateur : ou publier, et verification "
-        "manuelle ou automatique. La seconde oblige a reecrire la promesse "
-        "&laquo; aucune connexion sortante apres l'installation &raquo;, qui "
-        "est un argument central du projet.", s["note"]))
+        "Deux sorties. Reecrire le client : le protocole OpenRGB SDK est un "
+        "protocole binaire documente sur TCP, et l'assistant n'en utilise "
+        "qu'une poignee de messages &mdash; ce chantier rejoint celui du RGB, "
+        "toujours ouvert. Ou assumer la GPLv3 pour le binaire publie et "
+        "fournir le source, ce qui ne coute rien.", s["corps"]))
+    F.append(Paragraph(
+        "Tant que le choix n'est pas fait, <font face='Courier'>LicenseFile"
+        "</font> n'est pas cable dans l'installateur : une page "
+        "d'acceptation annoncant MIT seul serait fausse. Le detail est dans "
+        "LICENCES-TIERS.md.", s["note"]))
+
+    F.append(Paragraph("Regle &mdash; ce qu'il ne faut pas oublier en publiant",
+                       s["sous_section"]))
+    F.append(Paragraph(
+        "Le manifeste d'une version publiee "
+        "(<font face='Courier'>manifestes/&lt;version&gt;.json</font>) "
+        "<b>doit etre committe</b>. C'est lui qui dit ce que les gens ont "
+        "reellement installe, et donc ce qu'une mise a jour doit remplacer. "
+        "L'oubli ne se rattrape pas : on s'en apercoit en voulant publier un "
+        "correctif, quand la version publiee n'existe plus nulle part. Un "
+        "test verifie sa presence.", s["corps"]))
 
     F.append(Paragraph("4. Pieges a ne pas refaire", s["section"]))
     F.append(tableau([
