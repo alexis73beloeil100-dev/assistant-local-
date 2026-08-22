@@ -1534,3 +1534,47 @@ def test_un_demarrage_vers_un_autre_exemplaire_n_est_pas_un_defaut(tmp_path,
     # Pas de demarrage automatique du tout : rien a signaler non plus.
     monkeypatch.setattr(startup, "status", lambda: (False, ""))
     assert reparation._detecter_demarrage() == []
+
+
+def test_on_demande_au_logiciel_de_se_fermer_avant_de_le_tuer():
+    """Fermer RGB Fusion a ETEINT les LED des trois appareils, le 22/08.
+
+    Un Stop-Process -Force ne laisse pas le logiciel du fabricant reposer le
+    controleur : tue net, la carte mere revient a son etat par defaut,
+    c'est-a-dire eteinte. L'utilisateur a du signaler lui-meme que son
+    eclairage venait de s'arreter.
+
+    CloseMainWindow() envoie la fermeture normale -- celle du clic sur la
+    croix -- et le logiciel quitte comme il en a l'habitude. On ne force que
+    ce qui resiste.
+
+    On lit le SCRIPT REELLEMENT PRODUIT, pas le code source : une premiere
+    version cherchait les deux commandes dans la source et trouvait
+    "Stop-Process -Force" dans le commentaire qui explique pourquoi on ne s'en
+    sert qu'en dernier recours.
+    """
+    from assistant.skills import rgb
+
+    script = "\n".join(rgb._script_darret())
+
+    assert "CloseMainWindow()" in script, (
+        "les logiciels doivent etre invites a se fermer avant d'etre tues")
+    assert script.index("CloseMainWindow()") < script.index("Stop-Process -Force"), (
+        "la demande polie doit venir AVANT la force")
+    assert "Start-Sleep" in script, "il faut leur laisser le temps de quitter"
+
+    # Et les logiciels vises doivent bien y figurer, sinon le script ne ferme
+    # rien du tout et le test ci-dessus passerait sur une coquille vide.
+    assert "rgbfusion.exe" in script
+
+
+def test_un_openrgb_parasite_est_ferme_avant_d_etre_tue():
+    """Meme regle : un OpenRGB tue sans preavis peut laisser le controleur
+    dans l'etat ou il l'a trouve, c'est-a-dire n'importe lequel."""
+    import inspect
+
+    from assistant.skills import rgb
+
+    source = inspect.getsource(rgb._arreter_les_parasites)
+    assert "terminate()" in source
+    assert source.index("terminate()") < source.index("kill()")

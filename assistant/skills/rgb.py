@@ -258,10 +258,19 @@ def _arreter_les_parasites() -> str:
     if not trouves:
         return ""
 
+    # Meme regle que pour les logiciels du fabricant : on demande avant de
+    # forcer. terminate() est la fermeture propre, kill() l'arret net. Un
+    # OpenRGB tue sans preavis peut laisser le controleur dans l'etat ou il
+    # l'a trouve, c'est-a-dire n'importe lequel.
     arretes = []
     for pid, chemin in trouves:
         try:
-            psutil.Process(pid).kill()
+            proc = psutil.Process(pid)
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except psutil.TimeoutExpired:
+                proc.kill()
             arretes.append(chemin)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
@@ -502,6 +511,45 @@ def liberer(ask=None) -> str:
     return _arreter_eleve(services)
 
 
+def _script_darret() -> list[str]:
+    """Les lignes PowerShell qui ferment les logiciels du fabricant.
+
+    On DEMANDE d'abord, on force ensuite.
+
+    Un `Stop-Process -Force` ne laisse pas le logiciel reposer le controleur :
+    tue net, RGB Fusion laisse la carte mere revenir a son etat par defaut,
+    c'est-a-dire ETEINTE. Constate le 22/08 -- fermer RGB Fusion a coupe les
+    LED des trois appareils, et l'utilisateur a du signaler lui-meme que son
+    eclairage venait de s'arreter.
+
+    `CloseMainWindow()` envoie la fermeture normale, celle du clic sur la
+    croix : le logiciel quitte comme il en a l'habitude et repose son
+    controleur. Trois secondes suffisent -- au-dela, c'est qu'il ne repond
+    pas, et la seulement on force.
+
+    Fonction separee pour etre lisible par un test. Une premiere version
+    verifiait l'ordre en cherchant les deux commandes dans le CODE SOURCE, et
+    trouvait "Stop-Process -Force" dans le commentaire qui explique pourquoi
+    on ne s'en sert qu'en dernier recours.
+    """
+    noms = "$noms = @(" + ",".join(f"'{p}'" for p in CONCURRENTS) + ")"
+    return [
+        noms,
+        "foreach ($nom in $noms) {",
+        "  $court = [IO.Path]::GetFileNameWithoutExtension($nom)",
+        "  foreach ($p in (Get-Process $court -ErrorAction SilentlyContinue)) {",
+        "    try { $null = $p.CloseMainWindow() } catch {}",
+        "  }",
+        "}",
+        "Start-Sleep -Seconds 3",
+        "foreach ($nom in $noms) {",
+        "  $court = [IO.Path]::GetFileNameWithoutExtension($nom)",
+        "  Get-Process $court -ErrorAction SilentlyContinue | "
+        "Stop-Process -Force -ErrorAction SilentlyContinue",
+        "}",
+    ]
+
+
 def _arreter_eleve(services: list[str]) -> str:
     """Arrete les concurrents, en demandant l'elevation une seule fois.
 
@@ -521,11 +569,7 @@ def _arreter_eleve(services: list[str]) -> str:
     avant_programmes, avant_services = conflits()
 
     lignes = [
-        "foreach ($nom in @(" + ",".join(f"'{p}'" for p in CONCURRENTS) + ")) {",
-        "  $court = [IO.Path]::GetFileNameWithoutExtension($nom)",
-        "  Get-Process $court -ErrorAction SilentlyContinue | "
-        "Stop-Process -Force -ErrorAction SilentlyContinue",
-        "}",
+        *_script_darret(),
     ]
     for service in services:
         lignes.append(
