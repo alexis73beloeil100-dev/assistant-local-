@@ -85,7 +85,29 @@ def sessions_mortes_sans_un_mot() -> list[dict]:
     limite = time.time() - OUBLI
     # Le processus courant n'est evidemment pas encore ferme.
     ouvertures.pop(os.getpid(), None)
-    return [o for o in ouvertures.values() if o.get("t", 0) >= limite]
+    return [o for o in ouvertures.values()
+            if o.get("t", 0) >= limite and not _tourne_toujours(o)]
+
+
+def _tourne_toujours(ouverture: dict) -> bool:
+    """Ce processus est-il encore en vie ?
+
+    Une session ouverte sans fermeture n'est pas forcement morte : elle peut
+    simplement etre en cours. Sans ce filtre, une seconde instance accusait
+    la premiere d'avoir plante alors qu'elle tournait tres bien a cote.
+
+    Les numeros de processus sont recycles par Windows : trouver un processus
+    portant ce numero ne suffit pas. On compare donc sa date de naissance a
+    celle qu'on avait notee -- un inconnu qui a herite du numero est ne bien
+    plus tard, et ne trompe personne.
+    """
+    try:
+        import psutil
+
+        proc = psutil.Process(int(ouverture.get("pid", -1)))
+        return abs(proc.create_time() - float(ouverture.get("t", 0))) < 120
+    except Exception:  # noqa: BLE001 - psutil leve des types varies
+        return False
 
 
 def _trace_de_plantage(pid) -> bool:
@@ -179,6 +201,18 @@ def arret(raison: str = "") -> None:
         return
     _arret_note = True
     _ecrire({"evt": "exit", "pid": os.getpid(), "t": time.time(),
+             "at": datetime.now().isoformat(timespec="seconds"),
+             "raison": raison})
+
+
+def arret_de(pid: int, raison: str) -> None:
+    """Note la fermeture d'un AUTRE processus, qu'on s'apprete a tuer.
+
+    Un processus tue de l'exterieur ne peut rien ecrire pour lui-meme. Celui
+    qui le tue, lui, sait tres bien ce qu'il fait : c'est a lui de le dire,
+    sinon la mort passe pour un plantage.
+    """
+    _ecrire({"evt": "exit", "pid": int(pid), "t": time.time(),
              "at": datetime.now().isoformat(timespec="seconds"),
              "raison": raison})
 

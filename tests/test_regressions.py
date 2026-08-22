@@ -1334,12 +1334,20 @@ def test_une_mort_brutale_se_distingue_d_une_fermeture(tmp_path, monkeypatch):
     laissaient exactement la meme chose derriere elles -- rien."""
     from assistant import vie
 
+    import atexit
+
     monkeypatch.setattr(vie, "SESSIONS", tmp_path / "sessions.jsonl")
     monkeypatch.setattr(vie, "PLANTAGES", tmp_path / "plantages.log")
     monkeypatch.setattr(vie, "_arret_note", False)
 
     # Une session complete ne doit rien signaler.
     vie.demarrer("test")
+    # demarrer() a inscrit un gestionnaire de sortie. Il SURVIT au test :
+    # monkeypatch remet SESSIONS a sa vraie valeur, puis pytest se termine et
+    # le gestionnaire ecrit une fermeture dans le VRAI journal, sans ouverture
+    # correspondante. Le journal accusait ainsi une mort brutale a chaque
+    # execution de la suite.
+    atexit.unregister(vie.arret)
     vie.arret("fermeture normale")
     assert vie.sessions_mortes_sans_un_mot() == []
     assert vie.rapport_de_reprise() == ""
@@ -1436,3 +1444,47 @@ def test_le_mot_cle_ne_declenche_qu_une_commande_a_la_fois():
     assert "_oww.reset()" in source
     assert "WAKE_COOLDOWN" in source
     assert wake.WAKE_COOLDOWN > 0
+
+
+def test_une_session_encore_vivante_n_est_pas_declaree_morte(tmp_path, monkeypatch):
+    """Une ouverture sans fermeture n'est pas forcement une mort : elle peut
+    etre en cours. Sans ce filtre, l'application accusait sa propre session
+    d'avoir plante, et une seconde instance accusait la premiere."""
+    import os
+    import time
+
+    from assistant import vie
+
+    monkeypatch.setattr(vie, "SESSIONS", tmp_path / "sessions.jsonl")
+
+    # Un processus bien vivant : celui de pytest, avec sa vraie date de
+    # naissance. Il ne doit pas figurer parmi les morts.
+    import psutil
+
+    moi = psutil.Process(os.getpid())
+    vie._ecrire({"evt": "start", "pid": os.getpid(), "t": moi.create_time(),
+                 "at": "2026-08-22T03:00:18", "origine": "test"})
+    # Un numero qui n'existe pas : celui-la est bien mort.
+    vie._ecrire({"evt": "start", "pid": 999999, "t": time.time(),
+                 "at": "2026-08-22T03:00:18", "origine": "test"})
+
+    morts = [m["pid"] for m in vie.sessions_mortes_sans_un_mot()]
+    assert 999999 in morts
+    assert os.getpid() not in morts
+
+
+def test_reconstruire_previent_avant_de_tuer():
+    """Cinq reconstructions dans une soiree, et le journal accusait cinq
+    plantages qui n'existaient pas : le taskkill ne laisse evidemment pas
+    l'application ecrire sa ligne de fermeture."""
+    from pathlib import Path
+
+    from assistant import vie
+
+    assert hasattr(vie, "arret_de")
+
+    texte = (Path(__file__).resolve().parent.parent / "reconstruire.py").read_text(
+        encoding="utf-8")
+    assert "note_larret_deliberee()" in texte
+    # L'ordre compte : noter APRES avoir tue ne trouverait plus personne.
+    assert texte.index("note_larret_deliberee()\n    stop_app()") > 0

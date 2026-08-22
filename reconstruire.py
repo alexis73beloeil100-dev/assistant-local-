@@ -21,6 +21,31 @@ PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 LOCK_TIMEOUT = 20.0
 
 
+def note_larret_deliberee() -> None:
+    """Dit au journal de vie que c'est NOUS qui fermons l'application.
+
+    Sans ca, chaque reconstruction ressemblait a une mort brutale : le
+    taskkill ci-dessous ne laisse evidemment pas l'application ecrire sa
+    ligne de fermeture, et l'assistant annoncait au demarrage suivant
+    "arretee sans passer par la fermeture normale". Cinq reconstructions dans
+    une soiree, et le journal accusait cinq plantages qui n'existaient pas.
+    """
+    try:
+        import psutil
+
+        from assistant import vie
+    except ImportError:
+        return
+
+    for proc in psutil.process_iter(["name", "pid"]):
+        try:
+            nom = (proc.info.get("name") or "").lower()
+            if nom in ("assistantlocal.exe", "pythonw.exe"):
+                vie.arret_de(proc.info["pid"], "ferme par reconstruire.py")
+        except Exception:  # noqa: BLE001
+            continue
+
+
 def stop_app() -> None:
     """Ferme tout ce qui peut tenir un fichier de dist/.
 
@@ -89,6 +114,9 @@ def wait_unlocked(path: Path, timeout: float = LOCK_TIMEOUT) -> bool:
 
 def main() -> int:
     print("  Fermeture de l'application ...")
+    # L'ordre compte : on note AVANT de tuer, sinon les processus ont disparu
+    # et on ne sait plus de qui parler.
+    note_larret_deliberee()
     stop_app()
 
     print("  Attente de la liberation des fichiers ...", end=" ", flush=True)
