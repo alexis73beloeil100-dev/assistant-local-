@@ -501,3 +501,44 @@ def test_la_notice_previent_pour_un_dossier_trop_profond():
     assert 145 + plus_long < 260, (
         f"le chemin interne le plus long fait {plus_long} caracteres : "
         "le seuil de 145 annonce dans la notice n'est plus tenable")
+
+
+def test_l_empreinte_publiee_correspond_a_l_installateur():
+    """Le 22/08, l'empreinte publiee designait un installateur compile une
+    heure et demie plus tot : produite a la main une fois, jamais refaite, et
+    trois recompilations l'ont laissee derriere sans que rien ne le signale.
+
+    Une empreinte qui ne correspond pas est PIRE que pas d'empreinte : celui
+    qui la verifie conclut que le fichier a ete altere en chemin.
+    """
+    import hashlib
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    exe = racine / "installateur" / "Installer_AssistantLocal.exe"
+    somme = exe.with_suffix(exe.suffix + ".sha256")
+
+    if not exe.is_file() or not somme.is_file():
+        return          # rien a verifier tant que rien n'est publie
+
+    digest = hashlib.sha256()
+    with exe.open("rb") as fh:
+        for bloc in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(bloc)
+
+    publie = somme.read_text(encoding="utf-8").split()[0].lower()
+    assert publie == digest.hexdigest(), (
+        "l'empreinte publiee ne correspond plus a l'installateur : "
+        "republie avec outils/publier.py")
+
+
+def test_publier_produit_les_deux_ensemble():
+    """La seule facon de tenir l'installateur et son empreinte ensemble est de
+    ne jamais les produire separement."""
+    import inspect
+
+    from outils import publier
+
+    source = inspect.getsource(publier.main)
+    assert source.index("subprocess.run([str(iscc)") < source.index("empreinte(SORTIE)")
+    assert "arbre_propre()" in source
