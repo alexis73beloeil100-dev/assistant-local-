@@ -420,6 +420,20 @@ FAMILLES = {
 }
 
 
+# Processus qui portent des fenetres SANS etre l'application demandee.
+#
+# Fermer l'un d'eux emporte des morceaux de Windows ou d'autres applications.
+# ApplicationFrameHost heberge toutes les applications du Store ; ShellHost
+# porte des elements du shell -- la Loupe s'y loge, et la fermer coupait le
+# reste. Les autres sont des hotes systeme qu'on ne tue jamais.
+HOTES_PARTAGES = {
+    "applicationframehost.exe", "shellhost.exe", "explorer.exe",
+    "svchost.exe", "runtimebroker.exe", "searchhost.exe",
+    "startmenuexperiencehost.exe", "shellexperiencehost.exe",
+    "textinputhost.exe", "dllhost.exe", "sihost.exe", "ctfmon.exe",
+}
+
+
 def _fenetres_visibles() -> list[tuple[int, str]]:
     """Les fenetres de premier niveau visibles : (pid, titre).
 
@@ -522,19 +536,31 @@ def _processus_de_l_application(nom: str) -> tuple[str, ...]:
                 pids.add(pid)
                 break
 
-    processus: set[str] = set()
+    # Windows rend "ShellHost.exe", la liste d'exclusion est en minuscules :
+    # sans normaliser, la comparaison ne trouve jamais rien et l'exclusion ne
+    # sert a rien. On garde le nom d'origine pour l'affichage.
+    processus: dict[str, str] = {}
     for pid in pids:
         try:
-            processus.add(psutil.Process(pid).name())
+            nom_processus = psutil.Process(pid).name()
+            processus[nom_processus.lower()] = nom_processus
         except Exception:  # noqa: BLE001
             continue
 
-    # Les hotes partages de Windows ne sont jamais la cible : les fermer
-    # emporterait d'autres applications que celle demandee.
-    processus -= {"ApplicationFrameHost.exe", "explorer.exe", "svchost.exe"}
+    # Les hotes partages de Windows ne sont JAMAIS la cible.
+    #
+    # Plusieurs applications logent tout ou partie de leur interface dans un
+    # processus qui ne leur appartient pas. Les fermer emporterait des morceaux
+    # de Windows ou d'autres applications ouvertes.
+    #
+    # Constate le 22/08 : fermer la Loupe fermait aussi ShellHost.exe, qui
+    # heberge d'autres elements du shell. Le titre de la fenetre disait bien
+    # "Loupe" -- c'est le processus qui etait partage, pas la fenetre.
+    for hote in HOTES_PARTAGES:
+        processus.pop(hote, None)
 
     if processus:
-        return tuple(sorted(processus))
+        return tuple(sorted(processus.values()))
 
     if officiel is not None and not officiel.est_store:
         exe = os.path.basename(officiel.cible)

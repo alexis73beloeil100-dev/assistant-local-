@@ -1650,8 +1650,7 @@ def test_une_application_du_store_n_est_pas_confondue_avec_son_hote():
     assert "EnumChildWindows" in source, (
         "il faut descendre dans la fenetre enfant pour trouver le vrai pid")
 
-    exclus = inspect.getsource(apps._processus_de_l_application)
-    assert "ApplicationFrameHost.exe" in exclus, (
+    assert "applicationframehost.exe" in apps.HOTES_PARTAGES, (
         "l'hote partage ne doit jamais etre une cible")
 
 
@@ -1665,3 +1664,27 @@ def test_lister_les_fenetres_ne_casse_jamais_la_fermeture():
     for element in fenetres[:5]:
         assert isinstance(element, tuple) and len(element) == 2
         assert isinstance(element[0], int) and isinstance(element[1], str)
+
+
+def test_fermer_une_application_n_emporte_pas_les_hotes_de_windows():
+    """Constate le 22/08 : fermer la Loupe fermait aussi ShellHost.exe, qui
+    heberge d'autres elements du shell. Le titre de la fenetre disait bien
+    "Loupe" -- c'est le PROCESSUS qui etait partage, pas la fenetre.
+
+    Meme famille de piege qu'ApplicationFrameHost pour les applications du
+    Store : suivre le processus porteur de la fenetre ferme autre chose que
+    ce qu'on visait.
+    """
+    from assistant.skills import apps
+
+    for hote in ("shellhost.exe", "applicationframehost.exe", "explorer.exe",
+                 "svchost.exe", "runtimebroker.exe", "textinputhost.exe"):
+        assert hote in apps.HOTES_PARTAGES, f"{hote} doit etre epargne"
+
+    # La liste est en minuscules ; Windows rend "ShellHost.exe". Sans
+    # normalisation la comparaison ne trouve jamais rien, et l'exclusion ne
+    # sert a rien -- c'est le defaut qu'avait la premiere version.
+    assert all(h == h.lower() for h in apps.HOTES_PARTAGES)
+    source = __import__("inspect").getsource(apps._processus_de_l_application)
+    assert ".lower()" in source, (
+        "les noms de processus doivent etre compares en minuscules")
