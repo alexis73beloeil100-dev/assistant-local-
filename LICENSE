@@ -1,0 +1,28 @@
+Licence MIT
+
+Copyright (c) 2026 Assistant local
+
+Par la presente, une autorisation est accordee, a titre gratuit, a toute
+personne obtenant une copie de ce logiciel et des fichiers de documentation
+associes (le "Logiciel"), d'utiliser le Logiciel sans restriction, y compris
+sans limitation les droits d'utiliser, copier, modifier, fusionner, publier,
+distribuer, sous-licencier et/ou vendre des copies du Logiciel, et de
+permettre aux personnes a qui le Logiciel est fourni de le faire, sous
+reserve des conditions suivantes :
+
+L'avis de droit d'auteur ci-dessus et le present avis d'autorisation doivent
+etre inclus dans toutes les copies ou parties substantielles du Logiciel.
+
+LE LOGICIEL EST FOURNI "EN L'ETAT", SANS GARANTIE D'AUCUNE SORTE, EXPRESSE OU
+IMPLICITE, Y COMPRIS MAIS SANS S'Y LIMITER LES GARANTIES DE QUALITE
+MARCHANDE, D'ADEQUATION A UN USAGE PARTICULIER ET D'ABSENCE DE CONTREFACON.
+EN AUCUN CAS LES AUTEURS OU TITULAIRES DU DROIT D'AUTEUR NE POURRONT ETRE
+TENUS RESPONSABLES DE TOUTE RECLAMATION, DOMMAGE OU AUTRE RESPONSABILITE, QUE
+CE SOIT DANS LE CADRE D'UN CONTRAT, D'UN DELIT OU AUTRE, DECOULANT DE, OU EN
+LIEN AVEC LE LOGICIEL OU SON UTILISATION, OU D'AUTRES OPERATIONS SUR LE
+LOGICIEL.
+
+---
+
+Cette licence couvre le code de l'Assistant local. Elle ne couvre pas les
+composants tiers redistribues avec lui : voir LICENCES-TIERS.md.

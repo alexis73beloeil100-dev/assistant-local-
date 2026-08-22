@@ -112,6 +112,29 @@ def wait_unlocked(path: Path, timeout: float = LOCK_TIMEOUT) -> bool:
     return False
 
 
+LICENCES = ("LICENSE", "LICENCES-TIERS.md")
+
+
+def copier_licences() -> None:
+    """Fait voyager les licences avec l'application.
+
+    Elles doivent etre INSTALLEES a cote de l'executable, pas seulement
+    presentes dans le depot : c'est le binaire qu'on distribue, et la GPLv2
+    d'OpenRGB comme la GPLv3 d'openrgb-python exigent que leur texte
+    accompagne ce qui est redistribue.
+
+    On les copie dans dist/ plutot que de les ajouter au script Inno, pour
+    que dist/ reste exactement ce qui s'installe. Le manifeste des mises a
+    jour repose sur cette egalite : un fichier installe qui n'est pas dans
+    dist/ ne serait jamais mis a jour, et personne ne s'en apercevrait.
+    """
+    destination = EXE.parent
+    for nom in LICENCES:
+        source = ROOT / nom
+        if source.exists():
+            (destination / nom).write_bytes(source.read_bytes())
+
+
 def main() -> int:
     print("  Fermeture de l'application ...")
     # L'ordre compte : on note AVANT de tuer, sinon les processus ont disparu
@@ -152,6 +175,7 @@ def main() -> int:
               "ete reconstruit.")
         return 1
 
+    copier_licences()
     print(f"  Executable pret : {EXE}")
 
     print("  Raccourci du Bureau ...")

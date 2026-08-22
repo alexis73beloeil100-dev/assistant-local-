@@ -1,7 +1,15 @@
 ; Installateur de l'Assistant local.
 ;
 ; Produit un Setup.exe unique, distribuable, avec desinstallation propre.
-; Compile par outils/creer_setup.py, qui verifie d'abord que dist/ est a jour.
+; Se compile par :
+;     "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installateur.iss
+;
+; Reconstruire dist/ AVANT (python reconstruire.py) : Inno empaquette ce
+; qu'il trouve, sans verifier l'age. Un installateur compile sur un dist/
+; perime s'obtient sans le moindre avertissement.
+;
+; Pour livrer un correctif sans faire retelecharger 1,15 Go, voir
+; outils/paquet_maj.py : il ne transporte que ce qui a change.
 ;
 ; L'installation se fait dans le profil de l'utilisateur (pas Program Files) :
 ; l'application ecrit son journal et ses reglages a cote d'elle, ce que les

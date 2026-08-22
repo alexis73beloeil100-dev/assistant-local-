@@ -28,3 +28,7 @@ __pycache__/
 # Windows
 Thumbs.db
 desktop.ini
+
+# Genere par outils/paquet_maj.py a chaque paquet de mise a jour, avec un
+# SourceDir absolu propre a la machine qui construit.
+mise_a_jour.iss

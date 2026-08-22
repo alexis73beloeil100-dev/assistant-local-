@@ -471,3 +471,78 @@ La connaissance des fichiers est une photographie prise au démarrage. Après
 une grosse installation ou désinstallation, relance `assistant.cli scan`
 (40 secondes) — ou redémarre simplement l'assistant.
 
+## Publier une mise à jour
+
+L'installateur complet pèse 1,15 Go, mais **74 % de ce poids sont les
+bibliothèques CUDA**, qui n'ont pas bougé depuis le premier jour. Ce qui porte
+le travail — l'exécutable — en fait 24. Obliger les gens à retélécharger 1,15 Go
+pour un correctif de trois lignes, c'est s'assurer qu'ils ne le prendront
+jamais.
+
+D'où un second format de livraison, qui ne contient que la différence :
+
+```
+.venv\Scripts\python.exe outils\paquet_maj.py 1.0.1
+```
+
+L'argument est la version **déjà publiée**, celle dont on part ; la version
+d'arrivée est lue dans `assistant/__init__.py`. Le script compare le dossier
+livré au manifeste de la version publiée, et compile un installateur qui ne
+transporte que les fichiers dont le contenu a changé.
+
+### La séquence, dans l'ordre
+
+1. Corriger le code, incrémenter `__version__` **et** `MaVersion` dans
+   `installateur.iss` (un test refuse qu'ils divergent).
+2. `python reconstruire.py` — reconstruit `dist/` et y recopie les licences.
+3. `python outils\paquet_maj.py <version précédente>` — produit le paquet
+   **et** le manifeste de la nouvelle version.
+4. Committer le nouveau manifeste. **C'est l'étape qu'on oublie**, et elle ne
+   se rattrape pas : sans le manifeste d'une version publiée, il devient
+   impossible de calculer ce qui a changé depuis ce que les gens ont
+   réellement installé.
+
+### Ce que le paquet refuse de faire
+
+- **S'installer sur une machine vierge.** Il contient quelques dizaines de
+  fichiers, pas les 2,5 Go de bibliothèques : l'application ne démarrerait
+  pas, et le message d'erreur ne dirait rien de la vraie cause. Il vérifie la
+  base de registres et renvoie vers l'installateur complet.
+- **Descendre une version.** Si la version installée est plus récente, il
+  demande confirmation avant de continuer.
+- **S'appliquer depuis une autre version que celle prévue.** Une mise à jour
+  1.0.1 → 1.0.2 ne livre que ce qui diffère de la 1.0.1 ; posée sur une 1.0.0,
+  elle laisserait des fichiers d'une version intermédiaire.
+
+### Pourquoi rien ne se met à jour tout seul
+
+Il n'y a **aucune vérification automatique**, et c'est délibéré. Elle
+obligerait l'application à contacter un serveur, donc à annuler la promesse
+« aucune connexion sortante après l'installation » — qui est un argument
+central du projet. Le paquet se distribue à la main, comme le premier.
+
+### Le détail qui fait tenir l'ensemble
+
+Le paquet porte **le même `AppId`** que l'installateur complet. C'est ce qui
+le fait reconnaître comme une mise à jour et non comme un second logiciel :
+Inno ajoute alors ses fichiers au journal de désinstallation existant au lieu
+de le remplacer. Avec un identifiant différent, Windows afficherait deux
+« Assistant local », et désinstaller l'un laisserait 2,5 Go derrière l'autre.
+Un test vérifie que les deux identifiants restent égaux.
+
+---
+
+## Licences
+
+Le code est sous [licence MIT](LICENSE). Les composants redistribués avec lui
+ont les leurs, et deux d'entre eux imposent des obligations réelles :
+voir [LICENCES-TIERS.md](LICENCES-TIERS.md), en particulier la section sur
+`openrgb-python`, qui est en GPLv3 et **importé** par l'assistant.
+
+Le tableau des licences se régénère depuis les métadonnées des paquets
+installés, plutôt que d'être tenu à la main :
+
+```
+.venv\Scripts\python.exe outils\licences_tierces.py
+```
+
