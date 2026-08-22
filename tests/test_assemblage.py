@@ -456,3 +456,21 @@ def test_l_executable_annonce_sa_version():
 
     assert f'"{__version__}"' not in spec and f"'{__version__}'" not in spec, (
         "le numero de version est recopie en dur dans le .spec")
+
+
+def test_l_installateur_dit_qu_il_ferme_l_application():
+    """Constate en marche reelle le 22/08 : une instance lancee depuis un
+    AUTRE dossier a ete fermee par l'installation. Le Gestionnaire de
+    redemarrage de Windows identifie les processus par leur module, pas par
+    leur chemin.
+
+    C'est le defaut d'Inno Setup 6 et c'est le comportement voulu -- sans lui
+    une mise a jour ecraserait des fichiers en cours d'utilisation. Mais un
+    comportement voulu qui n'est ecrit nulle part se decouvre en le subissant.
+    """
+    from pathlib import Path
+
+    iss = (Path(__file__).resolve().parent.parent / "installateur.iss").read_text(
+        encoding="utf-8", errors="replace")
+
+    assert "CloseApplications=yes" in iss

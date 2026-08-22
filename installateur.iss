@@ -43,6 +43,19 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ExtraDiskSpaceRequired=0
 UninstallDisplayName={#MonNom}
 UninstallDisplayIcon={app}\{#MonExe}
+; Fermer l'assistant s'il tourne pendant l'installation.
+;
+; C'est deja le defaut d'Inno Setup 6, et on l'ecrit quand meme : le
+; comportement a ete constate en marche reelle le 22/08 -- une instance
+; lancee depuis un AUTRE dossier a ete fermee par l'installation. Le
+; Gestionnaire de redemarrage de Windows identifie les processus par leur
+; module, pas par leur chemin, donc n'importe quel exemplaire de
+; AssistantLocal.exe est concerne.
+;
+; C'est voulu : sans cela, une mise a jour ecraserait des fichiers en cours
+; d'utilisation et echouerait en fin de course. Mais une personne qui lit ce
+; fichier doit pouvoir l'apprendre ici plutot qu'en le decouvrant.
+CloseApplications=yes
 ; Page d'explication avant l'installation : sans elle, la personne qui
 ; installe ne sait pas ce que fait le logiciel, ni pourquoi un second ecran
 ; s'ouvre a la fin pour telecharger des modeles.
