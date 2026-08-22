@@ -12,6 +12,7 @@ de pages qui va a l'essentiel. Les deux ont leur usage.
 from __future__ import annotations
 
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -24,6 +25,12 @@ from reportlab.platypus import (HRFlowable, PageBreak, Paragraph,
                                 SimpleDocTemplate, Spacer, Table, TableStyle)
 
 RACINE = Path(__file__).resolve().parent.parent
+
+# Lance directement (python outils/note_de_reprise.py), Python met "outils"
+# dans le chemin d'import, pas la racine : le paquet assistant devient
+# introuvable et la version ressortait en "?" sans que rien ne le signale.
+if str(RACINE) not in sys.path:
+    sys.path.insert(0, str(RACINE))
 
 # Sobre et lisible a l'impression : ce document se consulte en travaillant,
 # parfois sur papier.
@@ -114,6 +121,38 @@ def mesures() -> dict:
     infos["exe"] = (
         datetime.fromtimestamp(exe.stat().st_mtime).strftime("%d/%m/%Y %H:%M")
         if exe.exists() else "absent")
+
+    # Nombre de tests compte, pas recopie : un chiffre ecrit a la main dans un
+    # document de reprise vieillit en silence et finit par mentir.
+    try:
+        import re
+
+        sortie = subprocess.run(
+            [str(RACINE / ".venv" / "Scripts" / "python.exe"),
+             "-m", "pytest", "--collect-only", "-q", str(RACINE / "tests")],
+            capture_output=True, text=True, timeout=180,
+            encoding="utf-8", errors="replace", cwd=str(RACINE),
+        ).stdout
+        trouve = re.search(r"(\d+)\s+tests? collected", sortie)
+        infos["tests"] = trouve.group(1) if trouve else "?"
+    except (subprocess.SubprocessError, OSError):
+        infos["tests"] = "?"
+
+    try:
+        from assistant import __version__
+
+        infos["version"] = __version__
+    except Exception:  # noqa: BLE001
+        infos["version"] = "?"
+
+    # Sources plus recentes que l'executable : le decalage silencieux.
+    infos["decalage"] = []
+    if exe.exists():
+        horodatage = exe.stat().st_mtime
+        infos["decalage"] = [
+            f.name for f in (RACINE / "assistant").rglob("*.py")
+            if f.stat().st_mtime > horodatage
+        ]
     return infos
 
 
@@ -142,12 +181,17 @@ def construire(destination: Path) -> Path:
         ["", ""],
         ["Code", f"{m['lignes']:,} lignes, {m['fichiers']} fichiers Python"
                  .replace(",", " ")],
-        ["Tests", "129 au vert"],
+        ["Version", m["version"]],
+        ["Tests", f"{m['tests']} collectes"],
         ["Outils du modele", "71 (36 lecture, 35 action)"],
         ["Panneaux", "19, dont 4 interactifs"],
         ["Executable", m["exe"]],
         ["Dernier commit", m["commit"][:70]],
-        ["Autotest", "15 controles, tout au vert"],
+        ["Sources / executable",
+         "alignes" if not m["decalage"] else
+         f"<font color='#B03A2E'><b>DECALAGE</b></font> : "
+         f"{', '.join(m['decalage'][:4])} plus recents que l'executable. "
+         "Reconstruire avant de publier."],
     ][1:], [38 * mm, 125 * mm], s))
 
     F.append(Paragraph(
@@ -158,86 +202,72 @@ def construire(destination: Path) -> Path:
     # ------------------------------------------------------- fait recemment
     F.append(Paragraph("2. Ce qui vient d'etre fait", s["section"]))
 
-    F.append(Paragraph("Panneau Reparer, rendu utile", s["sous_section"]))
+    F.append(Paragraph("Version 1.0.1, et tout est aligne", s["sous_section"]))
     F.append(Paragraph(
-        "Il listait ce que l'assistant <i>savait</i> faire &mdash; un "
-        "catalogue, pas un diagnostic. Il liste desormais ce qui cloche "
-        "reellement, avec un bouton par ligne et un bouton "
-        "<b>Tout reparer</b>. Module : <font face='Courier'>"
-        "assistant/reparation.py</font>.", s["corps"]))
-    F.append(Paragraph(
-        "Seul ce qui ne coute rien a reprendre est coche d'office. Les caches "
-        "Unreal sont listes et chiffres mais <b>decoches</b> : les supprimer "
-        "coute des heures de recompilation de shaders. Les points de "
-        "restauration n'apparaissent pas du tout &mdash; un filet de securite "
-        "n'a pas sa place derriere un bouton automatique.", s["corps"]))
+        "Sources, executable et installateur portent le meme numero. Un test "
+        "verifie que <font face='Courier'>installateur.iss</font> et "
+        "<font face='Courier'>assistant/__init__.py</font> ne peuvent plus "
+        "diverger : la construction echoue si quelqu'un en oublie un.",
+        s["corps"]))
 
-    F.append(Paragraph("Les 14 fenetres au demarrage de Windows",
+    F.append(Paragraph("Le decalage qui ne previent jamais",
                        s["sous_section"]))
     F.append(Paragraph(
-        "La cause n'etait pas dans le code mais dans le <b>registre</b> : "
-        "l'entree de demarrage datait du premier jour et lancait "
-        "<font face='Courier'>demarrer_assistant.py</font> depuis les "
-        "sources, donc la boucle vocale sans fenetre. Trois defauts corriges "
-        "a cette occasion :", s["corps"]))
-    for texte in [
-        "<font face='Courier'>nvidia-smi</font> etait le seul appel systeme "
-        "sans le drapeau <font face='Courier'>CREATE_NO_WINDOW</font>. Il "
-        "tourne au demarrage, a chaque ouverture d'Etat en direct et a chaque "
-        "diagnostic : une console a chaque fois.",
-        "<font face='Courier'>demarrer_assistant.py</font> ouvrait la boucle "
-        "vocale au lieu de la fenetre.",
-        "<font face='Courier'>startup.py</font> calculait sa cible depuis "
-        "<font face='Courier'>__file__</font>, qui pointe dans "
-        "<font face='Courier'>_internal</font> une fois emballe. Activer le "
-        "demarrage depuis l'application inscrivait un chemin invalide. Il "
-        "utilise maintenant <font face='Courier'>sys.executable</font>.",
-    ]:
-        # reportlab n'a pas de parametre "bullet" : la puce se declare dans
-        # le texte, et le style l'indente via bulletIndent.
-        F.append(Paragraph(f"<bullet>&bull;</bullet>{texte}", s["puce"]))
+        "C'est arrive pour de vrai le 22/08 : le commit "
+        "<font face='Courier'>69082cc</font> corrigeait "
+        "<font face='Courier'>vie.py</font> a 03h05, l'executable datait de "
+        "03h00. Cinq minutes d'ecart, et le correctif n'etait pas livre. "
+        "<b>Rien ne le signalait</b> : autotest vert, 166 tests au vert, "
+        "arbre Git propre.", s["corps"]))
     F.append(Paragraph(
-        "L'autotest compare desormais l'entree inscrite a celle attendue et "
-        "affiche les deux chemins si elles different. Ce decalage ne peut "
-        "plus passer inapercu.", s["corps"]))
+        "La commande qui le detecte, a lancer avant toute publication :",
+        s["corps"]))
+    F.append(Paragraph(
+        'find assistant -name "*.py" -newer '
+        "dist/AssistantLocal/AssistantLocal.exe", s["code"]))
+    F.append(Paragraph(
+        "Une sortie vide veut dire que tout est aligne.", s["note"]))
 
-    F.append(Paragraph("Un conflit d'acces a l'index", s["sous_section"]))
+    F.append(Paragraph("Le panneau Reparer", s["sous_section"]))
     F.append(Paragraph(
-        "Ouvrir le panneau Reparer pendant le scan initial faisait lire la "
-        "base pendant qu'elle s'ecrivait : "
-        "<font face='Courier'>database table is locked</font>, et le scan "
-        "<b>echouait silencieusement</b>. Le detecteur attend maintenant que "
-        "l'index soit pret, et le panneau l'annonce en clair.", s["corps"]))
+        "Il listait ce que l'assistant <i>savait</i> faire &mdash; un "
+        "catalogue, pas un diagnostic. Chaque ligne est desormais un probleme "
+        "reellement detecte, avec son bouton, plus un bouton "
+        "<b>Tout reparer</b>. Seul ce qui ne coute rien a reprendre est coche "
+        "d'office : les caches Unreal sont listes et chiffres mais decoches, "
+        "et les points de restauration n'apparaissent pas du tout.",
+        s["corps"]))
 
     F.append(PageBreak())
 
-    # --------------------------------------------------------------- a faire
     F.append(Paragraph("3. Ce qui reste a faire", s["section"]))
 
-    F.append(Paragraph("Priorite 1 &mdash; l'eclairage RGB", s["sous_section"]))
+    F.append(Paragraph("Priorite 1 &mdash; l'eclairage RGB",
+                       s["sous_section"]))
     F.append(Paragraph(
-        "Lecture parfaite, ecriture sans effet. Les trois peripheriques "
-        "(RTX 5060 Ti, carte mere B550, souris Basilisk V3) sont detectes "
-        "sans erreur et sans droits administrateur, mais le changement de "
-        "mode ne fait pas bouger les LED.", s["corps"]))
+        "<b>Un vrai defaut a ete corrige</b> le 22/08 a 01h05 (commit "
+        "<font face='Courier'>805b40f</font>), et il ne faut pas le confondre "
+        "avec une resolution du sujet. La carte mere se remet d'elle-meme en "
+        "mode Random, pilote par son propre controleur, qui ignore toute "
+        "couleur envoyee. Demander une couleur, c'est desormais demander un "
+        "mode qui en accepte une.", s["corps"]))
     F.append(Paragraph(
-        "<b>Le test qui tranche tout, et qui n'a jamais ete fait</b> : "
-        "changer un mode dans l'interface graphique d'OpenRGB elle-meme. Si "
-        "le GUI n'y arrive pas non plus, le probleme est OpenRGB ou le "
-        "materiel, et tout le travail sur le protocole est inutile. "
-        "<b>A faire avant d'ecrire une ligne de plus.</b>", s["corps"]))
+        "Ce que ca regle : &laquo; mets les LED en bleu &raquo; sur les "
+        "ventilateurs. Ce que ca ne regle pas : le reste. <b>Le sujet reste "
+        "ouvert.</b>", s["corps"]))
     F.append(Paragraph(
-        "Ensuite seulement : remplacer le client ecrit a la main par le SDK "
-        "officiel <font face='Courier'>openrgb-python</font>. Le format "
-        "binaire a piege trois fois &mdash; champ fabricant ajoute en "
-        "version 1, longueur de matrice lue sur 32 bits au lieu de 16, et un "
-        "decalage non resolu qui fait ressortir le nombre de LED a zero.",
-        s["corps"]))
+        "La piste a suivre en premier, selon la note detaillee : comparer ce "
+        "que fait l'interface d'OpenRGB &mdash; qui, elle, change bien les "
+        "LED &mdash; avec ce qu'envoie le SDK. Soit le SDK fonctionne quand "
+        "le GUI est ouvert, et c'est l'instance serveur seule qui n'a pas "
+        "acces au materiel ; soit c'est une question d'elevation, l'ecriture "
+        "SMBus l'exigeant la ou la lecture non. Ce qui collerait exactement "
+        "au symptome.", s["corps"]))
     F.append(Paragraph(
-        "Deja elimine, ne pas refaire : la concurrence des logiciels "
-        "fabricants (trois services arretes, aucun effet) et la lecture du "
-        "profil RGB Fusion (fichier jamais reecrit en dix minutes).",
-        s["note"]))
+        "Ne jamais croire la relecture : elle a fait annoncer trois fois un "
+        "succes inexistant. Seul l'oeil sur les LED fait foi. Sept pistes "
+        "sont deja mortes et listees dans REPRISE.md &mdash; les relire avant "
+        "d'en rouvrir une.", s["note"]))
 
     F.append(Paragraph("Priorite 2 &mdash; le bouton Annuler",
                        s["sous_section"]))
@@ -269,15 +299,16 @@ def construire(destination: Path) -> Path:
     F.append(Paragraph(
         "Il n'existe aucun mecanisme. Livrer une correction impose de refaire "
         "telecharger 1,13 Go, alors que ce qui change tient dans "
-        "l'executable de 24 Mo &mdash; les bibliotheques CUDA representent "
-        "78 % du poids et ne bougent jamais.", s["corps"]))
+        "l'executable de 25 Mo &mdash; les bibliotheques CUDA representent "
+        "78 % du poids et ne bougent jamais. Point deja acquis : "
+        "l'installateur a un <font face='Courier'>AppId</font> stable, donc "
+        "reinstaller met a jour en place sans creer de doublon.", s["corps"]))
     F.append(Paragraph(
         "Decision en attente de l'utilisateur : ou publier, et verification "
         "manuelle ou automatique. La seconde oblige a reecrire la promesse "
         "&laquo; aucune connexion sortante apres l'installation &raquo;, qui "
         "est un argument central du projet.", s["note"]))
 
-    # ---------------------------------------------------------------- pieges
     F.append(Paragraph("4. Pieges a ne pas refaire", s["section"]))
     F.append(tableau([
         ["Piege", "Ce qu'il faut savoir"],
