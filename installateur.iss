@@ -46,6 +46,11 @@ UninstallDisplayIcon={app}\{#MonExe}
 ; Page d'explication avant l'installation : sans elle, la personne qui
 ; installe ne sait pas ce que fait le logiciel, ni pourquoi un second ecran
 ; s'ouvre a la fin pour telecharger des modeles.
+; Page d'acceptation de la licence. Le texte dit ce qui est reellement
+; distribue : le programme complet se transmet sous GPLv3, parce qu'il
+; integre openrgb-python qui l'est. Annoncer MIT seul -- la licence du
+; code ecrit pour ce projet -- aurait ete inexact pour l'assemblage.
+LicenseFile=LICENCE-INSTALLATION.txt
 InfoBeforeFile=installateur_infos.txt
 
 [Languages]

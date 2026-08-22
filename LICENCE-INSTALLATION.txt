@@ -1,0 +1,72 @@
+LICENCE DE L'ASSISTANT LOCAL
+============================
+
+Ce logiciel est libre. Vous pouvez l'utiliser, le copier, l'etudier, le
+modifier et le redistribuer.
+
+
+CE QUE VOUS RECEVEZ ICI
+-----------------------
+
+Le programme que vous installez est distribue sous licence GNU General
+Public License version 3 (GPLv3).
+
+La raison est simple : l'assistant utilise openrgb-python pour piloter
+l'eclairage RGB, et cette bibliotheque est elle-meme sous GPLv3. Comme elle
+est integree au programme et non lancee a cote, l'ensemble se transmet sous
+cette licence.
+
+Le code source complet est installe avec le logiciel, dans le fichier :
+
+    assistant-local-source.zip
+
+Il se trouve dans le dossier d'installation, a cote du programme. Vous
+n'avez rien a demander a personne pour l'obtenir.
+
+
+LE CODE ECRIT POUR CE PROJET
+----------------------------
+
+Les fichiers ecrits specifiquement pour l'Assistant local sont publies par
+leur auteur sous licence MIT, qui est plus permissive. Vous pouvez les
+reprendre isolement sous ces conditions-la.
+
+C'est l'assemblage complet -- le programme installe -- qui se transmet sous
+GPLv3, a cause de la bibliotheque ci-dessus.
+
+
+LES AUTRES COMPOSANTS
+---------------------
+
+Le logiciel embarque une trentaine de bibliotheques tierces : reconnaissance
+vocale, calcul, lecture d'images, et les bibliotheques CUDA de NVIDIA qui
+representent l'essentiel de sa taille. Chacune garde sa propre licence.
+
+Le detail complet, composant par composant, est dans le fichier
+LICENCES-TIERS.md installe a cote du programme.
+
+OpenRGB, livre dans le sous-dossier outils/OpenRGB, est sous GPLv2. Son
+code source est disponible chez son auteur :
+
+    https://gitlab.com/CalcProgrammer1/OpenRGB
+
+
+ABSENCE DE GARANTIE
+-------------------
+
+Ce programme est fourni sans aucune garantie, dans la mesure permise par la
+loi applicable. L'auteur ne peut etre tenu responsable des dommages qui
+resulteraient de son utilisation.
+
+
+CE QUE LE LOGICIEL NE FAIT PAS
+------------------------------
+
+Rien de ce que vous dites ou de ce qui se trouve sur cette machine n'est
+envoye ailleurs. Le modele de langage, la reconnaissance vocale et la
+synthese fonctionnent entierement en local. Il n'y a aucune verification
+automatique de mise a jour, aucune telemetrie, aucun compte.
+
+La seule connexion sortante a lieu si vous demandez explicitement le
+telechargement des composants (moteur d'IA et modeles de voix), sur l'ecran
+propose a la fin de l'installation.

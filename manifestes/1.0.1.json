@@ -1,6 +1,6 @@
 {
   "version": "1.0.1",
-  "genere": "2026-08-22T03:52:26",
+  "genere": "2026-08-22T04:05:35",
   "fichiers": {
     "_internal/_asyncio.pyd": {
       "sha256": "c77de90cad749087a0c5dc5e19d78d24f6ef44e7e5ac19b8420cfc0cea62395d",
@@ -10310,17 +10310,25 @@
       "sha256": "a3a9487dd7a27be0296731513a5c1d9005bd3acf5861ccbe0aabca3984f51c4f",
       "taille": 148336
     },
+    "assistant-local-source.zip": {
+      "sha256": "d99ba5a597e29341c9915dd03b814d43e5586388e2414af3ca43c5efa6dc8038",
+      "taille": 328086
+    },
     "AssistantLocal.exe": {
       "sha256": "d5b0b022c85a10672386e83ea2104aca444701deb50a3bd5ba99d3a5a6197473",
       "taille": 25607354
     },
+    "LICENCE-INSTALLATION.txt": {
+      "sha256": "6261160ff4c9303b140d7a3bc2fc9dc519ee753dfd107b11aa01978a88bbc435",
+      "taille": 2453
+    },
     "LICENCES-TIERS.md": {
-      "sha256": "4346b52a5d0cc7d4d3b5f8e40553d101577d81bf1b25a7ed7388667eee644f5b",
-      "taille": 5189
+      "sha256": "936c89c2a94258915795ebc6b6b4607f580d43fbca9575fc6471364d461c288e",
+      "taille": 5596
     },
     "LICENSE": {
-      "sha256": "51c202e5210d5eb6308b52b9579af3265b9b7f2062ac93f876c9f239b9662457",
-      "taille": 1359
+      "sha256": "9e9474fa3b02d8148249e28e58dcde54262bd68e0bee473aabd5fa69ec6ba94b",
+      "taille": 1829
     }
   }
 }

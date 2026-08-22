@@ -31,19 +31,28 @@ l'installateur en annonçant « MIT » tout court serait inexact.
 Le texte de la GPLv3 voyage déjà avec le bundle, dans
 `_internal/openrgb_python-0.3.6.dist-info/LICENSE.md`.
 
-Deux façons d'en sortir, si l'on veut un binaire entièrement permissif :
+**La décision est prise (22/08/2026) : le binaire est publié sous GPLv3.**
 
-1. **Remplacer le client.** Le protocole OpenRGB SDK est un protocole binaire
-   documenté sur TCP, et l'assistant n'en utilise qu'une poignée de messages
-   (lister les périphériques, changer de mode, écrire des couleurs). Le
-   réécrire supprime la dépendance. C'est aussi le sous-système dont le
-   fonctionnement reste ouvert : les deux chantiers se rejoignent.
-2. **Assumer la GPLv3** pour le binaire publié, et fournir le source. C'est
-   sans effort, et parfaitement légitime — mais c'est un choix, pas un défaut,
-   et il doit être écrit noir sur blanc là où les gens le lisent.
+L'autre option aurait été de réécrire le client — le protocole OpenRGB SDK est
+un protocole binaire documenté sur TCP, et l'assistant n'en utilise qu'une
+poignée de messages. Elle a été écartée : elle touche au sous-système RGB, qui
+reste volontairement de côté.
 
-Tant que la décision n'est pas prise, l'installateur ne devrait pas annoncer
-une licence permissive pour l'ensemble.
+Ce que cela implique concrètement, et qui est en place :
+
+- l'installateur affiche une page de licence qui annonce la GPLv3, et non
+  « MIT » tout court (`LicenseFile=LICENCE-INSTALLATION.txt`) ;
+- le code source est **livré avec le programme**, dans
+  `assistant-local-source.zip`, installé à côté de l'exécutable. La GPLv3
+  laisse le choix entre joindre le source et promettre de le fournir pendant
+  trois ans ; joindre l'archive coûte 0,3 Mo sur 1,15 Go et ne demande rien à
+  personne ensuite ;
+- `outils/source_pour_gpl.py` régénère l'archive, et `reconstruire.py`
+  l'appelle à chaque construction — le source livré ne peut donc pas dériver
+  de ce qui est publié.
+
+Les fichiers écrits pour ce projet restent sous MIT et réutilisables comme
+tels, pris isolément. C'est l'assemblage qui se transmet sous GPLv3.
 
 ---
 

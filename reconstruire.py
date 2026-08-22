@@ -112,7 +112,7 @@ def wait_unlocked(path: Path, timeout: float = LOCK_TIMEOUT) -> bool:
     return False
 
 
-LICENCES = ("LICENSE", "LICENCES-TIERS.md")
+LICENCES = ("LICENSE", "LICENCES-TIERS.md", "LICENCE-INSTALLATION.txt")
 
 
 def copier_licences() -> None:
@@ -176,6 +176,11 @@ def main() -> int:
         return 1
 
     copier_licences()
+    # Le source accompagne le binaire : la GPLv3 l'exige, et le joindre
+    # dispense de tenir une promesse de fourniture sur trois ans.
+    from outils import source_pour_gpl
+    archive = source_pour_gpl.construire()
+    print(f"  Source joint : {archive.stat().st_size / 1048576:.1f} Mo")
     print(f"  Executable pret : {EXE}")
 
     print("  Raccourci du Bureau ...")

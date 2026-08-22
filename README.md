@@ -534,10 +534,21 @@ Un test vérifie que les deux identifiants restent égaux.
 
 ## Licences
 
-Le code est sous [licence MIT](LICENSE). Les composants redistribués avec lui
-ont les leurs, et deux d'entre eux imposent des obligations réelles :
-voir [LICENCES-TIERS.md](LICENCES-TIERS.md), en particulier la section sur
-`openrgb-python`, qui est en GPLv3 et **importé** par l'assistant.
+**Le programme distribué est sous GPLv3**, parce qu'il intègre
+`openrgb-python` qui l'est. Son code source l'accompagne : l'installation
+dépose `assistant-local-source.zip` à côté de l'exécutable.
+
+Les fichiers écrits pour ce projet restent sous [licence MIT](LICENSE) et
+réutilisables comme tels, pris isolément — c'est l'assemblage qui se
+transmet sous GPLv3. Le détail composant par composant est dans
+[LICENCES-TIERS.md](LICENCES-TIERS.md).
+
+L'archive du source se régénère seule à chaque construction, pour qu'elle
+ne puisse pas dériver de ce qui est publié :
+
+```
+.venv\Scripts\python.exe outils\source_pour_gpl.py
+```
 
 Le tableau des licences se régénère depuis les métadonnées des paquets
 installés, plutôt que d'être tenu à la main :
