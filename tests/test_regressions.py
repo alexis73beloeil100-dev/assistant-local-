@@ -954,18 +954,15 @@ def test_le_mode_jeu_ferme_sans_demander():
     assert "routine=True" in source
 
 
-def test_reprendre_le_controle_rgb_ne_demande_pas_d_accord():
-    """C'est le prealable de "mets les LED en bleu", pas une decision a part.
-
-    Les services sont arretes, pas desactives : ils repartent au prochain
-    demarrage de Windows.
-    """
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.liberer)
-    assert "routine=True" in source
+# Il y avait ici test_reprendre_le_controle_rgb_ne_demande_pas_d_accord, qui
+# exigeait routine=True : fermer le logiciel du fabricant etait considere
+# comme le prealable evident de "mets les LED en bleu".
+#
+# Retire le 22/08, decision de l'utilisateur, apres mesure. L'hypothese etait
+# fausse -- l'eclairage repond pendant que RGB Fusion tourne -- et le geste
+# automatique a eteint ses LED pour rien. Le comportement inverse est
+# desormais fige par
+# test_l_assistant_ne_ferme_plus_le_logiciel_du_fabricant_de_lui_meme.
 
 
 # --- Le UAC du RGB a chaque ouverture de session ----------------------------
@@ -1578,3 +1575,34 @@ def test_un_openrgb_parasite_est_ferme_avant_d_etre_tue():
     source = inspect.getsource(rgb._arreter_les_parasites)
     assert "terminate()" in source
     assert source.index("terminate()") < source.index("kill()")
+
+
+def test_l_assistant_ne_ferme_plus_le_logiciel_du_fabricant_de_lui_meme():
+    """Fermer RGB Fusion a ete traite comme le prealable evident de "mets les
+    LED en bleu". C'est faux, et mesure le 22/08 : l'assistant a ecrit du
+    blanc sur les trois appareils PENDANT que RGB Fusion tournait.
+
+    La note de reprise le disait deja -- "7 services neutralises, champ libre,
+    sans effet". Le fermer sans demander a coute une extinction complete des
+    LED, que l'utilisateur a du signaler lui-meme.
+    """
+    import inspect
+
+    from assistant import llm
+    from assistant.skills import rgb
+
+    # 1. Le geste redemande l'accord : ce n'est pas une routine.
+    source = inspect.getsource(rgb.liberer)
+    assert "routine=False" in source, (
+        "fermer le logiciel du fabricant doit redemander confirmation")
+
+    # 2. Le modele a l'interdiction de le decider seul.
+    outil = next(t for t in llm.TOOLS if t.name == "reprendre_le_controle_rgb")
+    assert "JAMAIS" in outil.description.upper()
+    assert "n'est pas un probleme" in outil.description.lower() \
+        or "pas un probleme" in outil.description.lower()
+
+    # 3. L'etat de l'eclairage mentionne la presence sans appeler a agir.
+    liste = inspect.getsource(rgb.liste)
+    assert "Ferme-le avant de changer un mode" not in liste, (
+        "l'affichage ne doit plus presenter une presence comme une gene")

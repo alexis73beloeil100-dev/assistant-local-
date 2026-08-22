@@ -547,11 +547,13 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         "reprendre_le_controle_rgb",
-        "Ferme les logiciels du fabricant qui gardent la main sur l'eclairage "
-        "(RGB Fusion, Aura, iCUE, Synapse) et leurs services. A appeler quand "
-        "un changement de mode est accepte mais que les LED ne bougent pas : "
-        "c'est le symptome d'un concurrent qui recouvre la commande. "
-        "Reversible : les services sont arretes, pas desactives.",
+        "Ferme les logiciels du fabricant (RGB Fusion, Aura, iCUE, Synapse). "
+        "N'APPELLE JAMAIS CET OUTIL DE TOI-MEME. Uniquement si l'utilisateur "
+        "le demande explicitement, ou s'il dit que les LED ne bougent pas "
+        "APRES une commande que tu viens de lancer. Le seul fait qu'un de ces "
+        "logiciels tourne n'est PAS un probleme : sur cette machine ils "
+        "cohabitent, l'eclairage fonctionne pendant que RGB Fusion tourne. "
+        "Les fermer a deja eteint les LED de l'utilisateur pour rien.",
         _obj({}),
         lambda: rgb.liberer(),
         effect=True,

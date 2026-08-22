@@ -497,11 +497,19 @@ def liberer(ask=None) -> str:
         details="Ces logiciels gardent le controleur et recouvrent chaque "
                 "commande. Ils sont arretes, pas desactives : ils repartiront "
                 "au prochain demarrage de Windows.",
-        # Geste courant : c'est le prealable de "mets les LED en bleu", pas
-        # une decision separee. Demander l'accord ici revenait a faire
-        # confirmer une commande deja donnee -- et rien n'est perdu, les
-        # logiciels repartent au prochain demarrage de Windows.
-        routine=True,
+        # PAS un geste courant, et c'est un retour en arriere assume.
+        #
+        # Fermer le logiciel du fabricant a ete traite comme le prealable
+        # evident de "mets les LED en bleu". C'est faux, et mesure le 22/08 :
+        # l'assistant a ecrit du blanc sur les trois appareils PENDANT que RGB
+        # Fusion tournait. Les deux cohabitaient. La note de reprise le disait
+        # deja -- "7 services neutralises, champ libre, sans effet".
+        #
+        # Le fermer sans demander a coute une extinction complete des LED, que
+        # l'utilisateur a du signaler lui-meme. On redemande donc l'accord :
+        # ce n'est pas une etape de routine, c'est un remede a un symptome
+        # constate.
+        routine=False,
     )
     try:
         safety.guard(action, ask=ask)
@@ -1362,14 +1370,21 @@ def liste() -> str:
         lignes.append("  Dis \"reprends le controle du RGB\" pour le fermer.")
         lignes.append("")
 
+    # On le MENTIONNE, on n'appelle pas a agir.
+    #
+    # L'ancienne formulation disait "ferme-le avant de changer un mode". Elle
+    # presentait une simple presence comme une gene, et poussait a fermer le
+    # logiciel du fabricant sans avoir constate le moindre probleme. Mesure du
+    # 22/08 : l'eclairage a repondu normalement pendant que RGB Fusion
+    # tournait, et le fermer a eteint les LED des trois appareils.
     concurrents = concurrents_actifs()
     if concurrents:
         lignes.append("  A savoir : " + ", ".join(concurrents) + " tourne(nt) "
-                      "en meme temps.")
-        lignes.append("  Deux logiciels qui ecrivent sur le meme controleur "
-                      "donnent un eclairage")
-        lignes.append("  qui clignote au hasard. Ferme-le avant de changer un "
-                      "mode.")
+                      "en meme temps. Ce n'est pas un probleme en soi --")
+        lignes.append("  sur cette machine, l'eclairage repond pendant qu'ils "
+                      "tournent. Ne les ferme que si")
+        lignes.append("  une commande reste sans effet, et seulement si "
+                      "l'utilisateur le demande.")
     return "\n".join(lignes)
 
 
