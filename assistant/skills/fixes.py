@@ -111,6 +111,9 @@ def desactiver_demarrage(nom: str, ask=None) -> Result:
         targets=[f"HKCU\\{RUN_KEY}\\{cible}"],
         reversible=True,
         details=f"Commande conservee pour pouvoir la remettre : {commande[:90]}",
+        # Sans confirmation : c'est une case a cocher, pas une decision. La
+        # commande exacte est sauvegardee avant, "reactiver <nom>" la remet.
+        routine=True,
     )
     try:
         safety.guard(action, ask=ask)
@@ -148,6 +151,7 @@ def reactiver_demarrage(nom: str, ask=None) -> Result:
         summary=f"Remettre {cible} au demarrage de Windows",
         targets=[f"HKCU\\{RUN_KEY}\\{cible}"],
         reversible=True,
+        routine=True,
     )
     try:
         safety.guard(action, ask=ask)
@@ -188,15 +192,20 @@ def desactivations() -> str:
 
 # --- Processus --------------------------------------------------------------
 
-def arreter_processus(cible: str, ask=None, routine: bool = False) -> Result:
+def arreter_processus(cible: str, ask=None, routine: bool = True) -> Result:
     """Arrete un processus qui monopolise la machine.
 
     Refuse les processus systeme : arreter lsass ou csrss fait tomber la
     session immediatement, ce n'est jamais ce que l'utilisateur veut.
 
-    `routine` vaut pour les appels ou l'utilisateur a deja dit ce qu'il
-    voulait fermer -- le mode jeu, qui annonce sa liste avant d'agir. Un
-    "arrete Chrome" dit isolement laisse le defaut, et demande.
+    Sans confirmation, par defaut. Fermer un programme est un geste ordinaire,
+    et le reouvrir coute un clic. Demander l'accord a chaque "ferme Chrome"
+    rendait la commande vocale absurde : il fallait lacher ce qu'on faisait
+    pour cliquer "oui" a ce qu'on venait de dire a voix haute.
+
+    Ce qui protege ici, ce n'est pas la question posee : c'est NEVER_KILL, qui
+    refuse les processus systeme quoi qu'on demande, et le journal des actions
+    qui garde la trace de tout.
     """
     import psutil
 
@@ -294,6 +303,10 @@ def redemarrer_service(nom: str, ask=None) -> Result:
         targets=[f"service {nom}"],
         reversible=True,
         details=f"Etat actuel : {etat_service(nom)}",
+        # Sans confirmation : ce qui pourrait casser Windows est deja refuse
+        # plus haut par CRITICAL_SERVICES, avant meme d'arriver ici. Ce qui
+        # reste, ce sont des services ordinaires qu'on relance.
+        routine=True,
     )
     try:
         safety.guard(action, ask=ask)

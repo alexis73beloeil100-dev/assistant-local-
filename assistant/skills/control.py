@@ -268,6 +268,10 @@ def sleep(ask=None) -> str:
         targets=["session Windows"],
         reversible=True,
         details="Le travail en cours reste ouvert.",
+        # Sans confirmation : la veille ne perd rien, tout est encore la au
+        # reveil. Demander l'accord pour ca revenait a faire confirmer un
+        # appui sur le bouton de veille du clavier.
+        routine=True,
     )
     try:
         safety.guard(action, ask=ask)
@@ -289,6 +293,10 @@ def shutdown(delai: int = 30, redemarrer: bool = False, ask=None) -> str:
         targets=["session Windows"],
         reversible=True,
         details="Annulable pendant le delai en disant \"annule l'arret\".",
+        # Sans confirmation : le DELAI est la confirmation. L'utilisateur voit
+        # le compte a rebours et dispose de "annule l'arret" pendant tout ce
+        # temps -- une fenetre en plus ne protege de rien.
+        routine=True,
     )
     try:
         safety.guard(action, ask=ask)

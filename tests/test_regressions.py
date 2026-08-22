@@ -1688,3 +1688,55 @@ def test_fermer_une_application_n_emporte_pas_les_hotes_de_windows():
     source = __import__("inspect").getsource(apps._processus_de_l_application)
     assert ".lower()" in source, (
         "les noms de processus doivent etre compares en minuscules")
+
+
+# --- Les confirmations, reglees une bonne fois ------------------------------
+
+def test_les_gestes_ordinaires_ne_demandent_plus_rien():
+    """Regle posee par l'utilisateur le 22/08 : aucune confirmation pour une
+    action qu'il demande, SAUF si ca peut casser Windows ou detruire des
+    donnees. Il avait deja demande ca, et ca n'avait ete applique qu'a
+    moitie -- fermer une application redemandait encore l'accord.
+    """
+    import inspect
+
+    from assistant.skills import cleanup, control, fixes
+
+    # Fermer un programme : le geste le plus courant de tous.
+    assert inspect.signature(fixes.arreter_processus).parameters[
+        "routine"].default is True
+
+    for fonction in (fixes.desactiver_demarrage, fixes.reactiver_demarrage,
+                     fixes.redemarrer_service, control.sleep,
+                     control.shutdown, cleanup.clean):
+        assert "routine=True" in inspect.getsource(fonction), (
+            f"{fonction.__name__} demande encore une confirmation")
+
+
+def test_ce_qui_casse_ou_detruit_demande_toujours():
+    """Le garde-fou n'est pas supprime, il est recentre. Deux protections
+    tiennent, et elles sont structurelles :
+
+      - guard() IGNORE le drapeau routine sur une action irreversible ;
+      - les chemins proteges refusent, meme avec un accord explicite.
+    """
+    import inspect
+
+    from assistant import safety
+    from assistant.skills import games, shell
+
+    # Une commande PowerShell modifiante et une desinstallation de jeu sont
+    # declarees irreversibles : elles demandent, quoi qu'on marque.
+    for fonction in (shell.run, games.desinstaller):
+        assert "reversible=False" in inspect.getsource(fonction), (
+            f"{fonction.__name__} doit rester irreversible, donc confirme")
+
+    # Et la regle qui rend cela vrai, dans guard() lui-meme.
+    garde = inspect.getsource(safety.guard)
+    assert "action.routine and action.reversible" in garde, (
+        "routine ne doit jamais s'appliquer a une action irreversible")
+
+    action = safety.Action(kind="test", summary="irreversible",
+                           targets=["x"], reversible=False, routine=True)
+    with pytest.raises(safety.Refused):
+        safety.guard(action, ask=lambda _t: False)

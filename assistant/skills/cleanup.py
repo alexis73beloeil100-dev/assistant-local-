@@ -237,6 +237,11 @@ def clean(indexes: list[int], ask=None) -> str:
         targets=[c.path for c in chosen],
         reversible=True,
         details="Corbeille, donc restaurable tant que tu ne la vides pas.",
+        # Sans confirmation : l'utilisateur a DEJA choisi, en donnant les
+        # numeros de la liste. Redemander apres coup, c'est faire confirmer
+        # deux fois la meme decision. Et rien n'est efface : tout part a la
+        # corbeille, d'ou on peut tout ressortir.
+        routine=True,
     )
 
     try:
