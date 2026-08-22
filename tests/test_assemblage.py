@@ -590,3 +590,29 @@ def test_la_note_de_reprise_ne_declare_pas_fait_ce_qui_ne_l_est_pas():
     assert fini != annonce_ouvert or not fini, (
         "assistant/annulation.py existe maintenant : la note doit cesser de "
         "presenter ce chantier comme ouvert")
+
+
+def test_la_sauvegarde_restaure_avant_de_remplacer():
+    """Une sauvegarde qu'on n'a jamais restauree n'est pas une sauvegarde,
+    c'est un fichier dont on espere quelque chose. Le script doit prouver que
+    le nouveau bundle redonne le depot AVANT de supprimer le precedent."""
+    import inspect
+
+    from outils import sauvegarder
+
+    source = inspect.getsource(sauvegarder.refaire_le_bundle)
+    assert source.index('"clone"') < source.index("anciens"), (
+        "le bundle doit etre restaure avant que l'ancien soit touche")
+    assert "unlink" in source and "ancien conserve" in source, (
+        "un bundle qui ne se restaure pas ne doit pas remplacer le precedent")
+
+
+def test_la_sauvegarde_relit_le_depot_distant():
+    """git push peut rendre 0 sans que la tete distante ait bouge. On relit
+    l'etat au lieu de croire le compte-rendu -- meme regle que partout."""
+    import inspect
+
+    from outils import sauvegarder
+
+    source = inspect.getsource(sauvegarder.pousser_sur_h)
+    assert "rev-parse" in source and "tete()" in source
