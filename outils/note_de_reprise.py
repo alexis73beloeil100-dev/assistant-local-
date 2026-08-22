@@ -248,6 +248,34 @@ def construire(destination: Path) -> Path:
         "annulerait la promesse &laquo; aucune connexion sortante apres "
         "l'installation &raquo;.", s["note"]))
 
+    F.append(Paragraph("La licence du binaire, tranchee", s["sous_section"]))
+    F.append(Paragraph(
+        "Le programme distribue integre "
+        "<font face='Courier'>openrgb-python</font>, qui est sous "
+        "<b>GPLv3</b> : importer, c'est lier, donc c'est sous cette licence "
+        "que l'assemblage se transmet. Reecrire le client aurait touche au "
+        "RGB, laisse de cote volontairement &mdash; le binaire est donc "
+        "publie sous GPLv3.", s["corps"]))
+    F.append(Paragraph(
+        "L'installateur affiche desormais "
+        "<font face='Courier'>LICENCE-INSTALLATION.txt</font>, qui annonce la "
+        "GPLv3 et non &laquo; MIT &raquo; tout court, et le code source est "
+        "livre avec le programme "
+        "(<font face='Courier'>assistant-local-source.zip</font>, 0,3 Mo, a "
+        "cote de l'executable). La licence laissait le choix entre joindre le "
+        "source et promettre de le fournir trois ans : la promesse suppose de "
+        "tenir une adresse et de repondre.", s["corps"]))
+    F.append(Paragraph(
+        "Les fichiers ecrits pour ce projet restent sous MIT et reutilisables "
+        "comme tels, pris isolement. C'est l'assemblage qui est GPLv3.",
+        s["note"]))
+    F.append(Paragraph(
+        "OpenRGB (GPLv2) etait par ailleurs redistribue sans son texte de "
+        "licence, ce que sa licence exige. Corrige. Dix tests couvrent "
+        "l'ensemble : c'est la seule categorie de defaut qui ne s'affiche "
+        "nulle part, puisque le logiciel fonctionne parfaitement en etant "
+        "distribue en infraction.", s["corps"]))
+
     F.append(Paragraph("Le panneau Reparer", s["sous_section"]))
     F.append(Paragraph(
         "Il listait ce que l'assistant <i>savait</i> faire &mdash; un "
@@ -313,29 +341,6 @@ def construire(destination: Path) -> Path:
          "Le seul vrai chantier. Stable Diffusion, 4 a 7 Go, VRAM partagee "
          "avec le modele et Whisper. Double la taille de l'installateur."],
     ], [58 * mm, 105 * mm], s))
-
-    F.append(Paragraph("Priorite 4 &mdash; la licence du binaire",
-                       s["sous_section"]))
-    F.append(Paragraph(
-        "<b>La seule decision qui manque avant de publier.</b> Le code est "
-        "sous MIT, mais <font face='Courier'>openrgb-python</font> est en "
-        "<b>GPLv3</b> et il est <i>importe</i> par "
-        "<font face='Courier'>assistant/skills/rgb.py</font>. Importer, c'est "
-        "lier : le code reste MIT et reutilisable comme tel, mais le "
-        "<b>binaire distribue</b> doit etre transmis sous GPLv3, avec l'offre "
-        "de source. Annoncer &laquo; MIT &raquo; tout court sur "
-        "l'installateur serait inexact.", s["corps"]))
-    F.append(Paragraph(
-        "Deux sorties. Reecrire le client : le protocole OpenRGB SDK est un "
-        "protocole binaire documente sur TCP, et l'assistant n'en utilise "
-        "qu'une poignee de messages &mdash; ce chantier rejoint celui du RGB, "
-        "toujours ouvert. Ou assumer la GPLv3 pour le binaire publie et "
-        "fournir le source, ce qui ne coute rien.", s["corps"]))
-    F.append(Paragraph(
-        "Tant que le choix n'est pas fait, <font face='Courier'>LicenseFile"
-        "</font> n'est pas cable dans l'installateur : une page "
-        "d'acceptation annoncant MIT seul serait fausse. Le detail est dans "
-        "LICENCES-TIERS.md.", s["note"]))
 
     F.append(Paragraph("Regle &mdash; ce qu'il ne faut pas oublier en publiant",
                        s["sous_section"]))
