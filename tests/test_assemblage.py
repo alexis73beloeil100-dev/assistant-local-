@@ -616,3 +616,41 @@ def test_la_sauvegarde_relit_le_depot_distant():
 
     source = inspect.getsource(sauvegarder.pousser_sur_h)
     assert "rev-parse" in source and "tete()" in source
+
+
+def test_le_produit_livre_n_embarque_pas_son_outillage():
+    """La regle du .spec balayait outils/ en entier. Ecrite pour transporter
+    OpenRGB, elle ramassait les six scripts de developpement, qui partaient
+    chez l'utilisateur.
+
+    Le vrai cout n'etait pas les 43 Ko : toucher a l'un d'eux rendait
+    l'executable "perime" alors que le produit n'avait pas bouge d'un octet.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    livre = racine / "dist" / "AssistantLocal" / "_internal" / "outils"
+    if not livre.is_dir():
+        return          # rien a verifier tant que l'application n'est pas construite
+
+    scripts = [f.name for f in livre.rglob("*.py")]
+    assert not scripts, (
+        f"des scripts de developpement sont livres : {scripts}")
+
+    # Et l'outil qui doit partir, lui, doit bien etre la.
+    assert (livre / "OpenRGB" / "OpenRGB.exe").is_file(), (
+        "OpenRGB n'est plus embarque : l'eclairage cessera de fonctionner "
+        "dans la version installee, en silence")
+
+
+def test_l_application_n_importe_jamais_l_outillage():
+    """C'est ce qui rend l'exclusion ci-dessus sans danger. Si un jour
+    assistant/ importait outils/, l'executable se construirait sans erreur et
+    echouerait a l'execution -- le piege habituel de PyInstaller."""
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    for fichier in (racine / "assistant").rglob("*.py"):
+        texte = fichier.read_text(encoding="utf-8", errors="replace")
+        assert "from outils" not in texte and "import outils" not in texte, (
+            f"{fichier.name} importe outils/, qui n'est plus embarque")

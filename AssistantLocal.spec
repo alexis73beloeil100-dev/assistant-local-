@@ -15,10 +15,24 @@ datas = [('assistant/skills/probe.ps1', 'assistant/skills'),
 # expliquer proprement ce qui manque plutot que d'echouer a la construction.
 import os as _os
 
+# On embarque les OUTILS PORTABLES, pas les scripts qui fabriquent
+# l'application.
+#
+# La regle balayait outils/ en entier. Elle avait ete ecrite pour transporter
+# OpenRGB ; elle ramassait au passage les six scripts de developpement --
+# manifeste.py, paquet_maj.py, note_de_reprise.py... -- qui se retrouvaient
+# livres a l'utilisateur. Ils ne lui servent a rien, et surtout : toucher a
+# l'un d'eux rendait l'executable "perime" alors que le produit n'avait pas
+# bouge d'un octet. Une fausse alerte de decalage a chaque commit d'outillage.
+#
+# Rien dans assistant/ n'importe outils/ : verifie, aucun import.
 if _os.path.isdir('outils'):
     for _racine, _sous, _fichiers in _os.walk('outils'):
-        if _fichiers:
-            datas.append((_os.path.join(_racine, '*'), _racine))
+        _sous[:] = [_d for _d in _sous if _d != '__pycache__']
+        _emporter = [_f for _f in _fichiers
+                     if not _f.endswith(('.py', '.pyc', '.pyo'))]
+        for _fichier in _emporter:
+            datas.append((_os.path.join(_racine, _fichier), _racine))
 binaries = []
 hiddenimports = ['pyttsx3.drivers', 'pyttsx3.drivers.sapi5', 'pynput.keyboard._win32', 'pynput.mouse._win32']
 hiddenimports += collect_submodules('assistant')
