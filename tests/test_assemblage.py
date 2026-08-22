@@ -474,3 +474,30 @@ def test_l_installateur_dit_qu_il_ferme_l_application():
         encoding="utf-8", errors="replace")
 
     assert "CloseApplications=yes" in iss
+
+
+def test_la_notice_previent_pour_un_dossier_trop_profond():
+    """Mesure du 22/08 : le chemin interne le plus long du bundle fait 110
+    caracteres. Avec la limite de 260 de Windows, un dossier d'installation
+    au-dela de ~145 caracteres fait echouer la copie des fichiers les plus
+    enfouis -- constate pour de vrai, avec un retour en arriere propre.
+
+    Le seuil annonce doit rester coherent avec ce que le bundle contient
+    reellement : si un paquet plus profond arrive un jour, la notice ment.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    notice = (racine / "installateur_infos.txt").read_text(encoding="utf-8",
+                                                           errors="replace")
+    assert "145" in notice and "profonds" in notice
+
+    dist = racine / "dist" / "AssistantLocal"
+    if not dist.is_dir():
+        return          # rien a verifier tant que l'application n'est pas construite
+
+    plus_long = max((len(str(f.relative_to(dist)))
+                     for f in dist.rglob("*") if f.is_file()), default=0)
+    assert 145 + plus_long < 260, (
+        f"le chemin interne le plus long fait {plus_long} caracteres : "
+        "le seuil de 145 annonce dans la notice n'est plus tenable")

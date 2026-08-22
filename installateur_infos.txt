@@ -63,6 +63,11 @@ CE QU'IL FAUT
 
     Windows 10 ou 11, 64 bits.
     Aucun droit administrateur pour installer.
+    Le dossier proposé convient : gardez-le si vous hésitez. Si vous en
+    choisissez un autre, évitez les dossiers très profonds. Au-delà d'environ
+    145 caractères de chemin, Windows refuse de créer les fichiers les plus
+    enfouis : l'installation s'interrompt et se défait d'elle-même, sans rien
+    laisser derrière.
     Un micro pour la commande vocale (facultatif).
     Une carte graphique NVIDIA rend tout nettement plus rapide, sans être
     obligatoire.
