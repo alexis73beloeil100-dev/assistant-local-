@@ -124,7 +124,20 @@ def main() -> int:
     # peut exister sans l'autre.
     somme = empreinte(SORTIE)
     fichier_somme = SORTIE.with_suffix(SORTIE.suffix + ".sha256")
-    fichier_somme.write_text(f"{somme} *{SORTIE.name}\n", encoding="utf-8")
+
+    # newline="\n" : SANS CA, WINDOWS ECRIT \r\n ET LE FICHIER EST INUTILISABLE.
+    #
+    # Le format sha256sum est "empreinte espace etoile nomdufichier". Un
+    # retour chariot en fin de ligne se colle au NOM : sha256sum -c cherche
+    # alors un fichier appele "Installer_AssistantLocal.exe\r", ne le trouve
+    # pas, et repond FAILED open or read. Sous Linux, macOS ou Git Bash, le
+    # destinataire conclut a une corruption -- exactement le contraire de ce
+    # que ce fichier sert a prouver.
+    #
+    # Get-FileHash sous Windows n'y voit rien, ce qui rend le defaut invisible
+    # depuis la machine qui publie.
+    with fichier_somme.open("w", encoding="utf-8", newline="\n") as fh:
+        fh.write(f"{somme} *{SORTIE.name}\n")
 
     taille = SORTIE.stat().st_size / 1024**2
     print(f"\n  Installateur : {SORTIE}")

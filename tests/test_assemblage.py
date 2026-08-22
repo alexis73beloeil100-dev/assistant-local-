@@ -654,3 +654,34 @@ def test_l_application_n_importe_jamais_l_outillage():
         texte = fichier.read_text(encoding="utf-8", errors="replace")
         assert "from outils" not in texte and "import outils" not in texte, (
             f"{fichier.name} importe outils/, qui n'est plus embarque")
+
+
+def test_le_fichier_d_empreinte_se_lit_hors_de_windows():
+    """Le format sha256sum est "empreinte espace etoile nomdufichier". Ecrit
+    avec des fins de ligne Windows, le retour chariot se colle au NOM :
+    sha256sum -c cherche un fichier appele "...exe\r", ne le trouve pas, et
+    repond FAILED open or read.
+
+    Sous Linux, macOS ou Git Bash, le destinataire conclut a une corruption --
+    exactement le contraire de ce que ce fichier sert a prouver. Et
+    Get-FileHash sous Windows n'y voit rien, ce qui rend le defaut invisible
+    depuis la machine qui publie.
+    """
+    import inspect
+    from pathlib import Path
+
+    from outils import publier
+
+    source = inspect.getsource(publier.main)
+    # On cherche l'ARGUMENT, pas sa valeur. Ecrire le caractere de
+    # retour a la ligne dans ce test revient a comparer un vrai saut
+    # de ligne au TEXTE du code source : c'est ce qui a fait echouer
+    # la premiere version.
+    assert "newline=" in source, (
+        "le fichier d'empreinte doit etre ecrit en fins de ligne Unix")
+
+    somme = (Path(__file__).resolve().parent.parent / "installateur"
+             / "Installer_AssistantLocal.exe.sha256")
+    if somme.is_file():
+        assert b"\r" not in somme.read_bytes(), (
+            "le fichier d'empreinte publie contient un retour chariot")
