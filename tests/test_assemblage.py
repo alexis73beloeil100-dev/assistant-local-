@@ -542,3 +542,51 @@ def test_publier_produit_les_deux_ensemble():
     source = inspect.getsource(publier.main)
     assert source.index("subprocess.run([str(iscc)") < source.index("empreinte(SORTIE)")
     assert "arbre_propre()" in source
+
+
+def test_la_note_de_reprise_annonce_le_vrai_nombre_de_tests():
+    """La note ouvre sur "N tests au vert". Ce chiffre a ete faux trois fois :
+    ecrit a la main, il vieillit a chaque test ajoute, et une note de reprise
+    dont le premier chiffre est faux perd la confiance qu'on lui accorde pour
+    tout le reste.
+
+    Le test compare a ce que pytest collecte reellement.
+    """
+    import re
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    note = (racine / "REPRISE.md").read_text(encoding="utf-8", errors="replace")
+
+    annonces = {int(n) for n in re.findall(r"\*\*(\d+) tests au vert\*\*", note)}
+    assert annonces, "la note n'annonce plus de nombre de tests"
+
+    resultat = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests", "-q", "--collect-only"],
+        cwd=racine, capture_output=True, text=True, timeout=300,
+    )
+    trouve = re.search(r"(\d+) tests? collected", resultat.stdout or "")
+    assert trouve, "impossible de compter les tests"
+    reel = int(trouve.group(1))
+
+    assert annonces == {reel}, (
+        f"la note annonce {sorted(annonces)} test(s), pytest en collecte {reel}")
+
+
+def test_la_note_de_reprise_ne_declare_pas_fait_ce_qui_ne_l_est_pas():
+    """Le chantier de l'annulation est annonce comme ouvert. S'il venait a
+    etre termine sans que la note change, la session suivante le referait --
+    ou pire, croirait a une garantie inexistante."""
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    note = (racine / "REPRISE.md").read_text(encoding="utf-8", errors="replace")
+
+    fini = (racine / "assistant" / "annulation.py").exists()
+    annonce_ouvert = "annulation" in note.lower() and "absent" in note.lower()
+
+    assert fini != annonce_ouvert or not fini, (
+        "assistant/annulation.py existe maintenant : la note doit cesser de "
+        "presenter ce chantier comme ouvert")
