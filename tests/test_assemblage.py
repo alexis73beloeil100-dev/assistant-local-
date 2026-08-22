@@ -431,3 +431,28 @@ def test_les_deux_numeros_de_version_ne_divergent_pas():
     assert trouve.group(1) == __version__, (
         f"installateur.iss annonce {trouve.group(1)} alors que le paquet "
         f"annonce {__version__}")
+
+
+def test_l_executable_annonce_sa_version():
+    """Clic droit > Proprietes sur AssistantLocal.exe n'affichait AUCUNE
+    version : l'installateur annoncait 1.0.1 et le programme ne disait rien.
+
+    Le numero doit etre LU dans assistant/__init__.py, pas recopie dans le
+    .spec : un troisieme endroit a tenir d'accord a la main finirait par
+    diverger, comme installateur.iss avait failli le faire.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    spec = (racine / "AssistantLocal.spec").read_text(encoding="utf-8",
+                                                      errors="replace")
+
+    assert "version=_version_info" in spec, (
+        "EXE() ne recoit aucun fichier d'informations de version")
+    assert "__version__" in spec, (
+        "le .spec doit lire le numero dans assistant/__init__.py")
+    # Le numero ne doit apparaitre nulle part en dur dans le .spec.
+    from assistant import __version__
+
+    assert f'"{__version__}"' not in spec and f"'{__version__}'" not in spec, (
+        "le numero de version est recopie en dur dans le .spec")

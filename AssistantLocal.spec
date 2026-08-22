@@ -80,12 +80,59 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# --- Informations de version de l'executable --------------------------------
+#
+# Sans ce bloc, un clic droit > Proprietes sur AssistantLocal.exe n'affichait
+# AUCUNE version : l'installateur annoncait 1.0.1 et le programme lui-meme ne
+# disait rien. Windows s'en sert aussi pour l'entree "Applications installees"
+# et pour distinguer deux exemplaires du meme fichier.
+#
+# Le numero est LU dans assistant/__init__.py, jamais recopie : c'est la seule
+# facon qu'il ne puisse pas diverger. Il y a deja un troisieme endroit,
+# installateur.iss, tenu d'accord par un test.
+#
+# Le fichier produit part dans build/, qui n'est pas suivi par Git : c'est un
+# derive de la source, pas une source.
+import re as _re
+
+with open(_os.path.join(SPECPATH, 'assistant', '__init__.py'),
+          encoding='utf-8') as _fh:
+    _version = _re.search(r'__version__\s*=\s*"([^"]+)"', _fh.read()).group(1)
+
+# Windows veut quatre entiers ; la version en porte trois.
+_chiffres = tuple(([int(_n) for _n in _version.split('.')] + [0, 0, 0, 0])[:4])
+
+_version_info = _os.path.join(SPECPATH, 'build', 'version_info.txt')
+_os.makedirs(_os.path.dirname(_version_info), exist_ok=True)
+with open(_version_info, 'w', encoding='utf-8') as _fh:
+    # 040C04B0 : francais (France), page de codes Unicode.
+    _fh.write(f"""VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers={_chiffres},
+    prodvers={_chiffres},
+    mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([StringTable('040C04B0', [
+      StringStruct('CompanyName', 'Assistant local'),
+      StringStruct('FileDescription', 'Assistant local -- assistant PC hors ligne'),
+      StringStruct('FileVersion', '{_version}'),
+      StringStruct('InternalName', 'AssistantLocal'),
+      StringStruct('OriginalFilename', 'AssistantLocal.exe'),
+      StringStruct('ProductName', 'Assistant local'),
+      StringStruct('ProductVersion', '{_version}')])]),
+    VarFileInfo([VarStruct('Translation', [0x040C, 1200])])
+  ]
+)
+""")
+
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
     name='AssistantLocal',
+    version=_version_info,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
