@@ -25,7 +25,8 @@ import threading
 import tkinter as tk
 from pathlib import Path
 
-from assistant import apprentissage, connaissance, llm, panels, theme as t
+from assistant import (apprentissage, connaissance, llm, panels, settings,
+                       theme as t)
 from assistant.index import db, scanner, watcher
 from assistant.skills import games, hardware
 from assistant.voice import stt, tts, wake
@@ -131,7 +132,14 @@ class AssistantWindow(tk.Tk):
         self._messages: list[Message] = []
         self._nav: dict[str, tk.Frame] = {}
         self.recorder: stt.Recorder | None = None
-        self.ecoute = tk.BooleanVar(value=False)
+        # L'etat de l'ecoute survit a la fermeture.
+        #
+        # Il repartait decoche a chaque demarrage, et le choix n'etait ecrit
+        # nulle part : au reveil du PC, l'assistant paraissait mort alors
+        # qu'il attendait simplement qu'on recoche une case. Le mot-cle
+        # n'etait entendu par personne.
+        self.ecoute = tk.BooleanVar(
+            value=bool(settings.get("ecoute_au_demarrage", False)))
         self.boucle_vocale: wake.VoiceLoop | None = None
         # Dernier panneau consulte, joint aux questions suivantes. Ce n'est pas
         # self.current : pour taper une question il faut revenir sur la
@@ -759,6 +767,22 @@ class AssistantWindow(tk.Tk):
 
         threading.Thread(target=work, daemon=True).start()
         self._brancher_alertes()
+        self._reprendre_l_ecoute()
+
+    def _reprendre_l_ecoute(self) -> None:
+        """Rearme le mot-cle si l'utilisateur avait laisse l'ecoute active.
+
+        La case retrouvait son etat coche, mais rien ne relancait la boucle :
+        l'anneau affichait "actif" et le micro n'etait pas ouvert. Il faut
+        appeler _basculer_ecoute() pour de vrai.
+
+        Avec un delai : le chargement du modele de mot-cle prend plusieurs
+        secondes et bloquerait l'affichage de la fenetre. Mieux vaut une
+        fenetre qui s'ouvre tout de suite et une ecoute qui arrive apres.
+        """
+        if not self.ecoute.get():
+            return
+        self.after(2500, self._basculer_ecoute)
 
     def _brancher_alertes(self) -> None:
         """Affiche et annonce les minuteurs et surveillances qui se declenchent.
@@ -962,10 +986,14 @@ class AssistantWindow(tk.Tk):
     def _basculer_ecoute(self) -> None:
         """Active ou coupe le mot-cle et le raccourci global.
 
-        Decoche par defaut : le mot-cle ecoute le micro en continu, ce qui se
-        declenche sur ce que disent les autres en vocal et coute du CPU
-        pendant une partie. C'est un choix, pas un reglage impose.
+        Le choix est MEMORISE : l'assistant repart dans l'etat ou tu l'as
+        laisse. Le mot-cle tient le micro ouvert en continu -- il ne transcrit
+        et n'envoie rien tant que "alexa" n'est pas prononce, mais le micro
+        est bien ouvert. C'est pour ca que ca reste un reglage, et qu'on le
+        respecte au lieu de l'imposer dans un sens ou dans l'autre.
         """
+        settings.set("ecoute_au_demarrage", bool(self.ecoute.get()))
+
         if not self.ecoute.get():
             if self.boucle_vocale is not None:
                 self.boucle_vocale.stop()

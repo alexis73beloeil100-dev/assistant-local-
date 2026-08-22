@@ -1391,3 +1391,48 @@ def test_les_deux_lanceurs_arment_le_journal_de_vie():
         texte = (racine / nom).read_text(encoding="utf-8")
         assert "vie.demarrer(" in texte, nom
         assert "vie.arret(" in texte, nom
+
+
+def test_l_ecoute_retrouve_l_etat_ou_on_l_a_laissee():
+    """La case repartait decochee a chaque demarrage et le choix n'etait ecrit
+    nulle part. Au reveil du PC, l'assistant paraissait mort : il attendait
+    qu'on recoche une case, et "alexa" n'etait entendu par personne."""
+    import inspect
+
+    from assistant import gui
+
+    source = inspect.getsource(gui.AssistantWindow.__init__)
+    assert 'settings.get("ecoute_au_demarrage"' in source
+
+    bascule = inspect.getsource(gui.AssistantWindow._basculer_ecoute)
+    assert 'settings.set("ecoute_au_demarrage"' in bascule
+    # L'enregistrement doit preceder le retour anticipe du cas "decoche",
+    # sinon couper l'ecoute ne serait jamais memorise.
+    assert bascule.index('settings.set') < bascule.index('if not self.ecoute.get()')
+
+
+def test_cocher_la_case_ne_suffit_pas_a_ouvrir_le_micro():
+    """Relire le reglage remettait la case dans le bon etat, mais rien ne
+    relancait la boucle : l'anneau affichait "actif" et le micro restait
+    ferme. Il faut appeler _basculer_ecoute() pour de vrai."""
+    import inspect
+
+    from assistant import gui
+
+    source = inspect.getsource(gui.AssistantWindow._reprendre_l_ecoute)
+    assert "_basculer_ecoute" in source
+    assert "self.ecoute.get()" in source
+
+
+def test_le_mot_cle_ne_declenche_qu_une_commande_a_la_fois():
+    """Une fois la phrase dite, rien ne doit reveiller l'assistant tant que
+    "alexa" n'a pas ete redit. Sans la remise a zero du detecteur, l'audio de
+    la commande elle-meme le redeclenchait en boucle."""
+    import inspect
+
+    from assistant.voice import wake
+
+    source = inspect.getsource(wake.VoiceLoop.run)
+    assert "_oww.reset()" in source
+    assert "WAKE_COOLDOWN" in source
+    assert wake.WAKE_COOLDOWN > 0
