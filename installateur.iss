@@ -21,7 +21,7 @@
 #define MonEditeur "Assistant local"
 ; A tenir d'accord avec assistant/__init__.py : le test
 ; "test_les_deux_numeros_de_version_ne_divergent_pas" echoue sinon.
-#define MaVersion "1.0.2"
+#define MaVersion "1.0.3"
 
 [Setup]
 AppId={{8F3C1A62-4E7D-4B21-9C0E-2A5D6B7E9F14}
