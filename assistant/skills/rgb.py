@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import socket
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -940,6 +941,31 @@ class Peripherique:
         return None
 
 
+def _echec(exc: BaseException, action: str) -> str:
+    """Dit ce qui a rate, sans inventer pourquoi.
+
+    Toutes les erreurs du RGB s'annoncaient "Serveur OpenRGB injoignable",
+    une cause que rien n'avait verifiee. Un `mode.name` oublie dans `_lire`
+    apres le passage au client maison est ainsi sorti en "Serveur OpenRGB
+    injoignable : AttributeError" alors que le serveur repondait sans faute :
+    le diagnostic est parti vers le reseau et la tache planifiee, pendant que
+    le defaut tenait en une ligne de code.
+
+    Seules les erreurs qui viennent vraiment de la liaison -- la prise
+    refusee, coupee ou muette, et les reponses illisibles que le protocole
+    signale par ErreurOpenRGB -- peuvent accuser le serveur. Le reste dit
+    seulement ce qu'on tentait de faire, et laisse parler l'erreur.
+    """
+    try:
+        from assistant.skills import openrgb_protocole
+        liaison = (openrgb_protocole.ErreurOpenRGB, OSError, socket.timeout)
+    except ImportError:
+        liaison = (OSError, socket.timeout)
+    if isinstance(exc, liaison):
+        return f"Serveur OpenRGB injoignable : {type(exc).__name__}: {exc}"
+    return f"{action} : {type(exc).__name__}: {exc}"
+
+
 def _client():
     """Ouvre une session avec le serveur OpenRGB.
 
@@ -1055,8 +1081,8 @@ def appliquer(peripherique: str = "", mode: str = "", couleur: str = "",
     try:
         client = _client()
         par_index = {m.index: m for m in client.peripheriques}
-    except Exception as exc:  # noqa: BLE001
-        return f"Serveur OpenRGB injoignable : {type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 - la cause est triee par _echec
+        return _echec(exc, "Lecture des peripheriques RGB impossible")
 
     for cible in cibles:
         materiel = par_index.get(cible.index)
@@ -1158,8 +1184,8 @@ def peripheriques() -> tuple[list, str]:
     try:
         client = _client()
         trouves = [_lire(materiel) for materiel in client.peripheriques]
-    except Exception as exc:  # noqa: BLE001 - le SDK leve des types varies
-        return [], f"Serveur OpenRGB injoignable : {type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 - la cause est triee par _echec
+        return [], _echec(exc, "Lecture des peripheriques RGB impossible")
 
     if not trouves:
         concurrents = concurrents_actifs()
@@ -1438,8 +1464,8 @@ def changer_mode(mode: str, peripherique: str = "", couleur: str = "") -> str:
                              + (f" en {couleur}" if couleur else ""))
             except Exception as exc:  # noqa: BLE001
                 ignores.append(f"{cible.nom} : {type(exc).__name__}: {exc}")
-    except Exception as exc:  # noqa: BLE001
-        return f"Serveur OpenRGB injoignable : {type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 - la cause est triee par _echec
+        return _echec(exc, "Changement de mode RGB impossible")
 
     lignes = []
     if faits:
