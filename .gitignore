@@ -32,3 +32,15 @@ desktop.ini
 # Genere par outils/paquet_maj.py a chaque paquet de mise a jour, avec un
 # SourceDir absolu propre a la machine qui construit.
 mise_a_jour.iss
+
+# Note de travail locale. Elle nomme cette machine, ses disques de sauvegarde
+# et ce qui s'est decide en session : elle reste ici, pas dans le depot.
+REPRISE.md
+
+# OpenRGB est telecharge par qui installe, pas redistribue par ce depot :
+# ce sont des binaires GPLv2, et les publier serait une distribution de plus
+# a assumer. Le dossier reste un point de depot -- A-DEPOSER-ICI.txt dit ou
+# prendre l'archive portable.
+outils/OpenRGB/*
+!outils/OpenRGB/A-DEPOSER-ICI.txt
+!outils/OpenRGB/LICENSE-GPLv2.txt

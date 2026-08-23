@@ -558,6 +558,14 @@ def test_la_note_de_reprise_annonce_le_vrai_nombre_de_tests():
     from pathlib import Path
 
     racine = Path(__file__).resolve().parent.parent
+    # La note est une piece de travail locale : elle parle de cette machine,
+    # de ses disques de sauvegarde et de ce qui s'est dit en session. Elle ne
+    # part pas dans le depot. Sans ce garde-fou, la suite virait au rouge sur
+    # tout clone frais -- et un depot public qui s'ouvre sur deux tests casses
+    # ne donne envie a personne de lire le reste.
+    if not (racine / "REPRISE.md").is_file():
+        import pytest
+        pytest.skip("REPRISE.md absent : note locale, hors depot")
     note = (racine / "REPRISE.md").read_text(encoding="utf-8", errors="replace")
 
     annonces = {int(n) for n in re.findall(r"\*\*(\d+) tests au vert\*\*", note)}
@@ -582,6 +590,14 @@ def test_la_note_de_reprise_ne_declare_pas_fait_ce_qui_ne_l_est_pas():
     from pathlib import Path
 
     racine = Path(__file__).resolve().parent.parent
+    # La note est une piece de travail locale : elle parle de cette machine,
+    # de ses disques de sauvegarde et de ce qui s'est dit en session. Elle ne
+    # part pas dans le depot. Sans ce garde-fou, la suite virait au rouge sur
+    # tout clone frais -- et un depot public qui s'ouvre sur deux tests casses
+    # ne donne envie a personne de lire le reste.
+    if not (racine / "REPRISE.md").is_file():
+        import pytest
+        pytest.skip("REPRISE.md absent : note locale, hors depot")
     note = (racine / "REPRISE.md").read_text(encoding="utf-8", errors="replace")
 
     fini = (racine / "assistant" / "annulation.py").exists()
