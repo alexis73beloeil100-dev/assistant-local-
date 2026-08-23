@@ -798,13 +798,16 @@ def test_le_nom_de_branche_n_est_ecrit_qu_une_fois():
         f"le nom de branche est de nouveau ecrit en dur : {lignes_en_dur}")
 
 
-def test_livrer_verifie_l_arbre_avant_de_construire():
-    """publier.py refuse un arbre sale -- mais il le decouvre APRES dix
-    minutes de construction, et il sort quand meme en code 0.
+def test_livrer_publie_avant_de_regenerer_le_manifeste():
+    """Le manifeste est un fichier SUIVI : le regenerer salit l'arbre.
 
-    Le 23/08, ca a fait croire a un installateur fabrique alors que rien
-    n'avait ete produit. livrer.py verifie donc l'arbre en premier, et
-    constate ensuite que le fichier existe vraiment.
+    La premiere version de livrer.py verifiait l'arbre au demarrage, puis le
+    salissait elle-meme a l'etape suivante en regenerant le manifeste. Trois
+    lignes plus loin, publier.py refusait de publier -- correctement, et
+    apres quatre minutes de construction perdues.
+
+    Les deux etapes lisent dist/ sans le modifier : leur ordre est libre du
+    point de vue du contenu, et contraint du point de vue de git.
     """
     from pathlib import Path
 
@@ -816,8 +819,29 @@ def test_livrer_verifie_l_arbre_avant_de_construire():
     assert place_arbre < place_construction, (
         "l'arbre doit etre verifie avant de construire")
 
-    assert "if not INSTALLATEUR.is_file():" in source, (
-        "livrer.py doit constater l'installateur, pas croire publier.py")
+    place_publier = source.index('titre(n, etapes, "Installateur")')
+    place_manifeste = source.index('titre(n, etapes, "Manifeste du paquet")')
+    assert place_publier < place_manifeste, (
+        "le manifeste salit l'arbre : il doit venir APRES publier.py")
+
+    assert "commiter_le_manifeste()" in source, (
+        "sans ce commit, sauvegarder.py refusera l'arbre sale a son tour")
+
+
+def test_livrer_constate_l_installateur_au_lieu_de_le_croire():
+    """Verifier que le fichier existe ne prouve rien : il en traine toujours
+    un, celui de la livraison precedente.
+
+    Ce qui prouve quelque chose, c'est qu'il soit plus RECENT que
+    l'executable qu'il est cense contenir.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "livrer.py").read_text(encoding="utf-8")
+
+    assert "INSTALLATEUR.stat().st_mtime < EXE.stat().st_mtime" in source, (
+        "livrer.py doit comparer les dates, pas se contenter d'un is_file()")
 
 
 def test_le_lisez_moi_calcule_l_empreinte_sur_la_copie_envoyee():

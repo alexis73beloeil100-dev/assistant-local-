@@ -12,19 +12,24 @@ Ce qu'il enchaine :
 
     1. les tests
     2. l'executable            reconstruire.py
-    3. le manifeste            outils/manifeste.py
-    4. l'installateur          outils/publier.py
+    3. l'installateur          outils/publier.py
+    4. le manifeste            outils/manifeste.py, puis commit
     5. le dossier du Bureau    outils/dossier_a_envoyer.py
     6. les sauvegardes         outils/sauvegarder.py  (H:, cle USB, GitHub)
     7. la version installee    l'installateur, en silencieux
     8. la relance              l'assistant et le serveur OpenRGB
 
-L'ordre n'est pas negociable. Le manifeste doit decrire le paquet REEL, donc
-il vient apres la construction ; l'installateur compresse ce paquet, donc il
-vient apres le manifeste ; et le dossier du Bureau copie l'installateur.
+L'ordre n'est pas negociable, et il a ete appris a la dure. Le manifeste et
+l'installateur lisent tous deux dist/ sans le modifier, donc leur ordre
+semblait libre -- sauf que le manifeste est un fichier SUIVI : le regenerer
+salit l'arbre, et publier.py refuse alors de publier. La premiere version de
+ce script verifiait l'arbre au demarrage, puis le salissait elle-meme.
 
-Ce qu'il ne fait PAS : commiter. Un message de commit se reflechit, et un
-script qui en invente un finirait par ecrire "mise a jour" soixante fois.
+Ce qu'il ne fait PAS : commiter le code. Un message de commit se reflechit, et
+un script qui en invente un finirait par ecrire "mise a jour" soixante fois.
+Seule exception, le manifeste : c'est un releve d'empreintes produit par une
+machine, il n'y a rien a rediger, et sans son commit l'etape des sauvegardes
+s'arrete a son tour.
 
     --sans-installer   s'arreter avant de toucher a la version installee
     --sans-tests       pour reprendre une livraison interrompue plus loin
@@ -39,6 +44,7 @@ from pathlib import Path
 RACINE = Path(__file__).resolve().parent
 PYTHON = RACINE / ".venv" / "Scripts" / "python.exe"
 INSTALLATEUR = RACINE / "installateur" / "Installer_AssistantLocal.exe"
+EXE = RACINE / "dist" / "AssistantLocal" / "AssistantLocal.exe"
 TACHE_RGB = "AssistantLocal - serveur OpenRGB"
 
 if str(RACINE) not in sys.path:
@@ -61,8 +67,8 @@ def arbre_propre() -> bool:
 
     publier.py refuse deja de publier un etat non commite -- et c'est la
     bonne regle : publier ce qui n'est pas dans l'historique, c'est ne plus
-    jamais savoir ce qui a ete distribue. Mais il le decouvre a la fin, apres
-    dix minutes de construction. Autant le dire en une seconde.
+    jamais savoir ce qui a ete distribue. Mais il ne le decouvre qu'a son
+    tour, apres la construction. Autant le dire en une seconde.
     """
     sortie = subprocess.run(
         ["git", "status", "--porcelain"], cwd=str(RACINE),
@@ -73,6 +79,37 @@ def arbre_propre() -> bool:
         for ligne in modifies[:10]:
             print(f"    {ligne}")
         return False
+    return True
+
+
+def commiter_le_manifeste() -> bool:
+    """Commite le manifeste regenere, et lui seul.
+
+    C'est la seule exception a la regle "ce script ne commite pas". Elle se
+    justifie parce qu'il n'y a rien a rediger : le manifeste est un releve
+    d'empreintes produit par une machine, et son message tient en une ligne
+    qui ne varie qu'au numero de version.
+
+    Sans ce commit, l'etape suivante s'arrete : sauvegarder.py refuse un
+    arbre sale, exactement comme publier.py. Et laisser le manifeste non
+    commite serait pire que tout -- on ne saurait plus, plus tard, a quoi
+    correspondait la version distribuee.
+    """
+    from assistant import __version__
+
+    sortie = subprocess.run(
+        ["git", "status", "--porcelain", "manifestes"], cwd=str(RACINE),
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if not (sortie.stdout or "").strip():
+        print("  Manifeste inchange : rien a commiter.")
+        return True
+
+    if not lancer("git", "add", "manifestes"):
+        return False
+    if not lancer("git", "commit", "-q", "-m",
+                  f"Manifeste du paquet {__version__}"):
+        return False
+    print(f"  Manifeste commite (version {__version__}).")
     return True
 
 
@@ -122,20 +159,31 @@ def main() -> int:
     if not lancer(PYTHON, RACINE / "reconstruire.py"):
         return 1
 
-    n += 1
-    titre(n, etapes, "Manifeste du paquet")
-    if not lancer(PYTHON, RACINE / "outils" / "manifeste.py"):
-        return 1
-
+    # L'INSTALLATEUR PASSE AVANT LE MANIFESTE, et l'ordre a ete appris a la
+    # dure : le manifeste est un fichier SUIVI. Le regenerer salit l'arbre,
+    # et publier.py refuse alors de publier -- a juste titre. La premiere
+    # version de ce script verifiait l'arbre au demarrage, puis le salissait
+    # elle-meme trois lignes plus loin.
+    #
+    # Les deux ne dependent pas l'un de l'autre : tous deux lisent dist/, que
+    # ni l'un ni l'autre ne modifie.
     n += 1
     titre(n, etapes, "Installateur")
     if not lancer(PYTHON, RACINE / "outils" / "publier.py"):
         return 1
-    if not INSTALLATEUR.is_file():
-        # publier.py sort en code 0 meme quand il renonce. Constater le
-        # fichier est la seule facon de savoir qu'il a vraiment travaille.
-        print("\n  publier.py n'a produit aucun installateur. Relis sa sortie "
-              "ci-dessus.")
+    if INSTALLATEUR.stat().st_mtime < EXE.stat().st_mtime:
+        # Constater plutot que croire : un installateur plus VIEUX que
+        # l'executable est celui d'une livraison precedente. Verifier sa
+        # simple existence ne prouve rien, il en traine toujours un.
+        print("\n  L'installateur est plus ancien que l'executable : "
+              "publier.py n'a rien produit cette fois.")
+        return 1
+
+    n += 1
+    titre(n, etapes, "Manifeste du paquet")
+    if not lancer(PYTHON, RACINE / "outils" / "manifeste.py"):
+        return 1
+    if not commiter_le_manifeste():
         return 1
 
     n += 1
