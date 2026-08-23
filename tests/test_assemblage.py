@@ -752,3 +752,80 @@ def test_le_fichier_d_empreinte_se_lit_hors_de_windows():
     if somme.is_file():
         assert b"\r" not in somme.read_bytes(), (
             "le fichier d'empreinte publie contient un retour chariot")
+
+def test_la_sauvegarde_constate_le_push_github_au_lieu_de_le_croire():
+    """Un push qui rend 0 ne prouve pas que le depot distant a bouge.
+
+    Meme regle que pour H:, et pour la meme raison : on relit la tete du
+    depot en ligne. Un push peut reussir sur une autre branche que celle
+    qu'on croit -- ce qui est arrive le 23/08 en renommant master en main.
+    """
+    import inspect
+
+    from outils import sauvegarder
+
+    source = inspect.getsource(sauvegarder.pousser_sur_github)
+    assert "ls-remote" in source, "le push n'est pas verifie"
+    assert "tete()" in source, "la tete distante n'est comparee a rien"
+
+
+def test_le_nom_de_branche_n_est_ecrit_qu_une_fois():
+    """Il l'etait cinq fois, et le renommage master -> main les a toutes
+    cassees d'un coup.
+
+    Le pire n'etait pas l'echec : tete() ne verifie pas le code de retour de
+    git, donc le script aurait compare une chaine vide a une chaine vide et
+    annonce que les copies etaient au meme point. Une sauvegarde qui se
+    declare faite sans l'etre.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "outils" / "sauvegarder.py").read_text(encoding="utf-8")
+
+    assert 'BRANCHE = "main"' in source
+    lignes_en_dur = [l for l in source.splitlines()
+                     if '"master"' in l or '"main"' in l and "BRANCHE =" not in l]
+    assert not lignes_en_dur, (
+        f"le nom de branche est de nouveau ecrit en dur : {lignes_en_dur}")
+
+
+def test_livrer_verifie_l_arbre_avant_de_construire():
+    """publier.py refuse un arbre sale -- mais il le decouvre APRES dix
+    minutes de construction, et il sort quand meme en code 0.
+
+    Le 23/08, ca a fait croire a un installateur fabrique alors que rien
+    n'avait ete produit. livrer.py verifie donc l'arbre en premier, et
+    constate ensuite que le fichier existe vraiment.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "livrer.py").read_text(encoding="utf-8")
+
+    place_arbre = source.index("if not arbre_propre():")
+    place_construction = source.index('titre(n, etapes, "Executable")')
+    assert place_arbre < place_construction, (
+        "l'arbre doit etre verifie avant de construire")
+
+    assert "if not INSTALLATEUR.is_file():" in source, (
+        "livrer.py doit constater l'installateur, pas croire publier.py")
+
+
+def test_le_lisez_moi_calcule_l_empreinte_sur_la_copie_envoyee():
+    """L'empreinte doit venir du fichier que la personne recevra.
+
+    La reprendre de la sortie de publier.py certifierait l'original : si la
+    copie echoue a moitie, le LISEZ-MOI annoncerait une empreinte qui ne
+    correspond pas au fichier joint, et la verification qu'il demande
+    echouerait chez le destinataire sans que personne comprenne pourquoi.
+    """
+    import inspect
+
+    from outils import dossier_a_envoyer
+
+    source = inspect.getsource(dossier_a_envoyer.construire)
+    place_copie = source.index("shutil.copy2")
+    place_empreinte = source.index("empreinte(copie)")
+    assert place_copie < place_empreinte, (
+        "l'empreinte est calculee avant la copie")

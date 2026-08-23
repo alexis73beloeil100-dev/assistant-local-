@@ -1,14 +1,19 @@
-"""Met les trois copies du depot au meme point, en une commande.
+"""Met les quatre copies du depot au meme point, en une commande.
 
     .venv\\Scripts\\python.exe outils\\sauvegarder.py
 
-Il y a trois exemplaires de l'historique, et ils protegent de choses
+Il y a quatre exemplaires de l'historique, et ils protegent de choses
 differentes :
 
   - le dossier de travail, ou l'on code ;
   - un depot nu sur H:, toujours frais mais dans le meme boitier ;
   - un bundle sur la cle USB, qui survit au vol et a l'incendie parce qu'il
-    est debranche -- et qui vieillit des qu'on oublie de le refaire.
+    est debranche -- et qui vieillit des qu'on oublie de le refaire ;
+  - GitHub, qui survit a la perte de la machine entiere, mais qui depend
+    d'un tiers et d'une connexion.
+
+Aucun des quatre ne couvre ce que les autres couvrent. C'est pour ca qu'ils
+sont quatre, et pas un.
 
 Ce script existe parce que la troisieme etape etait faite a la main, et
 demandee a chaque fois. Six allers-retours pour le meme geste : c'est une
@@ -29,6 +34,7 @@ from pathlib import Path
 
 RACINE = Path(__file__).resolve().parent.parent
 DISTANT = "sauvegarde"
+EN_LIGNE = "origin"
 CLE = Path("D:/")
 
 # Le nom de la branche principale a change le 23/08/2026 : master -> main, en
@@ -65,6 +71,38 @@ def pousser_sur_h() -> bool:
         print("  H:  le depot distant ne porte pas la meme tete")
         return False
     print(f"  H:  a jour ({distant.strip()[:7]})")
+    return True
+
+
+def pousser_sur_github() -> bool | None:
+    """Pousse sur le depot en ligne, et rend None s'il n'y en a pas.
+
+    None et False ne disent pas la meme chose : pas de distant configure,
+    c'est un depot clone ailleurs ou l'on ne publie pas -- rien a signaler.
+    Un push refuse, en revanche, est un vrai probleme.
+
+    Une panne de reseau ne doit pas faire echouer la sauvegarde : H: et la
+    cle sont deja faits a ce stade, et ce sont eux qui protegent du plus
+    probable. On le dit, on ne bloque pas.
+    """
+    code, _sortie = git("remote", "get-url", EN_LIGNE)
+    if code != 0:
+        return None
+
+    code, sortie = git("push", EN_LIGNE, BRANCHE)
+    if code != 0:
+        print(f"  GitHub ECHEC du push\n{sortie.strip()}")
+        return False
+
+    # Constate, pas rapporte : on relit la tete du depot distant, comme pour
+    # H:. Un push peut reussir sur une autre branche que celle qu'on croit.
+    code, sortie = git("ls-remote", EN_LIGNE, BRANCHE)
+    distant = sortie.split()[0] if code == 0 and sortie.split() else ""
+    if distant != tete():
+        print(f"  GitHub le depot en ligne ne porte pas la meme tete "
+              f"({distant[:7] or 'introuvable'})")
+        return False
+    print(f"  GitHub a jour ({distant[:7]})")
     return True
 
 
