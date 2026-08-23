@@ -31,6 +31,13 @@ RACINE = Path(__file__).resolve().parent.parent
 DISTANT = "sauvegarde"
 CLE = Path("D:/")
 
+# Le nom de la branche principale a change le 23/08/2026 : master -> main, en
+# publiant sur GitHub dont c'est le defaut. Il etait ecrit en dur a cinq
+# endroits ici, et le script serait tombe sur "unknown revision" a la premiere
+# sauvegarde -- apres avoir annonce le contraire, puisque tete() ne verifie
+# pas son code de retour.
+BRANCHE = "main"
+
 
 def git(*args, cwd: Path | None = None) -> tuple[int, str]:
     resultat = subprocess.run(
@@ -41,19 +48,19 @@ def git(*args, cwd: Path | None = None) -> tuple[int, str]:
 
 
 def tete() -> str:
-    _code, sortie = git("rev-parse", "master")
+    _code, sortie = git("rev-parse", BRANCHE)
     return sortie.strip()
 
 
 def pousser_sur_h() -> bool:
-    code, sortie = git("push", DISTANT, "master")
+    code, sortie = git("push", DISTANT, BRANCHE)
     if code != 0:
         print(f"  H:  ECHEC du push\n{sortie.strip()}")
         return False
 
     # Constate, pas rapporte : on relit la tete du depot distant.
     code, distant = git("--git-dir=H:/Sauvegardes/Assistant.git",
-                        "rev-parse", "master")
+                        "rev-parse", BRANCHE)
     if code != 0 or distant.strip() != tete():
         print("  H:  le depot distant ne porte pas la meme tete")
         return False
@@ -84,7 +91,7 @@ def refaire_le_bundle() -> bool:
             print(f"  USB le bundle ne se restaure PAS -- ancien conserve\n{sortie.strip()}")
             provisoire.unlink(missing_ok=True)
             return False
-        _code, restaure = git("rev-parse", "master", cwd=essai)
+        _code, restaure = git("rev-parse", BRANCHE, cwd=essai)
         if restaure.strip() != attendu:
             print(f"  USB restauration incoherente : {restaure.strip()[:7]} "
                   f"au lieu de {attendu[:7]} -- ancien conserve")
@@ -113,7 +120,7 @@ def main() -> int:
             print(f"    {ligne}")
         return 1
 
-    print(f"  master : {tete()[:7]}")
+    print(f"  {BRANCHE} : {tete()[:7]}")
     ok_h = pousser_sur_h()
     ok_usb = refaire_le_bundle()
 
