@@ -17,7 +17,7 @@ ETAPES
 ------
 
 1. Decompresser dans un dossier, par exemple :
-   C:\Users\Asuna\Documents\Assistant
+   %USERPROFILE%\Documents\Assistant
 
 2. Installer Python 3.12 s'il n'est plus la :
    winget install --id Python.Python.3.12 -e --scope user

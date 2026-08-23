@@ -66,7 +66,7 @@ voit pas. Sans ça l'exe se construit sans erreur, puis meurt au lancement.
 ### En ligne de commande
 
 ```bash
-cd "C:\Users\Asuna\Documents\Assistant"
+cd "%USERPROFILE%\Documents\Assistant"
 .venv\Scripts\python.exe -m assistant.cli
 ```
 
@@ -380,7 +380,7 @@ qu'il veut. Toute modification passe par `assistant/safety.py` :
   refusée.
 
 Certains chemins sont refusés même si tu confirmes — voir `PROTECTED_PATHS`
-dans `config.py`. `C:\Users\Asuna\Documents\Unreal Projects` en fait partie.
+dans `config.py`. `%USERPROFILE%\Documents\Unreal Projects` en fait partie.
 
 ---
 

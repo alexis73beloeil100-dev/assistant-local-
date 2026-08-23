@@ -377,7 +377,7 @@ def construire(destination: Path) -> Path:
     # ------------------------------------------------------------ verifier
     F.append(Paragraph("5. Verifier que tout va bien", s["section"]))
     F.append(Paragraph(
-        "Depuis <font face='Courier'>C:\\Users\\Asuna\\Documents\\Assistant"
+        "Depuis <font face='Courier'>%USERPROFILE%\\Documents\\Assistant"
         "</font> :", s["corps"]))
     F.append(Paragraph(
         ".venv\\Scripts\\python.exe -m pytest -q<br/>"
