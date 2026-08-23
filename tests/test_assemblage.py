@@ -348,7 +348,36 @@ def test_les_modes_rgb_sont_decouverts_et_non_listes_en_dur():
         assert en_dur not in source
 
 
-def test_le_pilotage_rgb_passe_par_le_sdk_officiel():
+def test_aucun_module_gpl_n_est_importe():
+    """Un seul import ramenait la GPLv3 sur le programme entier.
+
+    openrgb-python est sous GPLv3. L'importer, c'est lier : le binaire
+    distribue devait alors se transmettre sous GPLv3, avec son code source.
+    Le pilotage passe desormais par openrgb_protocole, ecrit pour ce projet.
+
+    Ce test existe parce que la rechute est facile et muette : un `from
+    openrgb import ...` ajoute pour depanner marcherait parfaitement -- la
+    bibliotheque reste installee dans le .venv -- et remettrait l'obligation
+    sans que rien ne signale quoi que ce soit.
+    """
+    import re
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    coupable = re.compile(r"^\s*(from\s+openrgb|import\s+openrgb)", re.M)
+
+    fautifs = []
+    for fichier in (racine / "assistant").rglob("*.py"):
+        if coupable.search(fichier.read_text(encoding="utf-8", errors="replace")):
+            fautifs.append(str(fichier.relative_to(racine)))
+
+    assert not fautifs, (
+        f"openrgb-python (GPLv3) est de nouveau importe par : {fautifs}. "
+        "Le programme distribue redevient GPLv3, et le code source doit "
+        "repartir avec lui")
+
+
+def test_le_client_rgb_maison_lit_les_champs_que_le_pilotage_utilise():
     """Le protocole binaire a piege QUATRE fois un client ecrit a la main.
 
     Le pire : le nombre de LED ressortait a zero sans lever d'erreur. Or sans
@@ -356,13 +385,34 @@ def test_le_pilotage_rgb_passe_par_le_sdk_officiel():
     sur une carte mere. La souris et la carte graphique suivaient, la carte
     mere restait muette. Deux peripheriques sur trois, ce qui ressemblait a un
     probleme de materiel plutot qu'a une erreur d'analyse.
+
+    Sans materiel sous la main, on ne peut pas rejouer un echange. Ce qu'on
+    verifie ici, c'est que les champs dont rgb.py se sert existent bien et
+    qu'aucun renommage ne les a fait disparaitre en silence -- l'autre facon
+    d'obtenir un zero qui ne leve rien.
     """
-    import inspect
+    from assistant.skills import openrgb_protocole as protocole
 
-    from assistant.skills import rgb
+    for champ in ("index", "nom", "genre", "modes", "mode_actif", "nb_leds",
+                  "couleurs"):
+        assert champ in protocole.Materiel.__dataclass_fields__, (
+            f"Materiel.{champ} a disparu : rgb.py s'en sert")
 
-    source = inspect.getsource(rgb._client)
-    assert "OpenRGBClient" in source, "le SDK officiel doit etre utilise"
+    for champ in ("index", "nom", "drapeaux", "vitesse", "vitesse_min",
+                  "vitesse_max", "luminosite", "luminosite_min",
+                  "luminosite_max", "mode_couleur", "couleurs_max", "brut"):
+        assert champ in protocole.Mode.__dataclass_fields__, (
+            f"Mode.{champ} a disparu : rgb.py s'en sert")
+
+    # Les valeurs relevees sur l'enumeration du SDK. Les ecrire de memoire
+    # avait mis la luminosite au bit 7 au lieu du bit 4 : rien ne plantait,
+    # un curseur apparaissait juste la ou il n'avait rien a faire.
+    assert protocole.A_VITESSE == 1
+    assert protocole.A_LUMINOSITE == 16
+    assert protocole.A_COULEUR_PAR_LED == 32
+    assert protocole.A_COULEUR_DE_MODE == 64
+    assert protocole.COULEUR_PAR_LED == 1
+    assert protocole.COULEUR_DE_MODE == 2
 
 
 def test_le_serveur_rgb_est_lance_en_administrateur():

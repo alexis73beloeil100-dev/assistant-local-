@@ -548,24 +548,20 @@ Un test vérifie que les deux identifiants restent égaux.
 
 ## Licences
 
-**Le programme distribué est sous GPLv3**, parce qu'il intègre
-`openrgb-python` qui l'est. Son code source l'accompagne : l'installation
-dépose `assistant-local-source.zip` à côté de l'exécutable.
+**Le programme distribué est sous [licence MIT](LICENSE).**
+
+Il s'est transmis sous GPLv3 jusqu'au 23/08/2026, parce qu'il intégrait
+`openrgb-python`. Cette bibliothèque a été remplacée par
+`assistant/skills/openrgb_protocole.py`, écrit pour ce projet, qui parle
+directement au serveur OpenRGB. Plus aucun composant intégré n'impose sa
+licence à l'ensemble, et le code source n'accompagne plus le binaire.
 
 OpenRGB lui-même n'est **pas** distribué avec le programme depuis le
 23/08/2026 : c'est un logiciel libre distinct que l'utilisateur installe.
 
 Les fichiers écrits pour ce projet restent sous [licence MIT](LICENSE) et
-réutilisables comme tels, pris isolément — c'est l'assemblage qui se
-transmet sous GPLv3. Le détail composant par composant est dans
+réutilisables comme tels. Le détail composant par composant est dans
 [LICENCES-TIERS.md](LICENCES-TIERS.md).
-
-L'archive du source se régénère seule à chaque construction, pour qu'elle
-ne puisse pas dériver de ce qui est publié :
-
-```
-.venv\Scripts\python.exe outils\source_pour_gpl.py
-```
 
 Le tableau des licences se régénère depuis les métadonnées des paquets
 installés, plutôt que d'être tenu à la main :

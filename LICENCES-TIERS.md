@@ -14,45 +14,37 @@ des dépendances :
 
 ---
 
-## openrgb-python — GPLv3, et c'est le point qui compte
+## openrgb-python — GPLv3, retiré le 23/08/2026
 
-`openrgb-python` 0.3.6 est le client Python qui parle au serveur OpenRGB. Il
-est sous **GPLv3**, et contrairement à OpenRGB lui-même, il n'est pas lancé
-comme un programme séparé : `assistant/skills/rgb.py` l'**importe**, aux
-lignes 901, 922, 977, 1123 et 1172.
+`openrgb-python` était le client Python qui parlait au serveur OpenRGB. Il est
+sous **GPLv3**, et `assistant/skills/rgb.py` l'**importait**. Importer, c'est
+lier : le binaire distribué devait se transmettre sous GPLv3, code source
+compris.
 
-Importer, c'est lier. La simple agrégation ne s'applique plus.
+**Il n'est plus utilisé.** `assistant/skills/openrgb_protocole.py` parle
+directement au serveur, par son protocole binaire sur TCP. Ce fichier est
+écrit pour ce projet ; il n'emprunte aucune ligne à la bibliothèque, dont il
+reproduit seulement le dialogue réseau — ce qu'aucune licence ne couvre.
 
-**Conséquence concrète :** le code de l'assistant reste sous licence MIT et
-reste réutilisable comme tel, mais **le binaire distribué**, lui, doit être
-transmis sous GPLv3 — avec l'offre du code source qui va avec. Publier
-l'installateur en annonçant « MIT » tout court serait inexact.
+Ce que cela change :
 
-Le texte de la GPLv3 voyage déjà avec le bundle, dans
-`_internal/openrgb_python-0.3.6.dist-info/LICENSE.md`.
+- le programme distribué est de nouveau sous **MIT** ;
+- l'archive `assistant-local-source.zip` n'est plus produite ni livrée, et
+  `outils/source_pour_gpl.py` a été supprimé ;
+- la page de licence de l'installateur annonce le MIT.
 
-**La décision est prise (22/08/2026) : le binaire est publié sous GPLv3.**
+Trois tests gardent cet état, parce que la rechute serait muette :
+`test_aucun_module_gpl_n_est_importe` interdit tout `import openrgb`,
+`test_le_source_n_est_plus_joint_au_binaire` vérifie que l'archive ne
+réapparaît pas, et `test_la_licence_affichee_annonce_la_bonne_licence` vérifie
+que la page dit la vérité. Un `from openrgb import ...` ajouté pour dépanner
+fonctionnerait parfaitement — la bibliothèque reste installée dans le `.venv`
+— et ramènerait l'obligation sans que rien ne le signale.
 
-L'autre option aurait été de réécrire le client — le protocole OpenRGB SDK est
-un protocole binaire documenté sur TCP, et l'assistant n'en utilise qu'une
-poignée de messages. Elle a été écartée : elle touche au sous-système RGB, qui
-reste volontairement de côté.
-
-Ce que cela implique concrètement, et qui est en place :
-
-- l'installateur affiche une page de licence qui annonce la GPLv3, et non
-  « MIT » tout court (`LicenseFile=LICENCE-INSTALLATION.txt`) ;
-- le code source est **livré avec le programme**, dans
-  `assistant-local-source.zip`, installé à côté de l'exécutable. La GPLv3
-  laisse le choix entre joindre le source et promettre de le fournir pendant
-  trois ans ; joindre l'archive coûte 0,3 Mo sur 1,15 Go et ne demande rien à
-  personne ensuite ;
-- `outils/source_pour_gpl.py` régénère l'archive, et `reconstruire.py`
-  l'appelle à chaque construction — le source livré ne peut donc pas dériver
-  de ce qui est publié.
-
-Les fichiers écrits pour ce projet restent sous MIT et réutilisables comme
-tels, pris isolément. C'est l'assemblage qui se transmet sous GPLv3.
+La vérification qui compte n'était pas la relecture du code : le nouveau
+client a été comparé au SDK champ par champ sur le matériel réel — 3
+périphériques, 18 modes, aucun écart — puis essayé pour de vrai sur la carte
+mère, celle qui avait fait échouer une première tentative.
 
 ---
 

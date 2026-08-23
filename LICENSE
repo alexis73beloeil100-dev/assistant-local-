@@ -1,13 +1,3 @@
-L'ASSEMBLAGE DISTRIBUE EST SOUS GPLv3 -- voir LICENCE-INSTALLATION.txt.
-
-Le programme installe integre openrgb-python, qui est sous GPLv3 : c'est donc
-sous cette licence qu'il se transmet, et son code source l'accompagne.
-
-La licence MIT ci-dessous couvre les fichiers ecrits pour ce projet, pris
-isolement. Vous pouvez les reprendre a ces conditions-la.
-
---------------------------------------------------------------------------
-
 Licence MIT
 
 Copyright (c) 2026 Assistant local

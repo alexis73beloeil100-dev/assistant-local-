@@ -248,33 +248,31 @@ def construire(destination: Path) -> Path:
         "annulerait la promesse &laquo; aucune connexion sortante apres "
         "l'installation &raquo;.", s["note"]))
 
-    F.append(Paragraph("La licence du binaire, tranchee", s["sous_section"]))
+    F.append(Paragraph("La licence du binaire, liberee", s["sous_section"]))
     F.append(Paragraph(
-        "Le programme distribue integre "
-        "<font face='Courier'>openrgb-python</font>, qui est sous "
-        "<b>GPLv3</b> : importer, c'est lier, donc c'est sous cette licence "
-        "que l'assemblage se transmet. Reecrire le client aurait touche au "
-        "RGB, laisse de cote volontairement &mdash; le binaire est donc "
-        "publie sous GPLv3.", s["corps"]))
+        "Le programme integrait "
+        "<font face='Courier'>openrgb-python</font>, sous <b>GPLv3</b> : "
+        "importer, c'est lier, donc tout l'assemblage se transmettait sous "
+        "cette licence, code source joint. La bibliotheque a ete remplacee le "
+        "23/08/2026 par "
+        "<font face='Courier'>assistant/skills/openrgb_protocole.py</font>, "
+        "ecrit pour ce projet, qui parle au serveur OpenRGB par son protocole "
+        "reseau. Le binaire est de nouveau sous <b>MIT</b>.", s["corps"]))
     F.append(Paragraph(
-        "L'installateur affiche desormais "
-        "<font face='Courier'>LICENCE-INSTALLATION.txt</font>, qui annonce la "
-        "GPLv3 et non &laquo; MIT &raquo; tout court, et le code source est "
-        "livre avec le programme "
-        "(<font face='Courier'>assistant-local-source.zip</font>, 0,3 Mo, a "
-        "cote de l'executable). La licence laissait le choix entre joindre le "
-        "source et promettre de le fournir trois ans : la promesse suppose de "
-        "tenir une adresse et de repondre.", s["corps"]))
+        "Le client a ete compare au SDK champ par champ sur le materiel reel "
+        "&mdash; 3 peripheriques, 18 modes, aucun ecart &mdash; puis essaye "
+        "pour de vrai sur la carte mere. C'est cette comparaison qui fait "
+        "foi : une premiere tentative avait echoue sur quatre pieges du "
+        "format binaire qui se lisaient tous comme du code correct.",
+        s["corps"]))
     F.append(Paragraph(
-        "Les fichiers ecrits pour ce projet restent sous MIT et reutilisables "
-        "comme tels, pris isolement. C'est l'assemblage qui est GPLv3.",
+        "OpenRGB lui-meme n'est plus livre avec l'application : il "
+        "s'installe a part, depuis openrgb.org. Trois tests gardent "
+        "l'ensemble &mdash; aucun import GPL, aucune archive de source "
+        "livree, une page de licence qui dit vrai. C'est la seule categorie "
+        "de defaut qui ne s'affiche nulle part, puisque le logiciel "
+        "fonctionne parfaitement en etant distribue en infraction.",
         s["note"]))
-    F.append(Paragraph(
-        "OpenRGB (GPLv2) etait par ailleurs redistribue sans son texte de "
-        "licence, ce que sa licence exige. Corrige. Dix tests couvrent "
-        "l'ensemble : c'est la seule categorie de defaut qui ne s'affiche "
-        "nulle part, puisque le logiciel fonctionne parfaitement en etant "
-        "distribue en infraction.", s["corps"]))
 
     F.append(Paragraph("Le panneau Reparer", s["sous_section"]))
     F.append(Paragraph(

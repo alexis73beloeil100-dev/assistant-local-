@@ -10,20 +10,17 @@ Trois obligations reelles :
 - OpenRGB (GPLv2) n'est PLUS redistribue : ni le depot ni le paquet ne
   doivent le contenir, sinon son texte de licence redeviendrait du : la
   regle du .spec est facile a elargir sans y penser ;
-- openrgb-python (GPLv3) est IMPORTE par l'assistant, donc lie : le binaire se
-  transmet sous GPLv3, et le code source doit accompagner ce binaire ;
+- openrgb-python (GPLv3) n'est PLUS importe depuis le 23/08/2026 : plus aucun
+  composant integre n'impose sa licence a l'assemblage, et le binaire n'a plus
+  a etre accompagne de son source ;
 - ce que l'installateur annonce doit correspondre a ce qu'il livre.
 """
 from __future__ import annotations
 
-import zipfile
 from pathlib import Path
 
-import pytest
-
-from outils import source_pour_gpl
-
-RACINE = source_pour_gpl.RACINE
+RACINE = Path(__file__).resolve().parent.parent
+LIVRE = RACINE / "dist" / "AssistantLocal"
 
 
 # --- Les textes de licence ---------------------------------------------------
@@ -92,16 +89,16 @@ def test_l_installateur_affiche_une_licence():
 def test_la_licence_affichee_annonce_la_bonne_licence():
     """Le point qui rend l'annonce exacte.
 
-    Le code ecrit pour ce projet est sous MIT, mais l'assemblage distribue se
-    transmet sous GPLv3 : openrgb-python y est integre. Une page annoncant
-    "MIT" tout court decrirait autre chose que ce qui est livre.
+    Elle a ete fausse dans les deux sens. Elle annoncait MIT alors que
+    openrgb-python imposait la GPLv3 a tout l'assemblage ; elle annoncerait
+    maintenant la GPLv3 alors que plus rien ne l'impose. Une page de licence
+    qui decrit autre chose que ce qui est livre ne protege personne.
     """
     texte = (RACINE / "LICENCE-INSTALLATION.txt").read_text(encoding="utf-8")
 
-    assert "GPLv3" in texte
-    assert "openrgb-python" in texte
-    assert source_pour_gpl.NOM in texte, (
-        "la page doit dire ou trouver le code source")
+    assert "distribue sous licence MIT" in texte
+    assert "assistant-local-source.zip" not in texte, (
+        "la page promet un code source qui n'est plus livre")
 
 
 def test_la_promesse_d_absence_de_connexion_est_nuancee():
@@ -112,53 +109,35 @@ def test_la_promesse_d_absence_de_connexion_est_nuancee():
     assert "telechargement des composants" in texte
 
 
-# --- L'archive du code source ------------------------------------------------
+# --- Ce qui est livre --------------------------------------------------------
 
-def test_l_archive_contient_tout_le_code_de_l_assistant(tmp_path):
-    """Un module oublie rendrait le source incomplet, donc l'offre invalide."""
-    archive = source_pour_gpl.construire(tmp_path / source_pour_gpl.NOM)
-    with zipfile.ZipFile(archive) as z:
-        noms = set(z.namelist())
+def test_le_source_n_est_plus_joint_au_binaire():
+    """L'archive du source n'existait que pour tenir l'obligation GPLv3.
 
-    attendus = {p.relative_to(RACINE).as_posix()
-                for p in (RACINE / "assistant").rglob("*.py")}
-    assert attendus, "aucun module trouve : le test ne verifie rien"
-    assert attendus <= noms, f"absents de l'archive : {sorted(attendus - noms)}"
+    Elle est partie avec elle. La laisser serait pire qu'inutile : le code de
+    l'auteur repartirait chez chaque personne qui installe, sans que rien ne
+    l'exige plus -- et sans que personne s'en apercoive, puisque le programme
+    marcherait exactement pareil.
+    """
+    assert not (RACINE / "outils" / "source_pour_gpl.py").exists(), (
+        "le generateur d'archive est revenu")
 
+    if not LIVRE.is_dir():
+        return          # rien a verifier tant que l'application n'est pas construite
 
-def test_l_archive_contient_de_quoi_reconstruire(tmp_path):
-    """Le source correspondant, ce n'est pas seulement les .py : c'est aussi
-    ce qui permet de refabriquer le binaire."""
-    archive = source_pour_gpl.construire(tmp_path / source_pour_gpl.NOM)
-    with zipfile.ZipFile(archive) as z:
-        noms = set(z.namelist())
-
-    for indispensable in ("AssistantLocal.spec", "requirements.txt",
-                          "reconstruire.py", "installateur.iss", "LICENSE"):
-        assert indispensable in noms, f"{indispensable} manque a l'archive"
+    archives = [f.name for f in LIVRE.glob("*source*.zip")]
+    assert not archives, f"le source est de nouveau livre : {archives}"
 
 
-def test_l_archive_ne_transporte_ni_binaires_ni_environnement(tmp_path):
-    """Elle doit rester legere, sinon elle ne sera plus regeneree."""
-    archive = source_pour_gpl.construire(tmp_path / source_pour_gpl.NOM)
-    with zipfile.ZipFile(archive) as z:
-        noms = z.namelist()
-
-    assert not [n for n in noms if n.startswith((".venv/", ".git/", "dist/"))]
-    assert not [n for n in noms if n.endswith((".dll", ".exe", ".pyd", ".pyc"))]
-    assert archive.stat().st_size < 20 * 1024 * 1024
-
-
-@pytest.mark.skipif(not (source_pour_gpl.LIVRE).is_dir(),
-                    reason="dist/AssistantLocal absent")
-def test_le_dossier_livre_emporte_licences_et_source():
+def test_le_dossier_livre_emporte_les_licences():
     """Ce qui compte n'est pas ce qu'il y a au depot, mais ce qui s'installe.
 
     Les fichiers sont copies dans dist/ plutot qu'ajoutes au script Inno :
     dist/ doit rester exactement ce qui s'installe, sinon un fichier livre
     echapperait au manifeste et ne serait jamais mis a jour.
     """
-    livre = source_pour_gpl.LIVRE
-    for nom in ("LICENSE", "LICENCES-TIERS.md", "LICENCE-INSTALLATION.txt",
-                source_pour_gpl.NOM):
-        assert (livre / nom).is_file(), f"{nom} ne serait pas installe"
+    if not LIVRE.is_dir():
+        return
+
+    for nom in ("LICENSE", "LICENCES-TIERS.md", "LICENCE-INSTALLATION.txt"):
+        assert (LIVRE / nom).is_file(), f"{nom} ne serait pas installe"

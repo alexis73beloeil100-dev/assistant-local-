@@ -8,31 +8,24 @@ modifier et le redistribuer.
 CE QUE VOUS RECEVEZ ICI
 -----------------------
 
-Le programme que vous installez est distribue sous licence GNU General
-Public License version 3 (GPLv3).
+Le programme que vous installez est distribue sous licence MIT.
 
-La raison est simple : l'assistant utilise openrgb-python pour piloter
-l'eclairage RGB, et cette bibliotheque est elle-meme sous GPLv3. Comme elle
-est integree au programme et non lancee a cote, l'ensemble se transmet sous
-cette licence.
+Jusqu'au 23/08/2026 il se transmettait sous GPLv3, parce qu'il integrait la
+bibliotheque openrgb-python, elle-meme sous cette licence. Cette bibliotheque
+a ete remplacee par du code ecrit pour ce projet : l'assistant parle
+directement au serveur OpenRGB, par son protocole reseau.
 
-Le code source complet est installe avec le logiciel, dans le fichier :
-
-    assistant-local-source.zip
-
-Il se trouve dans le dossier d'installation, a cote du programme. Vous
-n'avez rien a demander a personne pour l'obtenir.
+Le programme n'integre donc plus aucun composant qui impose sa licence a
+l'ensemble.
 
 
 LE CODE ECRIT POUR CE PROJET
 ----------------------------
 
-Les fichiers ecrits specifiquement pour l'Assistant local sont publies par
-leur auteur sous licence MIT, qui est plus permissive. Vous pouvez les
-reprendre isolement sous ces conditions-la.
-
-C'est l'assemblage complet -- le programme installe -- qui se transmet sous
-GPLv3, a cause de la bibliotheque ci-dessus.
+Les fichiers ecrits pour l'Assistant local sont publies par leur auteur sous
+licence MIT. Vous pouvez les utiliser, les modifier et les redistribuer, y
+compris dans un logiciel proprietaire, a la seule condition de conserver la
+mention de copyright et le texte de la licence.
 
 
 LES AUTRES COMPOSANTS

@@ -176,11 +176,8 @@ def main() -> int:
         return 1
 
     copier_licences()
-    # Le source accompagne le binaire : la GPLv3 l'exige, et le joindre
-    # dispense de tenir une promesse de fourniture sur trois ans.
-    from outils import source_pour_gpl
-    archive = source_pour_gpl.construire()
-    print(f"  Source joint : {archive.stat().st_size / 1048576:.1f} Mo")
+    # Plus d'archive de source jointe : elle n'existait que pour tenir
+    # l'obligation GPLv3 d'openrgb-python, retire le 23/08/2026.
     print(f"  Executable pret : {EXE}")
 
     print("  Raccourci du Bureau ...")

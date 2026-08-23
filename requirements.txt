@@ -69,4 +69,6 @@ tqdm==4.70.0
 typing_extensions==4.16.0
 urllib3==2.7.0
 watchdog==6.0.0
-openrgb-python>=0.3.6   # pilotage de l'eclairage, SDK officiel
+# openrgb-python a ete retire le 23/08/2026 : sous GPLv3, il liait le
+# programme entier a cette licence. Le dialogue avec le serveur OpenRGB
+# passe desormais par assistant/skills/openrgb_protocole.py, ecrit ici.
