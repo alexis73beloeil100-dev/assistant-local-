@@ -99,10 +99,31 @@ Name: "demarrage"; Description: "Lancer l'assistant au demarrage de Windows"; \
 ; ne couterait qu'une recopie. Elles sont verifiees par
 ; tests/test_licences.py, pour que la regle ne reparte pas au prochain
 ; remaniement de ce fichier.
-Type: filesandordirs; Name: "{app}\_internal\outils\OpenRGB"
+; Le dossier outils ENTIER, pas seulement son sous-dossier OpenRGB : le
+; paquet ne livre plus rien dedans depuis que la regle du .spec exclut les
+; scripts de developpement. Y restaient 32 fichiers, dont source_pour_gpl.py,
+; le generateur de l'archive du source qu'on a justement cesse de livrer.
+Type: filesandordirs; Name: "{app}\_internal\outils"
 Type: filesandordirs; Name: "{app}\_internal\openrgb"
 Type: filesandordirs; Name: "{app}\_internal\openrgb_python-*.dist-info"
 Type: files; Name: "{app}\assistant-local-source.zip"
+
+; PyInstaller remonte les DLL a la RACINE de _internal, pas dans le dossier
+; d'ou elles viennent. Celles-ci sont les bibliotheques Qt et les pilotes de
+; bus d'OpenRGB : elles ne se voient pas comme des restes d'OpenRGB, et une
+; regle qui ne viserait que les dossiers openrgb les laisserait toutes.
+;
+; Aucune ne figure dans manifestes/1.0.2.json -- verifie fichier par fichier.
+; Et si l'une venait a etre livree de nouveau, [Files] la reposerait juste
+; apres : ces suppressions passent avant.
+Type: files; Name: "{app}\_internal\Qt5Core.dll"
+Type: files; Name: "{app}\_internal\Qt5Gui.dll"
+Type: files; Name: "{app}\_internal\Qt5Widgets.dll"
+Type: files; Name: "{app}\_internal\libGLESv2.dll"
+Type: files; Name: "{app}\_internal\libusb-1.0.dll"
+Type: files; Name: "{app}\_internal\hidapi.dll"
+Type: files; Name: "{app}\_internal\PawnIOLib.dll"
+Type: files; Name: "{app}\_internal\MSVCP140_CODECVT_IDS.dll"
 
 [Files]
 Source: "dist\AssistantLocal\*"; DestDir: "{app}"; \

@@ -150,11 +150,28 @@ def test_l_installateur_complet_laisse_les_restes_de_l_ancienne_version():
     efface = section_de_l_installateur("InstallDelete")
     assert efface, "l'installateur complet n'efface plus rien avant d'installer"
 
+    # Le releve reel du 23/08 donne 55 restes, pas 44 : deux groupes
+    # echappaient a une lecture rapide. Le dossier outils ENTIER, parce que le
+    # paquet n'y livre plus rien du tout et pas seulement plus d'OpenRGB ; et
+    # les DLL que PyInstaller remonte a la RACINE de _internal, qui ne se
+    # lisent pas comme des restes d'OpenRGB alors qu'elles en viennent.
+    #
+    # Trois fichiers de l'installation ne sont PAS des restes et ne doivent
+    # jamais figurer ici : data, unins000.dat et unins000.exe -- les reglages
+    # de l'utilisateur et le desinstalleur lui-meme.
     for cible, genre in (
-            (r"{app}\_internal\outils\OpenRGB", "filesandordirs"),
+            (r"{app}\_internal\outils", "filesandordirs"),
             (r"{app}\_internal\openrgb", "filesandordirs"),
             (r"{app}\_internal\openrgb_python-*.dist-info", "filesandordirs"),
             (r"{app}\assistant-local-source.zip", "files"),
+            (r"{app}\_internal\Qt5Core.dll", "files"),
+            (r"{app}\_internal\Qt5Gui.dll", "files"),
+            (r"{app}\_internal\Qt5Widgets.dll", "files"),
+            (r"{app}\_internal\libGLESv2.dll", "files"),
+            (r"{app}\_internal\libusb-1.0.dll", "files"),
+            (r"{app}\_internal\hidapi.dll", "files"),
+            (r"{app}\_internal\PawnIOLib.dll", "files"),
+            (r"{app}\_internal\MSVCP140_CODECVT_IDS.dll", "files"),
     ):
         ligne = next((l for l in efface if f'Name: "{cible}"' in l), None)
         assert ligne, (
