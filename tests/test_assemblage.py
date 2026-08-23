@@ -768,6 +768,14 @@ def test_la_sauvegarde_constate_le_push_github_au_lieu_de_le_croire():
     assert "ls-remote" in source, "le push n'est pas verifie"
     assert "tete()" in source, "la tete distante n'est comparee a rien"
 
+    # Et surtout : elle doit etre APPELEE. Ecrite mais jamais branchee, la
+    # fonction a laisse le script annoncer "les trois copies sont au meme
+    # point" pendant que GitHub restait en arriere -- exactement la panne
+    # silencieuse qu'elle etait censee supprimer.
+    principal = inspect.getsource(sauvegarder.main)
+    assert "pousser_sur_github()" in principal, (
+        "pousser_sur_github existe mais main() ne l'appelle pas")
+
 
 def test_le_nom_de_branche_n_est_ecrit_qu_une_fois():
     """Il l'etait cinq fois, et le renommage master -> main les a toutes

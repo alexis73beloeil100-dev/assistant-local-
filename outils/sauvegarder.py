@@ -161,12 +161,20 @@ def main() -> int:
     print(f"  {BRANCHE} : {tete()[:7]}")
     ok_h = pousser_sur_h()
     ok_usb = refaire_le_bundle()
+    ok_ligne = pousser_sur_github()
 
-    if ok_h and ok_usb:
-        print("\n  Les trois copies sont au meme point.")
+    manquants = []
+    if not ok_usb:
+        manquants.append("la cle USB")
+    if ok_ligne is False:
+        manquants.append("GitHub")
+
+    if ok_h and not manquants:
+        combien = "quatre" if ok_ligne else "trois"
+        print(f"\n  Les {combien} copies sont au meme point.")
         return 0
     if ok_h:
-        print("\n  H: est a jour. La cle USB reste a refaire.")
+        print(f"\n  H: est a jour. Reste a refaire : {', '.join(manquants)}.")
         return 0
     return 1
 
