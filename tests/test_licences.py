@@ -5,7 +5,7 @@ logiciel fonctionne parfaitement en etant distribue en infraction. C'est
 exactement pour ca que ces verifications doivent etre automatiques -- une
 relecture ne les attrape pas, et personne ne pense a les refaire.
 
-Trois obligations reelles :
+Quatre obligations reelles :
 
 - OpenRGB (GPLv2) n'est PLUS redistribue : ni le depot ni le paquet ne
   doivent le contenir, sinon son texte de licence redeviendrait du : la
@@ -13,7 +13,10 @@ Trois obligations reelles :
 - openrgb-python (GPLv3) n'est PLUS importe depuis le 23/08/2026 : plus aucun
   composant integre n'impose sa licence a l'assemblage, et le binaire n'a plus
   a etre accompagne de son source ;
-- ce que l'installateur annonce doit correspondre a ce qu'il livre.
+- ce que l'installateur annonce doit correspondre a ce qu'il livre ;
+- et il doit RETIRER ce qu'il ne livre plus : Inno Setup ecrase, il n'efface
+  pas, donc un retrait qui ne vaut que pour les installations neuves ne vaut
+  pour personne.
 """
 from __future__ import annotations
 
@@ -107,6 +110,58 @@ def test_la_promesse_d_absence_de_connexion_est_nuancee():
     texte = (RACINE / "LICENCE-INSTALLATION.txt").read_text(encoding="utf-8")
 
     assert "telechargement des composants" in texte
+
+
+def section_de_l_installateur(nom: str) -> list[str]:
+    """Les lignes utiles d'une section du script Inno, commentaires exclus.
+
+    On decoupe par section plutot que de chercher dans tout le fichier : les
+    memes lignes rangees sous [UninstallDelete] n'effaceraient rien a
+    l'installation, et une recherche de texte brut n'y verrait que du feu.
+    """
+    lignes: list[str] = []
+    dedans = False
+    for ligne in lire_installateur().splitlines():
+        nue = ligne.strip()
+        if nue.startswith("[") and nue.endswith("]"):
+            dedans = nue.lower() == f"[{nom.lower()}]"
+        elif dedans and nue and not nue.startswith(";"):
+            lignes.append(nue)
+    return lignes
+
+
+def test_l_installateur_complet_laisse_les_restes_de_l_ancienne_version():
+    """Une installation mise a jour n'etait pas identique a une neuve.
+
+    Inno Setup n'efface pas ce qui a disparu du paquet : il ajoute et il
+    ecrase, rien de plus. Le 23/08/2026, un dossier passe de 1.0.1 a 1.0.2
+    par l'installateur complet contenait encore 44 fichiers absents de
+    manifestes/1.0.2.json : OpenRGB.exe avec son LICENSE-GPLv2.txt,
+    openrgb-python en entier, l'archive du source.
+
+    Rien ne le signalait, et l'application s'en servait : rgb.py cherche une
+    copie portable dans outils/OpenRGB/, la trouvait dans le dossier
+    installe, et l'eclairage marchait. Le retrait du GPL n'avait donc eu lieu
+    que pour les installations neuves.
+
+    La mise a jour differentielle sait deja les supprimer -- elle part du
+    manifeste. Ce test protege l'autre chemin, celui qui l'ignorait.
+    """
+    efface = section_de_l_installateur("InstallDelete")
+    assert efface, "l'installateur complet n'efface plus rien avant d'installer"
+
+    for cible, genre in (
+            (r"{app}\_internal\outils\OpenRGB", "filesandordirs"),
+            (r"{app}\_internal\openrgb", "filesandordirs"),
+            (r"{app}\_internal\openrgb_python-*.dist-info", "filesandordirs"),
+            (r"{app}\assistant-local-source.zip", "files"),
+    ):
+        ligne = next((l for l in efface if f'Name: "{cible}"' in l), None)
+        assert ligne, (
+            f"{cible} survivrait a une mise a jour par l'installateur complet")
+        assert f"Type: {genre}" in ligne, (
+            f"{cible} : attendu 'Type: {genre}', trouve {ligne!r}. Un dossier "
+            "laisse tout son contenu si le type n'est pas filesandordirs")
 
 
 # --- Ce qui est livre --------------------------------------------------------

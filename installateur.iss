@@ -75,6 +75,35 @@ Name: "raccourcibureau"; Description: "Creer un raccourci sur le Bureau"; \
 Name: "demarrage"; Description: "Lancer l'assistant au demarrage de Windows"; \
     GroupDescription: "Demarrage :"; Flags: unchecked
 
+[InstallDelete]
+; Restes des versions precedentes, effaces AVANT d'installer les nouveaux
+; fichiers.
+;
+; Inno Setup n'efface pas ce qui a disparu du paquet : il ajoute et il
+; ecrase, rien de plus. Une installation mise a jour n'etait donc pas
+; identique a une installation neuve. Constate le 23/08/2026 : un dossier
+; passe de 1.0.1 a 1.0.2 par l'installateur complet gardait 44 fichiers que
+; manifestes/1.0.2.json ne decrit pas -- OpenRGB.exe avec son
+; LICENSE-GPLv2.txt, openrgb-python en entier, l'archive du source.
+;
+; Rien ne le signalait. Pire : l'application s'en servait. rgb.py cherche une
+; copie portable dans outils/OpenRGB/, la trouvait dans le dossier installe,
+; et l'eclairage marchait -- en faisant vivre sur la machine du GPL que le
+; paquet ne livre plus depuis le 23/08.
+;
+; La mise a jour differentielle (outils/paquet_maj.py) les supprime deja :
+; elle part du manifeste et sait donc ce qui a disparu. Seul ce chemin-ci,
+; l'installateur complet, laissait des restes.
+;
+; Ces suppressions passent AVANT [Files] : reposer un fichier efface a tort
+; ne couterait qu'une recopie. Elles sont verifiees par
+; tests/test_licences.py, pour que la regle ne reparte pas au prochain
+; remaniement de ce fichier.
+Type: filesandordirs; Name: "{app}\_internal\outils\OpenRGB"
+Type: filesandordirs; Name: "{app}\_internal\openrgb"
+Type: filesandordirs; Name: "{app}\_internal\openrgb_python-*.dist-info"
+Type: files; Name: "{app}\assistant-local-source.zip"
+
 [Files]
 Source: "dist\AssistantLocal\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
