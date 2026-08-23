@@ -861,3 +861,40 @@ def test_le_lisez_moi_calcule_l_empreinte_sur_la_copie_envoyee():
     place_empreinte = source.index("empreinte(copie)")
     assert place_copie < place_empreinte, (
         "l'empreinte est calculee avant la copie")
+
+def test_livrer_rejoue_la_suite_complete_avant_de_distribuer():
+    """Changer de numero de version rendait toute livraison impossible.
+
+    Deux tests exigent un manifeste pour la version courante -- bonne regle :
+    sans lui, on ne sait plus ce que les gens ont installe. Mais ce manifeste
+    ne peut naitre qu'APRES la construction, puisqu'il decrit le paquet reel.
+
+    Le 23/08, le passage en 1.0.3 a donc echoue a l'etape 1 sur 8 : les tests
+    reclamaient un fichier que seule l'etape 4 pouvait ecrire. La livraison ne
+    pouvait pas demarrer, et rien dans le message d'echec ne disait pourquoi.
+
+    Les deux sont ecartes du pre-vol et rejoues au complet apres le
+    manifeste. Ce test verifie que le second passage existe, et qu'il tombe
+    AVANT tout ce qui distribue : dossier du Bureau, sauvegardes,
+    installation.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "livrer.py").read_text(encoding="utf-8")
+
+    place_manifeste = source.index('titre(n, etapes, "Manifeste du paquet")')
+    place_complets = source.index('titre(n, etapes, "Tests (complets)")')
+    place_bureau = source.index('titre(n, etapes, "Dossier du Bureau")')
+
+    assert place_manifeste < place_complets, (
+        "la suite complete doit venir apres le manifeste, sinon elle echoue "
+        "sur les deux tests qui le reclament")
+    assert place_complets < place_bureau, (
+        "rien ne doit etre distribue avant que la suite complete soit verte")
+
+    for nom in ("test_partir_de_la_version_courante_est_refuse",
+                "test_le_manifeste_de_la_version_publiee_est_versionne"):
+        assert nom in source, (
+            f"{nom} n'est plus ecarte du pre-vol : un changement de version "
+            "rendra la livraison impossible")

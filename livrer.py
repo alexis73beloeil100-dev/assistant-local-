@@ -10,14 +10,21 @@ empreinte qui n'etait plus la bonne.
 
 Ce qu'il enchaine :
 
-    1. les tests
+    1. les tests, en pre-vol   sauf deux, voir DESELECTION_PRE_VOL
     2. l'executable            reconstruire.py
     3. l'installateur          outils/publier.py
     4. le manifeste            outils/manifeste.py, puis commit
-    5. le dossier du Bureau    outils/dossier_a_envoyer.py
-    6. les sauvegardes         outils/sauvegarder.py  (H:, cle USB, GitHub)
-    7. la version installee    l'installateur, en silencieux
-    8. la relance              l'assistant et le serveur OpenRGB
+    5. les tests, au complet   les deux ecartes retrouvent leur sens ici
+    6. le dossier du Bureau    outils/dossier_a_envoyer.py
+    7. les sauvegardes         outils/sauvegarder.py  (H:, cle USB, GitHub)
+    8. la version installee    l'installateur, en silencieux
+    9. la relance              l'assistant et le serveur OpenRGB
+
+Les tests passent DEUX fois, et ce n'est pas du zele. Deux d'entre eux
+exigent un manifeste pour la version courante, qui ne peut naitre qu'apres la
+construction : au pre-vol ils sont ecartes, sinon changer de numero de
+version rendrait toute livraison impossible. Rien n'est distribue avant le
+second passage, celui qui les rejoue.
 
 L'ordre n'est pas negociable, et il a ete appris a la dure. Le manifeste et
 l'installateur lisent tous deux dist/ sans le modifier, donc leur ordre
@@ -46,6 +53,27 @@ PYTHON = RACINE / ".venv" / "Scripts" / "python.exe"
 INSTALLATEUR = RACINE / "installateur" / "Installer_AssistantLocal.exe"
 EXE = RACINE / "dist" / "AssistantLocal" / "AssistantLocal.exe"
 TACHE_RGB = "AssistantLocal - serveur OpenRGB"
+
+# Les deux tests que le PRE-VOL ne peut pas passer, et pourquoi.
+#
+# Ils exigent que manifestes/<version courante>.json existe -- une bonne
+# regle : publier une version sans son manifeste, c'est perdre la reference
+# qui dit ce que les gens ont installe. Mais ce manifeste ne peut naitre
+# qu'APRES la construction, puisqu'il decrit le paquet reel.
+#
+# Entre un changement de numero et l'etape du manifeste, l'invariant est donc
+# legitimement faux. Sans cette exception, changer de version rendait toute
+# livraison impossible : les tests echouaient avant que rien ne soit
+# construit, et le manifeste qui les aurait satisfaits ne pouvait pas exister.
+#
+# Ils sont rejoues en entier plus loin, une fois le manifeste ecrit. Rien
+# n'est distribue avant ce second passage.
+DESELECTION_PRE_VOL = (
+    "--deselect",
+    "tests/test_mise_a_jour.py::test_partir_de_la_version_courante_est_refuse",
+    "--deselect",
+    "tests/test_mise_a_jour.py::test_le_manifeste_de_la_version_publiee_est_versionne",
+)
 
 if str(RACINE) not in sys.path:
     sys.path.insert(0, str(RACINE))
@@ -138,7 +166,9 @@ def main() -> int:
 
     sans_installer = "--sans-installer" in sys.argv
     sans_tests = "--sans-tests" in sys.argv
-    etapes = 8 - (1 if sans_installer else 0) - (1 if sans_tests else 0)
+    # Neuf etapes, dont deux passages de tests : le pre-vol et la suite
+    # complete. --sans-tests en retire donc deux, pas une.
+    etapes = 9 - (1 if sans_installer else 0) - (2 if sans_tests else 0)
     n = 0
 
     print(f"\n  LIVRAISON DE L'ASSISTANT LOCAL {__version__}")
@@ -149,8 +179,9 @@ def main() -> int:
 
     if not sans_tests:
         n += 1
-        titre(n, etapes, "Tests")
-        if not lancer(PYTHON, "-m", "pytest", "tests", "-q"):
+        titre(n, etapes, "Tests (pre-vol)")
+        if not lancer(PYTHON, "-m", "pytest", "tests", "-q",
+                      *DESELECTION_PRE_VOL):
             print("\n  Tests en echec -- rien n'a ete construit ni publie.")
             return 1
 
@@ -185,6 +216,19 @@ def main() -> int:
         return 1
     if not commiter_le_manifeste():
         return 1
+
+    # LA SUITE COMPLETE, maintenant que le manifeste existe. C'est ici que les
+    # deux tests ecartes au pre-vol retrouvent leur sens : ils exigent un
+    # manifeste pour la version courante, ce qui ne peut pas etre vrai entre
+    # un changement de numero et cette etape-ci.
+    if not sans_tests:
+        n += 1
+        titre(n, etapes, "Tests (complets)")
+        if not lancer(PYTHON, "-m", "pytest", "tests", "-q"):
+            print("\n  La suite complete echoue. L'installateur existe mais "
+                  "N'A PAS ete distribue : ni dossier du Bureau, ni "
+                  "sauvegarde, ni installation.")
+            return 1
 
     n += 1
     titre(n, etapes, "Dossier du Bureau")
