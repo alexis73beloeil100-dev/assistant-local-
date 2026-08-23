@@ -988,7 +988,7 @@ def _lire(materiel) -> Peripherique:
     for mode in materiel.modes:
         drapeaux = mode.drapeaux or 0
         details.append(Mode(
-            nom=mode.name,
+            nom=mode.nom,
             couleur=bool(drapeaux & (protocole.A_COULEUR_PAR_LED
                                      | protocole.A_COULEUR_DE_MODE)),
             par_led=bool(drapeaux & protocole.A_COULEUR_PAR_LED),

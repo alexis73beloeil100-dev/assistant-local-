@@ -1740,3 +1740,61 @@ def test_ce_qui_casse_ou_detruit_demande_toujours():
                            targets=["x"], reversible=False, routine=True)
     with pytest.raises(safety.Refused):
         safety.guard(action, ask=lambda _t: False)
+
+def test_lire_un_materiel_n_utilise_que_les_champs_du_client_maison():
+    """Un seul .name oublie, et tout le RGB tombe -- sans qu'un test bronche.
+
+    En remplacant openrgb-python par le client maison, `_lire` a garde un
+    `mode.name` sur seize champs renommes. Les 219 tests sont passes au vert :
+    aucun ne fait parler `_lire` a un vrai materiel, et la fabrique de client
+    est la premiere chose qu'un test remplace par un faux.
+
+    Le defaut n'est apparu qu'en interrogeant le serveur pour de vrai, et il
+    se presentait comme une panne de reseau -- "Serveur OpenRGB injoignable :
+    AttributeError" -- ce qui envoyait chercher au mauvais endroit.
+
+    Ce test construit un materiel avec les objets du client maison et le fait
+    traduire. Il n'a besoin ni de serveur ni de materiel.
+    """
+    from assistant.skills import openrgb_protocole as protocole
+    from assistant.skills import rgb
+
+    materiel = protocole.Materiel(
+        index=3,
+        nom="Carte mere de test",
+        genre="motherboard",
+        mode_actif=1,
+        nb_leds=6,
+        modes=[
+            protocole.Mode(
+                index=0, nom="Direct", drapeaux=protocole.A_COULEUR_PAR_LED,
+                vitesse_min=None, vitesse_max=None, vitesse=None,
+                luminosite_min=None, luminosite_max=None, luminosite=None,
+                mode_couleur=protocole.COULEUR_PAR_LED),
+            protocole.Mode(
+                index=1, nom="Respiration",
+                drapeaux=protocole.A_VITESSE | protocole.A_LUMINOSITE
+                | protocole.A_COULEUR_DE_MODE,
+                vitesse_min=0, vitesse_max=5, vitesse=2,
+                luminosite_min=0, luminosite_max=100, luminosite=80,
+                mode_couleur=protocole.COULEUR_DE_MODE),
+        ],
+    )
+
+    lu = rgb._lire(materiel)
+
+    assert lu.index == 3
+    assert lu.nom == "Carte mere de test"
+    assert lu.genre == "motherboard"
+    assert lu.nb_leds == 6
+    assert lu.modes == ["Direct", "Respiration"]
+    assert lu.mode_actif == "Respiration"
+
+    direct = lu.mode("Direct")
+    assert direct.couleur and direct.par_led
+    assert direct.vitesse is None and direct.luminosite is None
+
+    respiration = lu.mode("Respiration")
+    assert respiration.couleur and not respiration.par_led
+    assert respiration.vitesse == (0, 5, 2)
+    assert respiration.luminosite == (0, 100, 80)
