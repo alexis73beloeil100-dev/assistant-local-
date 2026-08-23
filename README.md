@@ -49,6 +49,20 @@ modèle qui recopie des chiffres finit toujours par en déformer un.
 indispensable. Bouton **Parler** pour dicter, case « Répondre à voix haute »
 décochée par défaut.
 
+### Éclairage RGB : OpenRGB s'installe à part
+
+Le pilotage des LED marche, mais **l'application ne livre pas OpenRGB** — il
+faut l'installer soi-même depuis <https://openrgb.org> (rubrique Downloads,
+Windows 64-bit). L'assistant le cherche tout seul dans les emplacements
+d'installation habituels ; une version portable posée dans `outils/OpenRGB/`
+fait aussi l'affaire, et le panneau **Contrôle** dit où le prendre tant qu'il
+ne trouve rien.
+
+Deux choses à savoir : l'éclairage d'une carte mère passe par le bus SMBus,
+qui demande les **droits administrateur**, et le logiciel du fabricant doit
+être **fermé** — deux programmes sur le même contrôleur font clignoter les LED
+au hasard.
+
 La pastille en haut à droite : verte = prêt, ambre = en travail, rouge =
 problème.
 
@@ -537,6 +551,9 @@ Un test vérifie que les deux identifiants restent égaux.
 **Le programme distribué est sous GPLv3**, parce qu'il intègre
 `openrgb-python` qui l'est. Son code source l'accompagne : l'installation
 dépose `assistant-local-source.zip` à côté de l'exécutable.
+
+OpenRGB lui-même n'est **pas** distribué avec le programme depuis le
+23/08/2026 : c'est un logiciel libre distinct que l'utilisateur installe.
 
 Les fichiers écrits pour ce projet restent sous [licence MIT](LICENSE) et
 réutilisables comme tels, pris isolément — c'est l'assemblage qui se

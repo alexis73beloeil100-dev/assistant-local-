@@ -70,27 +70,30 @@ class Peripherique:
     mode_actif: str = ""
 
 
-# Outil EMBARQUE avec l'application. C'est l'emplacement prioritaire.
-#
-# L'utilisateur ne veut rien installer sur sa machine : ni entree dans
-# Program Files, ni cle de registre, ni desinstalleur de plus. L'outil vit
-# donc DANS l'application, part avec elle, et s'en va avec elle.
+# Copie PORTABLE posee a cote de l'assistant. Elle reste prioritaire quand
+# elle existe, mais elle n'est plus livree : depuis le 23/08 l'application ne
+# redistribue plus le binaire d'OpenRGB. Qui veut l'eclairage installe
+# OpenRGB lui-meme, ou depose une version portable ici.
 #
 # Le chemin est relatif au paquet, pas au dossier courant : dans l'executable
 # packagee, les fichiers de donnees atterrissent dans _MEIPASS.
-OUTIL_EMBARQUE = Path("outils") / "OpenRGB" / "OpenRGB.exe"
+COPIE_PORTABLE = Path("outils") / "OpenRGB" / "OpenRGB.exe"
 
 
-def _embarque() -> Path | None:
-    """L'OpenRGB livre avec l'assistant, en sources comme en packagee."""
+def _copie_portable() -> Path | None:
+    """Une copie posee dans outils/OpenRGB/, en sources comme en packagee.
+
+    Elle n'est plus livree par defaut ; ce chemin sert a qui prefere une
+    version portable a une installation.
+    """
     import sys
 
     from assistant import config
 
-    candidats = [config.ROOT / OUTIL_EMBARQUE]
+    candidats = [config.ROOT / COPIE_PORTABLE]
     base = getattr(sys, "_MEIPASS", None)
     if base:
-        candidats.insert(0, Path(base) / OUTIL_EMBARQUE)
+        candidats.insert(0, Path(base) / COPIE_PORTABLE)
     for chemin in candidats:
         try:
             if chemin.is_file():
@@ -104,17 +107,19 @@ def _executable() -> Path | None:
     """Trouve OpenRGB. L'exemplaire embarque passe avant tout le reste.
 
     Ordre voulu :
-      1. celui livre avec l'application -- il est de la version attendue, et
-         il ne demande aucune installation ;
+      1. une copie portable posee dans outils/OpenRGB/, si elle existe ;
       2. un chemin explicitement enregistre par l'utilisateur ;
-      3. une installation deja presente sur la machine, s'il y en a une.
+      3. une installation deja presente sur la machine.
+
+    Aucun des trois n'est garanti : OpenRGB n'est plus livre avec
+    l'assistant. Quand rien n'est trouve, liste() explique ou le prendre.
 
     Chercher sur l'ensemble des disques n'est jamais fait : ca couterait plus
     cher que de demander une fois ou se trouve le fichier.
     """
     from assistant import settings
 
-    integre = _embarque()
+    integre = _copie_portable()
     if integre is not None:
         return integre
 
@@ -137,8 +142,8 @@ def _executable() -> Path | None:
 
 def source() -> str:
     """D'ou vient l'OpenRGB utilise : embarque, enregistre, ou du systeme."""
-    if _embarque() is not None:
-        return "livre avec l'assistant"
+    if _copie_portable() is not None:
+        return "copie portable a cote de l'assistant"
     exe = _executable()
     if exe is None:
         return "absent"
@@ -1138,7 +1143,8 @@ def appliquer(peripherique: str = "", mode: str = "", couleur: str = "",
 def peripheriques() -> tuple[list, str]:
     """Ce qui est reellement pilotable sur CETTE machine, et ses modes."""
     if not disponible():
-        return [], "OpenRGB n'est pas livre avec l'assistant."
+        return [], ("OpenRGB n'est pas installe. Le panneau Controle "
+                    "explique ou le prendre.")
 
     ok, message = demarrer_serveur()
     if not ok:
@@ -1320,26 +1326,14 @@ def liste() -> str:
     if not disponible():
         return (
             "ECLAIRAGE RGB\n\n"
-            "  Le pilotage RGB demande OpenRGB, qui n'est pas installe.\n\n"
-            "  Pourquoi lui, et pas le logiciel du fabricant : verifie sur\n"
-            "  cette machine, RGB Fusion n'ecrit rien sur le disque quand on\n"
-            "  change de mode (son fichier de profil n'a pas bouge en dix\n"
-            "  minutes d'essais), n'expose aucune ligne de commande sur ses\n"
-            "  quatorze executables, et sa fenetre ne publie aucun bouton a\n"
-            "  l'automatisation Windows : ses commandes sont des images\n"
-            "  dessinees. Il n'y a rien a piloter de l'exterieur.\n\n"
-            "  OpenRGB parle au materiel lui-meme et couvre la plupart des\n"
-            "  marques derriere une seule interface. Il est libre, portable\n"
-            "  et fonctionne hors ligne.\n\n"
-            "  RIEN N'EST A INSTALLER SUR LE PC. L'outil se pose DANS\n"
-            "  l'application :\n\n"
-            f"      {OUTIL_EMBARQUE}\n\n"
-            "  Depuis cet emplacement il part avec l'assistant, se retrouve\n"
-            "  dans l'executable a la reconstruction, et s'en va avec lui :\n"
-            "  aucune entree dans Program Files, aucune cle de registre,\n"
-            "  aucun desinstalleur de plus.\n\n"
-            "  Ferme le logiciel du fabricant avant de t'en servir : deux\n"
-            "  programmes sur le meme controleur font clignoter l'eclairage."
+            "  OpenRGB n'est pas installe : sans lui, rien n'est pilotable.\n\n"
+            "  A prendre sur https://openrgb.org, rubrique Downloads,\n"
+            "  Windows 64-bit. L'assistant le trouvera tout seul.\n\n"
+            "  Tu peux aussi poser la version portable dans\n"
+            f"      {COPIE_PORTABLE.parent}\n"
+            "  ou me dire ou il se trouve : j'enregistre le chemin.\n\n"
+            "  L'eclairage de la carte mere passe par le bus SMBus, qui\n"
+            "  demande les droits administrateur."
             + _ce_qui_existe_deja()
         )
 

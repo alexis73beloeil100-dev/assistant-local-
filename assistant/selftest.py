@@ -253,8 +253,9 @@ def check_rgb():
     from assistant.skills import rgb
 
     if not rgb.disponible():
-        return ABSENT, "OpenRGB absent du paquet", (
-            "Depose-le dans outils/OpenRGB/ : le .spec l'embarquera."
+        return ABSENT, "OpenRGB n'est pas installe", (
+            "Installe-le depuis https://openrgb.org, ou pose sa version "
+            "portable dans outils/OpenRGB/."
         )
 
     trouves, erreur = rgb.peripheriques()

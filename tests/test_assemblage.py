@@ -653,10 +653,11 @@ def test_le_produit_livre_n_embarque_pas_son_outillage():
     assert not scripts, (
         f"des scripts de developpement sont livres : {scripts}")
 
-    # Et l'outil qui doit partir, lui, doit bien etre la.
-    assert (livre / "OpenRGB" / "OpenRGB.exe").is_file(), (
-        "OpenRGB n'est plus embarque : l'eclairage cessera de fonctionner "
-        "dans la version installee, en silence")
+    # Et OpenRGB, lui, ne doit PLUS etre la : il s'installe a part depuis le
+    # 23/08. Voir test_licences.py, qui garde la meme frontiere cote licence.
+    assert not (livre / "OpenRGB").exists(), (
+        "OpenRGB est revenu dans le paquet : l'application redistribue de "
+        "nouveau un binaire GPLv2")
 
 
 def test_l_application_n_importe_jamais_l_outillage():

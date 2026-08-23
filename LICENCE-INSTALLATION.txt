@@ -45,10 +45,12 @@ representent l'essentiel de sa taille. Chacune garde sa propre licence.
 Le detail complet, composant par composant, est dans le fichier
 LICENCES-TIERS.md installe a cote du programme.
 
-OpenRGB, livre dans le sous-dossier outils/OpenRGB, est sous GPLv2. Son
-code source est disponible chez son auteur :
+OpenRGB n'est PAS livre avec ce programme. Le pilotage de l'eclairage RGB
+demande de l'installer separement, depuis :
 
-    https://gitlab.com/CalcProgrammer1/OpenRGB
+    https://openrgb.org
+
+C'est un logiciel libre distinct, sous GPLv2, edite par un tiers.
 
 
 ABSENCE DE GARANTIE

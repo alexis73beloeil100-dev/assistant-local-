@@ -128,10 +128,8 @@ class Pupitre(tk.Frame):
 
             if not rgb.disponible():
                 message = ("Pilotage RGB indisponible : OpenRGB n'est pas "
-                           "installe. Les logiciels des fabricants n'ont "
-                           "aucune ligne de commande ; OpenRGB parle au "
-                           "materiel lui-meme et couvre la plupart des "
-                           "marques. Il est libre et fonctionne hors ligne.")
+                           "installe. A prendre sur https://openrgb.org "
+                           "(Downloads, Windows 64-bit).")
                 self.window.post("appel",
                                  lambda: self._afficher_rgb([], message))
                 return

@@ -7,7 +7,9 @@ relecture ne les attrape pas, et personne ne pense a les refaire.
 
 Trois obligations reelles :
 
-- OpenRGB (GPLv2) est redistribue : son texte de licence doit l'accompagner ;
+- OpenRGB (GPLv2) n'est PLUS redistribue : ni le depot ni le paquet ne
+  doivent le contenir, sinon son texte de licence redeviendrait du : la
+  regle du .spec est facile a elargir sans y penser ;
 - openrgb-python (GPLv3) est IMPORTE par l'assistant, donc lie : le binaire se
   transmet sous GPLv3, et le code source doit accompagner ce binaire ;
 - ce que l'installateur annonce doit correspondre a ce qu'il livre.
@@ -30,17 +32,37 @@ def test_la_licence_du_projet_existe():
     assert (RACINE / "LICENSE").is_file()
 
 
-def test_le_texte_gplv2_accompagne_openrgb():
-    """OpenRGB est redistribue dans outils/OpenRGB : sa licence l'exige."""
-    licence = RACINE / "outils" / "OpenRGB" / "LICENSE-GPLv2.txt"
-    assert licence.is_file(), "OpenRGB serait redistribue sans sa licence"
+def test_openrgb_n_est_pas_redistribue():
+    """L'application ne transporte plus le binaire d'OpenRGB.
 
-    texte = licence.read_text(encoding="utf-8", errors="replace")
-    assert "GNU GENERAL PUBLIC LICENSE" in texte
-    assert "Version 2, June 1991" in texte
-    assert "END OF TERMS AND CONDITIONS" in texte
-    assert "gitlab.com/CalcProgrammer1/OpenRGB" in texte, (
-        "l'adresse du code source doit figurer")
+    La regle du .spec balaie outils/ en entier : il suffit qu'on retire
+    l'exclusion, ou qu'on renomme le dossier, pour se remettre a distribuer
+    OpenRGB sans s'en apercevoir -- et l'obligation GPLv2 reviendrait avec,
+    en silence, puisque rien ne planterait.
+
+    Une copie portable posee a la main dans outils/OpenRGB/ reste permise :
+    elle sert a CETTE machine et ne part nulle part. Ce qui est verifie ici,
+    c'est le PAQUET.
+    """
+    livre = RACINE / "dist" / "AssistantLocal" / "_internal" / "outils"
+    if not livre.is_dir():
+        return          # rien a verifier tant que l'application n'est pas construite
+
+    intrus = [str(f.relative_to(livre)) for f in livre.rglob("*")
+              if f.is_file() and "openrgb" in str(f.relative_to(livre)).lower()]
+    assert not intrus, (
+        f"OpenRGB est reparti dans le paquet : {intrus}. L'obligation GPLv2 "
+        "revient avec, et personne ne le verra")
+
+
+def test_le_depot_ne_suit_aucun_fichier_openrgb():
+    """Meme raison, cote depot : un `git add -f` malheureux suffirait."""
+    import subprocess
+
+    suivis = subprocess.run(
+        ["git", "ls-files", "outils/OpenRGB"], cwd=RACINE,
+        capture_output=True, text=True).stdout.split()
+    assert not suivis, f"le depot suit a nouveau OpenRGB : {suivis}"
 
 
 def test_le_releve_des_licences_tierces_existe_et_nomme_les_copyleft():

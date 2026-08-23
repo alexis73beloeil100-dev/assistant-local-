@@ -26,9 +26,16 @@ import os as _os
 # bouge d'un octet. Une fausse alerte de decalage a chaque commit d'outillage.
 #
 # Rien dans assistant/ n'importe outils/ : verifie, aucun import.
+#
+# OpenRGB est exclu depuis le 23/08 : l'application ne redistribue plus le
+# binaire de quelqu'un d'autre, et l'installateur perd 32 Mo. L'utilisateur
+# installe OpenRGB lui-meme, ou pose une copie portable dans
+# outils/OpenRGB/ -- rgb.py cherche aux deux endroits et le dit clairement
+# quand il ne trouve rien. La fonction RGB, elle, ne bouge pas.
 if _os.path.isdir('outils'):
     for _racine, _sous, _fichiers in _os.walk('outils'):
-        _sous[:] = [_d for _d in _sous if _d != '__pycache__']
+        _sous[:] = [_d for _d in _sous
+                    if _d not in ('__pycache__', 'OpenRGB')]
         _emporter = [_f for _f in _fichiers
                      if not _f.endswith(('.py', '.pyc', '.pyo'))]
         for _fichier in _emporter:

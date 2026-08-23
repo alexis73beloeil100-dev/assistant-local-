@@ -56,22 +56,28 @@ tels, pris isolément. C'est l'assemblage qui se transmet sous GPLv3.
 
 ---
 
-## OpenRGB — GPLv2
+## OpenRGB — GPLv2, et il n'est plus distribué
 
-`outils/OpenRGB/` contient l'exécutable OpenRGB et ses bibliothèques Qt5.
-C'est le seul composant sous licence **copyleft forte** du lot, et le seul qui
-impose des obligations à la redistribution :
+**Depuis le 23/08/2026, l'application ne contient plus OpenRGB.** Ni le dépôt
+ni le paquet ne le transportent : qui veut piloter son éclairage l'installe
+lui-même depuis <https://openrgb.org>, ou pose sa version portable dans
+`outils/OpenRGB/`, où l'assistant va la chercher.
 
-- le texte de la licence doit accompagner le binaire — il est desormais
-  dans [`outils/OpenRGB/LICENSE-GPLv2.txt`](outils/OpenRGB/LICENSE-GPLv2.txt),
-  qui manquait jusqu'au 22/08/2026 ;
-- le code source doit rester accessible aux destinataires. Il l'est chez son
-  auteur : <https://gitlab.com/CalcProgrammer1/OpenRGB>.
+Il n'y a donc plus aucune obligation de redistribution à tenir de ce côté —
+ni texte de licence à joindre, ni source à rendre accessible. Deux tests le
+gardent, un par frontière : `test_openrgb_n_est_pas_redistribue` surveille le
+paquet, `test_le_depot_ne_suit_aucun_fichier_openrgb` surveille le dépôt. La
+règle du `.spec` balaie `outils/` en entier, et il suffirait d'en retirer
+l'exclusion pour recommencer à distribuer sans que rien ne plante.
 
-**Cela ne contamine pas le code de l'assistant.** OpenRGB est lancé comme un
-programme séparé, dans son propre processus, et l'assistant lui parle par son
-protocole réseau local. C'est ce que la GPL appelle une simple agrégation :
-les deux œuvres voyagent ensemble sans se lier. L'assistant reste MIT.
+Sa licence reste citée ici parce que le programme reste **nécessaire** au
+fonctionnement de l'éclairage — il est simplement fourni par l'utilisateur.
+Son code source est chez son auteur :
+<https://gitlab.com/CalcProgrammer1/OpenRGB>.
+
+Cela n'a de toute façon jamais contaminé le code de l'assistant : OpenRGB
+tourne dans son propre processus et l'assistant lui parle par son protocole
+réseau local. C'est `openrgb-python`, ci-dessus, qui pose le vrai problème.
 
 Ce qu'il ne faut *pas* faire sans revoir la question : intégrer du code
 OpenRGB dans l'assistant, ou lier ses bibliothèques directement.
