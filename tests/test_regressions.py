@@ -1798,3 +1798,52 @@ def test_lire_un_materiel_n_utilise_que_les_champs_du_client_maison():
     assert respiration.couleur and not respiration.par_led
     assert respiration.vitesse == (0, 5, 2)
     assert respiration.luminosite == (0, 100, 80)
+
+
+def test_une_erreur_interne_du_rgb_ne_s_annonce_pas_comme_une_panne_reseau(
+        monkeypatch):
+    """Le message accusait le serveur sans que personne ait verifie.
+
+    Toutes les erreurs de lecture RGB sortaient en "Serveur OpenRGB
+    injoignable : <erreur>". Le 23/08/2026, un `mode.name` oublie dans
+    `_lire` apres le passage au client maison s'est donc annonce "Serveur
+    OpenRGB injoignable : AttributeError: 'Mode' object has no attribute
+    'name'" alors que le serveur repondait parfaitement. Le diagnostic est
+    parti vers le reseau et la tache planifiee pendant que le defaut tenait
+    dans une ligne de code.
+
+    Ici la fabrique de client leve une AttributeError -- une panne de code,
+    pas de liaison. Le message doit dire que la lecture a echoue et montrer
+    l'erreur, sans accuser le serveur. Une vraie erreur de liaison, elle,
+    doit continuer a l'accuser.
+    """
+    from assistant.skills import openrgb_protocole as protocole
+    from assistant.skills import rgb
+
+    monkeypatch.setattr(rgb, "disponible", lambda: True)
+    monkeypatch.setattr(rgb, "demarrer_serveur", lambda *a, **k: (True, ""))
+    monkeypatch.setattr(rgb, "concurrents_actifs", lambda: [])
+
+    def bug_dans_le_code():
+        raise AttributeError("'Mode' object has no attribute 'name'")
+
+    monkeypatch.setattr(rgb, "_client", bug_dans_le_code)
+
+    _, erreur = rgb.peripheriques()
+    assert "injoignable" not in erreur.lower(), erreur
+    assert "AttributeError" in erreur
+    assert "no attribute 'name'" in erreur
+
+    assert "injoignable" not in rgb.changer_mode("statique").lower()
+    assert "injoignable" not in rgb.appliquer(mode="statique").lower()
+
+    # Une vraie panne de liaison, elle, garde son diagnostic.
+    for panne in (protocole.ErreurOpenRGB("connexion refusee"),
+                  OSError("la prise a ete fermee"),
+                  TimeoutError("le serveur ne repond plus")):
+        def liaison_rompue(erreur=panne):
+            raise erreur
+
+        monkeypatch.setattr(rgb, "_client", liaison_rompue)
+        _, erreur = rgb.peripheriques()
+        assert "injoignable" in erreur.lower(), erreur
