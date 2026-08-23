@@ -202,7 +202,7 @@ def construire(destination: Path) -> Path:
     # ------------------------------------------------------- fait recemment
     F.append(Paragraph("2. Ce qui vient d'etre fait", s["section"]))
 
-    F.append(Paragraph("Version 1.0.1, et tout est aligne", s["sous_section"]))
+    F.append(Paragraph("Version 1.0.2, et tout est aligne", s["sous_section"]))
     F.append(Paragraph(
         "Sources, executable et installateur portent le meme numero. Un test "
         "verifie que <font face='Courier'>installateur.iss</font> et "
