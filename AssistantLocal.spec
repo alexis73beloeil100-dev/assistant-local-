@@ -74,14 +74,14 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 hiddenimports += ['win32com', 'win32com.client', 'pythoncom', 'pywintypes',
                   'win32api', 'win32gui', 'win32con']
 
-# Le SDK officiel d'OpenRGB. Importe a l'interieur des fonctions, donc
-# invisible a l'analyse statique -- meme piege que pour pywin32 et pour le
-# paquet assistant lui-meme. Sans lui, l'executable se construit sans erreur
-# et l'eclairage RGB cesse de fonctionner en silence.
-hiddenimports += ['openrgb', 'openrgb.orgb', 'openrgb.utils',
-                  'openrgb.network', 'openrgb.consts']
-tmp_ret = collect_all('openrgb')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# openrgb-python n'est plus utilise depuis le 23/08/2026, et surtout il ne
+# doit plus etre LIVRE : il est sous GPLv3. Il etait force ici en import cache
+# et collecte en entier, du temps ou rgb.py l'importait a l'interieur de ses
+# fonctions, invisible a l'analyse statique.
+#
+# Il reste installe dans le .venv -- une dependance d'hier ne s'en va pas
+# toute seule -- et PyInstaller le ramassait donc encore. L'exclusion
+# ci-dessous est la seule chose qui l'en empeche.
 tmp_ret = collect_all('win32com')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
@@ -95,7 +95,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['openrgb'],
     noarchive=False,
     optimize=0,
 )

@@ -129,6 +129,26 @@ def test_le_source_n_est_plus_joint_au_binaire():
     assert not archives, f"le source est de nouveau livre : {archives}"
 
 
+def test_la_bibliotheque_gpl_n_est_pas_livree():
+    """Ne pas l'importer ne suffit pas : il faut ne pas la LIVRER.
+
+    Le .spec la forcait en import cache et la collectait en entier, du temps
+    ou rgb.py l'importait dans ses fonctions. Retirer l'import de rgb.py a
+    donc laisse openrgb-python dans le paquet : le code n'y etait plus lie,
+    mais l'application redistribuait toujours une bibliotheque GPLv3.
+
+    Elle reste installee dans le .venv, donc PyInstaller peut la reprendre
+    des qu'un import la rend visible. C'est ce test qui s'en apercevrait.
+    """
+    if not LIVRE.is_dir():
+        return          # rien a verifier tant que l'application n'est pas construite
+
+    intrus = [str(f.relative_to(LIVRE))
+              for f in (LIVRE / "_internal").glob("openrgb*")]
+    assert not intrus, (
+        f"openrgb-python (GPLv3) est livre avec l'application : {intrus}")
+
+
 def test_le_dossier_livre_emporte_les_licences():
     """Ce qui compte n'est pas ce qu'il y a au depot, mais ce qui s'installe.
 
