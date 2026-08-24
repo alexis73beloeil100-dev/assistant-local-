@@ -1,12 +1,12 @@
 """Base d'index : schema SQLite + requetes de recherche.
 
-Par defaut l'index vit en memoire vive et rien n'est ecrit sur le disque :
-aucune liste de tes fichiers ne subsiste apres la fermeture de l'assistant.
-Voir config.PERSIST_INDEX pour repasser sur un fichier si tu preferes un
-demarrage instantane.
+Depuis le 24/08/2026, l'index est CONSERVE sur le disque : le demarrage est
+immediat au lieu de couter quatre-vingts secondes de scan. Voir
+config.PERSIST_INDEX, qui permet de revenir a l'index en memoire vive.
 
-Dans tous les cas l'index ne contient que des chemins, des tailles et des
-dates. Aucun contenu de fichier n'est jamais lu.
+La liste des fichiers subsiste donc apres la fermeture, ce qui n'etait pas le
+cas avant. Elle ne contient que des chemins, des tailles et des dates :
+aucun contenu de fichier n'est jamais lu ni conserve.
 """
 from __future__ import annotations
 

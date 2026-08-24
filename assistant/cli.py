@@ -144,8 +144,8 @@ def repl() -> None:
     if db.is_ready():
         print(f"  {files.index_status().splitlines()[0]}")
     else:
-        print("  Fichiers : scan en cours en tache de fond, "
-              "rien n'est ecrit sur le disque.")
+        print("  Fichiers : scan en cours en tache de fond. "
+              "L'index est conserve pour les lancements suivants.")
         scanner.rebuild_in_background(
             on_done=lambda s: print(
                 f"\n  [fichiers] {s.get('files', 0):,} fichiers connus, "

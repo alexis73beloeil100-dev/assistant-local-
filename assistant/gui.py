@@ -927,8 +927,9 @@ class AssistantWindow(tk.Tk):
             self.post("info", hardware.summary())
 
             # L'inventaire logiciel : ce qui est installe, les services, les
-            # taches, les pilotes. Comme le reste, il vit en memoire vive et
-            # se refait a chaque demarrage -- rien n'est ecrit sur le disque.
+            # taches, les pilotes. Le RELEVE se refait a chaque demarrage --
+            # un logiciel desinstalle hier ne doit pas reapparaitre -- mais ce
+            # qu'il verse dans la connaissance, lui, est conserve.
             self.post("status", ("Inventaire logiciel", t.AMBER))
             apprentissage.tout_apprendre()
             self.post("info", connaissance.rapport().splitlines()[0])

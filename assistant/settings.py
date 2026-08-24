@@ -2,7 +2,7 @@
 
 Un tout petit fichier JSON, et rien d'autre : le modele choisi a
 l'installation, le micro selectionne, la voix activee ou non. Aucune donnee
-personnelle, aucune liste de fichiers -- l'index reste en memoire vive.
+personnelle dictee a l'assistant.
 
 Sans ce fichier, l'installateur pouvait telecharger un modele que
 l'application n'utilisait jamais, parce que le nom du modele etait fige dans

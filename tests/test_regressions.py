@@ -3959,3 +3959,52 @@ def test_une_erreur_s_affiche_en_bandeau_pas_en_texte_rouge():
     from assistant.widgets import Bandeau
 
     assert hasattr(Bandeau, "set_wrap")
+
+def test_aucun_module_n_annonce_encore_une_memoire_volatile():
+    """L'assistant repondait encore qu'il oublie tout a la fermeture.
+
+    Le prompt systeme avait ete corrige le 24/08/2026, mais pas les textes que
+    le modele LIT : connaissance.rapport() annoncait "en memoire vive
+    uniquement", l'inventaire "se refait a chaque demarrage, rien n'est ecrit
+    sur le disque", le panneau Fichiers de meme. Le modele repetait
+    fidelement ce qu'on lui donnait a lire, et decrivait a l'utilisateur un
+    fonctionnement qui n'existait plus.
+
+    Corriger le prompt sans corriger les sources qu'il cite ne sert a rien :
+    c'est la deuxieme qui gagne, parce qu'elle arrive dans la conversation
+    apres.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    perimees = (
+        "en memoire vive uniquement",
+        "disparait a la fermeture de l'application",
+        "rien n'est ecrit sur le disque",
+    )
+
+    coupables = []
+    for fichier in (racine / "assistant").rglob("*.py"):
+        texte = fichier.read_text(encoding="utf-8", errors="replace")
+        for ligne_num, ligne in enumerate(texte.splitlines(), 1):
+            # config.py et connaissance.py DECRIVENT le choix et son histoire :
+            # ils ont le droit de nommer l'ancien fonctionnement.
+            if fichier.name in ("config.py", "connaissance.py"):
+                continue
+            for phrase in perimees:
+                if phrase in ligne:
+                    coupables.append(f"{fichier.name}:{ligne_num} {phrase}")
+
+    assert not coupables, (
+        "ces textes annoncent une memoire volatile que l'application n'a "
+        "plus :\n  " + "\n  ".join(coupables))
+
+
+def test_le_rapport_de_connaissance_annonce_la_conservation():
+    """C'est la premiere phrase que le modele lit sur sa propre memoire."""
+    from assistant import connaissance
+
+    connaissance.apprendre("materiel", "processeur", "Ryzen 7 5800X")
+    rapport = connaissance.rapport()
+    assert "memoire vive" not in rapport
+    assert "session a l'autre" in rapport

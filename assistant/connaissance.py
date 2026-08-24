@@ -380,8 +380,8 @@ def rapport(mots: str = "", limite: int = 40) -> str:
         return ("Rien encore appris. La connaissance se construit au "
                 "demarrage, en tache de fond.")
 
-    lignes = [f"{total()} faits connus sur cette machine, "
-              "en memoire vive uniquement.", ""]
+    lignes = [f"{total()} faits connus sur cette machine, conserves d'une "
+              "session a l'autre.", ""]
     for sujet, nombre in compte.items():
         lignes.append(f"  {sujet:<16} {nombre}")
     lignes.append("")

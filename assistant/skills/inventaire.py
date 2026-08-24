@@ -3,9 +3,11 @@
 Complete le releve materiel (hardware.py) et l'index des fichiers : logiciels
 installes, services, taches planifiees, pilotes tiers, navigateurs.
 
-Comme tout le reste, **rien n'est ecrit sur le disque**. L'inventaire est
-relu a chaque demarrage, en tache de fond, et range dans
-assistant.connaissance, qui vit en memoire vive.
+L'inventaire lui-meme est REFAIT a chaque demarrage, en tache de fond : c'est
+un releve de l'etat present, et un logiciel desinstalle hier ne doit pas
+reapparaitre aujourd'hui. Ce qu'il trouve est range dans
+assistant.connaissance, qui, elle, est conservee d'une session a l'autre --
+un releve frais y remplace simplement le precedent.
 
 Le releve passe par un seul script PowerShell, pour la meme raison que le
 releve materiel : quinze interrogations separees feraient attendre le
@@ -524,6 +526,6 @@ def resume() -> str:
     lignes.append("")
     lignes.append(f"  {len(actifs)} service(s) en cours d'execution")
     lignes.append("")
-    lignes.append("Rien n'est ecrit sur le disque : cet inventaire vit en")
-    lignes.append("memoire et se refait a chaque demarrage.")
+    lignes.append("Cet inventaire est refait a chaque demarrage : c'est un")
+    lignes.append("releve de l'etat present, pas un souvenir.")
     return "\n".join(lignes)

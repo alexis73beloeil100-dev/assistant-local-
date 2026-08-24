@@ -214,8 +214,8 @@ def _fichiers() -> str:
     L.append("")
     L.append("  " + watcher.status())
     L.append("")
-    L.append("  Rien n'est ecrit sur le disque : cet index vit en memoire vive")
-    L.append("  et disparait a la fermeture de l'application.")
+    L.append("  L'index est conserve d'un lancement a l'autre : le demarrage")
+    L.append("  est immediat, et un scan complet est refait au bout de sept jours.")
 
     # Repartition par type : ce qui compose vraiment un disque.
     conn = db.connect()

@@ -53,7 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     if db.is_ready():
         print(f"  Fichiers : {files.index_status().splitlines()[0]}")
     else:
-        print("  Fichiers : scan en memoire en cours, rien n'est ecrit sur le disque")
+        print("  Fichiers : scan en cours. L'index est conserve pour les "
+              "lancements suivants.")
         scanner.rebuild_in_background(
             on_done=lambda s: print(
                 f"  Fichiers : {s.get('files', 0):,} fichiers connus".replace(",", " ")
