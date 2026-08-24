@@ -479,3 +479,51 @@ def _looks_tabular(text: str) -> bool:
         return False
     indented = sum(1 for line in lines if line.startswith("  "))
     return indented >= len(lines) // 2
+
+
+class Bandeau(tk.Frame):
+    """Un avertissement structure, la ou il n'y avait qu'un texte colore.
+
+    Un message important ecrit en jaune au milieu du reste se lit comme du
+    decor : rien ne le separe de ce qui l'entoure, et l'oeil finit par le
+    sauter. C'est ce qui arrivait a l'alerte de conflit RGB -- la seule ligne
+    qui explique pourquoi les LED ne repondent pas.
+
+    Le bandeau lui donne un cadre : un liseré de couleur a gauche, un fond
+    legerement detache, un titre court et une explication. Le fond reste
+    SOMBRE et le texte clair -- l'inverse, un pave orange vif dans une
+    interface sombre, eblouit et se lit moins bien qu'un texte simple.
+
+    Trois tons seulement. Au-dela, la couleur cesse de signifier quelque chose.
+    """
+
+    TONS = {
+        "info": (t.ACCENT, "Information"),
+        "alerte": (t.AMBER, "Attention"),
+        "erreur": (t.RED, "Probleme"),
+    }
+
+    def __init__(self, parent, texte: str, ton: str = "alerte",
+                 titre: str = "", action=None, libelle_action: str = ""):
+        couleur, defaut = self.TONS.get(ton, self.TONS["alerte"])
+        super().__init__(parent, bg=t.SURFACE, highlightthickness=1,
+                         highlightbackground=t.BORDER)
+
+        # Le liseré porte la couleur, pas le fond. Trois pixels suffisent a
+        # distinguer un avertissement d'une erreur du coin de l'oeil.
+        tk.Frame(self, bg=couleur, width=3).pack(side="left", fill="y")
+
+        corps = tk.Frame(self, bg=t.SURFACE)
+        corps.pack(side="left", fill="both", expand=True,
+                   padx=t.PAD_L, pady=t.PAD)
+
+        tk.Label(corps, text=t.espacer(titre or defaut), bg=t.SURFACE,
+                 fg=couleur, font=t.FONT_HUD, anchor="w").pack(fill="x")
+        tk.Label(corps, text=texte, bg=t.SURFACE, fg=t.TEXT,
+                 font=t.FONT_UI_SMALL, anchor="w", justify="left",
+                 wraplength=560).pack(fill="x", pady=(2, 0))
+
+        if action is not None:
+            RoundButton(corps, libelle_action or "Corriger", action,
+                        width=132, bg=t.SURFACE_2,
+                        hover_bg=t.BORDER).pack(anchor="w", pady=(t.PAD, 0))

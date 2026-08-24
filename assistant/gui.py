@@ -35,6 +35,13 @@ from assistant.widgets import (Message, NavCell, PulseRing, RoundButton,
 
 TITLE = "Assistant local"
 SUBTITLE = "tout reste sur cette machine"
+
+# Affiche a cote du numero de version, dans l'en-tete.
+#
+# L'application est distribuee et installee sur de vraies machines : celui qui
+# l'ouvre a besoin de savoir qu'elle bouge encore, sans quoi chaque defaut
+# passe pour un defaut d'un produit fini.
+ACCES_ANTICIPE = "acces anticipe"
 CHAT_KEY = "conversation"
 
 # Barre laterale : trois colonnes de 62 px, plus la barre de defilement et les
@@ -224,8 +231,31 @@ class AssistantWindow(tk.Tk):
                  bg=t.SURFACE, fg=t.TEXT_FAINT,
                  font=t.FONT_UI_SMALL).pack(side="left", pady=t.PAD_L)
 
+        # "Acces anticipe", en pastille plutot qu'en texte a la suite.
+        #
+        # Ecrite dans le meme gris que le reste, la mention se serait fondue
+        # dans la ligne et n'aurait rien annonce. Elle dit a qui ouvre
+        # l'application que ce qu'il voit peut encore bouger : c'est une
+        # promesse en moins, pas une decoration.
+        pastille = tk.Frame(left, bg=t.ACCENT_SOFT, highlightthickness=1,
+                            highlightbackground=t.ACCENT_DEEP)
+        pastille.pack(side="left", padx=(t.PAD, 0), pady=t.PAD_L)
+        tk.Label(pastille, text=ACCES_ANTICIPE, bg=t.ACCENT_SOFT,
+                 fg=t.ACCENT, font=t.FONT_HUD).pack(padx=t.PAD, pady=1)
+
         right = tk.Frame(header, bg=t.SURFACE)
         right.pack(side="right", padx=t.PAD_L)
+
+        # Signaler un probleme depuis l'endroit ou on le rencontre.
+        #
+        # Un defaut qui n'est pas remonte n'est pas corrige, et la distance
+        # entre "ca ne marche pas" et un rapport utilisable decourage a peu
+        # pres tout le monde : retrouver une version, dire quel Windows,
+        # expliquer ce qu'on faisait. Le bouton fait ce travail a la place.
+        RoundButton(right, "Support", self.ouvrir_le_support, width=104,
+                    bg=t.SURFACE_2, hover_bg=t.BORDER).pack(
+            side="right", padx=(t.PAD_L, 0))
+
         self.status_text = tk.StringVar(value="Demarrage")
         tk.Label(right, textvariable=self.status_text, bg=t.SURFACE,
                  fg=t.TEXT_DIM, font=t.FONT_UI_SMALL).pack(
@@ -1261,6 +1291,78 @@ class AssistantWindow(tk.Tk):
         from assistant import safety
 
         safety.set_asker(self._demander_accord)
+
+    def ouvrir_le_support(self) -> None:
+        """Fenetre de signalement : ce qu'on a vu, et ce qui sera joint.
+
+        Le contexte technique est AFFICHE, pas seulement annonce. Un rapport
+        assemble dans le dos de la personne qui le signe est exactement ce
+        qu'on ne veut pas -- et le depot est public, donc ce qui part y reste.
+        """
+        from assistant import support
+
+        dialogue = tk.Toplevel(self)
+        dialogue.title("Signaler un probleme")
+        dialogue.configure(bg=t.BG)
+        dialogue.transient(self)
+
+        cadre = tk.Frame(dialogue, bg=t.BG)
+        cadre.pack(fill="both", expand=True, padx=t.PAD_XL, pady=t.PAD_L)
+
+        tk.Label(cadre, text=t.espacer("signaler un probleme"), bg=t.BG,
+                 fg=t.ACCENT_DEEP, font=t.FONT_HUD, anchor="w").pack(
+            fill="x", pady=(0, t.PAD))
+        tk.Label(cadre, text="Qu'est-ce qui s'est passe ? Ce que tu faisais, "
+                             "ce que tu attendais, ce qui est arrive.",
+                 bg=t.BG, fg=t.TEXT_DIM, font=t.FONT_UI_SMALL, anchor="w",
+                 justify="left", wraplength=560).pack(fill="x")
+
+        saisie = tk.Text(cadre, height=7, bg=t.SURFACE_2, fg=t.TEXT,
+                         insertbackground=t.ACCENT, relief="flat",
+                         font=t.FONT_INPUT, wrap="word",
+                         highlightthickness=1, highlightbackground=t.BORDER)
+        saisie.pack(fill="x", pady=t.PAD)
+        saisie.focus_set()
+
+        joindre = tk.BooleanVar(value=True)
+        technique = support.contexte()
+        tk.Checkbutton(
+            cadre, variable=joindre, bg=t.BG, fg=t.TEXT_DIM,
+            selectcolor=t.SURFACE_2, activebackground=t.BG,
+            activeforeground=t.TEXT, font=t.FONT_UI_SMALL, anchor="w",
+            text="Joindre les informations ci-dessous").pack(fill="x")
+
+        tk.Label(cadre, text=technique, bg=t.SURFACE, fg=t.TEXT_FAINT,
+                 font=t.FONT_MONO, anchor="w", justify="left",
+                 wraplength=560).pack(fill="x", pady=(4, t.PAD))
+
+        etat = tk.Label(cadre, text="Le formulaire s'ouvrira dans ton "
+                                    "navigateur : rien n'est envoye tant que "
+                                    "tu n'as pas publie.",
+                        bg=t.BG, fg=t.TEXT_FAINT, font=t.FONT_UI_TINY,
+                        anchor="w", justify="left", wraplength=560)
+        etat.pack(fill="x")
+
+        def envoyer() -> None:
+            texte = saisie.get("1.0", "end").strip()
+            if not texte:
+                etat.configure(text="Ecris d'abord ce qui s'est passe.",
+                               fg=t.AMBER)
+                return
+            etat.configure(text=support.ouvrir(texte, joindre.get()),
+                           fg=t.TEXT_FAINT)
+            dialogue.after(1200, dialogue.destroy)
+
+        boutons = tk.Frame(cadre, bg=t.BG)
+        boutons.pack(fill="x", pady=(t.PAD_L, 0))
+        RoundButton(boutons, "Ouvrir le formulaire", envoyer, width=190,
+                    bg=t.ACCENT, fg="#0b1220",
+                    hover_bg="#79b4ff").pack(side="left")
+        RoundButton(boutons, "Annuler", dialogue.destroy, width=104,
+                    bg=t.SURFACE_2, hover_bg=t.BORDER).pack(side="left",
+                                                            padx=(t.PAD, 0))
+
+        dialogue.grab_set()
 
     def _demander_accord(self, texte: str) -> bool:
         """Appele depuis un thread de travail : marshale vers le fil principal.

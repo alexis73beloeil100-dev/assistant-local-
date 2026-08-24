@@ -3715,3 +3715,146 @@ def test_le_panneau_suit_le_journal_au_lieu_d_attendre():
     code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
     assert "progression" in code
     assert "self.after(" in code, "le suivi doit se replanifier"
+
+# --- Lisibilite et signalement ----------------------------------------------
+
+def _contraste(avant: str, arriere: str) -> float:
+    """Rapport de contraste WCAG entre deux couleurs hexadecimales."""
+    def luminance(hexa: str) -> float:
+        hexa = hexa.lstrip("#")
+        canaux = [int(hexa[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        canaux = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+                  for c in canaux]
+        return 0.2126 * canaux[0] + 0.7152 * canaux[1] + 0.0722 * canaux[2]
+
+    a, b = luminance(avant), luminance(arriere)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+def test_chaque_couleur_de_texte_est_lisible_sur_chaque_fond():
+    """Mesure, pas impression.
+
+    TEXT_FAINT donnait 4.23 sur SURFACE et 3.63 sur SURFACE_2, sous les 4.5
+    exiges par WCAG pour du texte normal -- et c'est la couleur des
+    explications sous les libelles, donc precisement ce qu'on lit quand on ne
+    sait pas quoi faire. C'etait la seule du theme a ne pas passer.
+    """
+    from assistant import theme as t
+
+    fonds = {"BG": t.BG, "SURFACE": t.SURFACE, "SURFACE_2": t.SURFACE_2}
+    textes = {"TEXT": t.TEXT, "TEXT_DIM": t.TEXT_DIM, "TEXT_FAINT": t.TEXT_FAINT}
+
+    for nom_texte, avant in textes.items():
+        for nom_fond, arriere in fonds.items():
+            rapport = _contraste(avant, arriere)
+            assert rapport >= 4.5, (
+                f"{nom_texte} sur {nom_fond} : {rapport:.2f}, il faut 4.5")
+
+
+def test_un_bouton_actif_porte_un_texte_sombre():
+    """Blanc sur cyan donne 1.78 : illisible.
+
+    L'accent est clair ; ce qui s'ecrit dessus doit etre sombre. Le texte
+    sombre sur ce meme cyan donne 10.51.
+    """
+    from assistant import theme as t
+
+    assert _contraste("#FFFFFF", t.ACCENT) < 3, (
+        "si ce rapport devenait bon, l'accent aurait ete assombri")
+    assert _contraste("#0b1220", t.ACCENT) >= 7
+
+
+def test_les_libelles_de_la_barre_laterale_sont_ecrits_en_francais():
+    """"Su" et "Sante" ne veulent rien dire.
+
+    Une abreviation qu'il faut deviner annule le benefice d'avoir range les
+    panneaux : on cherche quand meme.
+    """
+    from assistant import panels
+
+    courts = {p.court for p in panels.PANELS if p.court}
+    assert "Su" not in courts, "abreviation illisible"
+    assert "Sante" not in courts and "Santé" in courts
+    assert "Suivi" in courts
+    assert "Téléphone" in courts
+
+    for panneau in panels.PANELS:
+        assert len(panneau.court or panneau.label) <= 11, (
+            f"{panneau.key} : libelle trop long pour la cellule")
+
+
+def test_le_bandeau_distingue_trois_tons_et_reste_sombre():
+    """Un pave orange vif dans une interface sombre eblouit.
+
+    Le liseré porte la couleur, le fond reste celui des cartes : c'est ce qui
+    rend un avertissement visible sans le rendre agressif.
+    """
+    from assistant import theme as t
+    from assistant.widgets import Bandeau
+
+    assert set(Bandeau.TONS) == {"info", "alerte", "erreur"}
+    for ton, (couleur, _titre) in Bandeau.TONS.items():
+        assert _contraste(couleur, t.SURFACE) >= 4.5, ton
+
+
+def test_le_support_n_envoie_rien_tout_seul():
+    """Un rapport assemble dans le dos de la personne qui le signe.
+
+    Il emporterait un nom de machine et des chemins vers un depot PUBLIC.
+    L'application ouvre donc un formulaire pre-rempli : la personne lit,
+    corrige, publie -- ou renonce.
+
+    Aucun identifiant ne transite non plus : une application qui detiendrait
+    une cle capable d'ecrire chez son auteur ne devrait pas etre installee.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant import support
+
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(support)))
+    code = ast.unparse(arbre)
+
+    for interdit in ("smtplib", "requests.post", "urlopen", "api_key",
+                     "token", "password"):
+        assert interdit not in code, (
+            f"{interdit} dans support.py : le rapport partirait tout seul")
+
+    lien = support.lien_du_rapport("Le RGB ne repond plus", "Version : 1.0.3")
+    assert lien.startswith("https://github.com/")
+    assert "issues/new?" in lien
+    assert "RGB" in lien
+
+
+def test_le_rapport_ne_part_pas_tronque_en_silence():
+    """Les navigateurs coupent une adresse trop longue sans le dire.
+
+    Le rapport arriverait ampute, avec la partie technique manquante et
+    personne pour s'en apercevoir.
+    """
+    from assistant import support
+
+    enorme = "x" * 20000
+    lien = support.lien_du_rapport("Probleme", enorme, joindre=True)
+    assert len(lien) > 8000, "le test doit bien produire un lien trop long"
+
+    # ouvrir() bascule sur la version sans contexte plutot que de tronquer.
+    import ast
+    import inspect
+    import textwrap
+
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(support.ouvrir)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+    assert "8000" in code
+
+
+def test_l_entete_annonce_l_acces_anticipe():
+    """Sans cette mention, chaque defaut passe pour celui d'un produit fini."""
+    from assistant import gui
+
+    assert "anticipe" in gui.ACCES_ANTICIPE.lower()
+    source = inspect_source = __import__("inspect").getsource(
+        gui.AssistantWindow._build_header)
+    assert "ACCES_ANTICIPE" in source
+    assert "Support" in source, "le bouton de signalement doit etre dans l'entete"

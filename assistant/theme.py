@@ -36,7 +36,12 @@ BORDER      = "#2A414C"   # traits fins, visibles sans etre durs
 
 TEXT        = "#E2F0F5"   # texte principal
 TEXT_DIM    = "#9BB6C2"   # remonte : l'ancien gris etait trop efface
-TEXT_FAINT  = "#66838F"
+# Remonte le 24/08/2026, apres mesure. L'ancien #66838F donnait 4.23 sur
+# SURFACE et 3.63 sur SURFACE_2, sous les 4.5 exiges par WCAG pour du texte
+# normal. C'etait la SEULE couleur du theme a ne pas passer -- et c'est celle
+# des explications sous les libelles, donc precisement le texte qu'on lit
+# quand on ne sait pas quoi faire.
+TEXT_FAINT  = "#7895A1"   # 5.89 / 5.38 / 4.61 sur BG / SURFACE / SURFACE_2
 
 ACCENT      = "#4FD3E6"   # cyan desature : le meme registre, sans le halo
 ACCENT_SOFT = "#12303A"   # fond du cyan
