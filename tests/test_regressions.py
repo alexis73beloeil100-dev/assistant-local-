@@ -4151,3 +4151,53 @@ def test_la_fenetre_reapparait_meme_si_l_ecran_meurt():
     assert "self.withdraw()" in bloc
     assert "self.after(10000, self._montrer_la_fenetre)" in bloc, (
         "sans filet, un ecran mort laisse l'application invisible")
+
+def test_l_ecran_dure_le_temps_de_la_video_pas_celui_du_decodage():
+    """Une video de 6,2 s qui s'etirait au-dela de 10.
+
+    La premiere boucle affichait une image par tick et ATTENDAIT quand la file
+    etait vide : la duree de l'ecran valait donc celle du decodage. Mesure au
+    demarrage reel -- les 42 images par seconde tombent sous 30 quand
+    l'inventaire, Ollama et PyInstaller travaillent en meme temps.
+
+    L'affichage suit desormais l'horloge et JETTE les images depassees. Une
+    video qui saute quelques images reste une video de six secondes ; une
+    video qui s'etire devient une attente. Mesure apres correction : 7,0 s
+    entre le lancement et la fenetre, dont le demarrage de Python.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.demarrage import EcranDeChargement
+
+    arbre = ast.parse(textwrap.dedent(
+        inspect.getsource(EcranDeChargement._afficher)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+
+    assert "time.monotonic()" in code, (
+        "sans horloge, la duree redevient celle du decodage")
+    assert "IMAGES_PAR_SECONDE" in code
+    assert "while" in code, "il faut pouvoir jeter plusieurs images en retard"
+
+
+def test_le_redimensionnement_ne_passe_pas_par_python():
+    """La partie la plus couteuse de la boucle.
+
+    PIL redimensionne en Python ; PyAV le fait faire a ffmpeg, en C. C'est ce
+    qui rendait les images de marge qui manquaient au demarrage.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.demarrage import EcranDeChargement
+
+    # _sans_docstring, et pas un decoupage a l'aveugle de la premiere
+    # instruction : _decoder n'a PAS de docstring, et la retirer emportait
+    # tout le corps. Le test s'executait alors sur une chaine vide -- il
+    # aurait aussi bien valide l'inverse de ce qu'il verifie.
+    code = _sans_docstring(EcranDeChargement._decoder)
+
+    assert "reformat(" in code
+    assert ".resize(" not in code, "PIL redimensionnerait en Python"

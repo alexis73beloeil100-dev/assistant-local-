@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 
@@ -40,6 +41,14 @@ LARGEUR, HAUTEUR = 718, 546
 # Images d'avance que le decodeur garde. Trop peu, et un a-coup de charge fait
 # saccader ; trop, et on garde des dizaines d'images en memoire pour rien.
 AVANCE = 45
+
+# Cadence de la video, et pas de la boucle d'affichage : c'est elle qui
+# dit quelle image le temps ecoule reclame.
+IMAGES_PAR_SECONDE = 30
+
+# Periode du reveil. Plus court que 1/30 s pour ne pas ajouter sa propre
+# derive a celle du decodage.
+TICK = 16
 
 
 def video_de_demarrage() -> Path | None:
@@ -86,6 +95,8 @@ class EcranDeChargement(tk.Toplevel):
         self._pret = False
         self._chemin = chemin
         self._a_la_fin = a_la_fin
+        self._depart = time.monotonic()
+        self._rendues = 0
 
         threading.Thread(target=self._decoder, daemon=True).start()
         self.after(0, self._afficher)
@@ -98,8 +109,15 @@ class EcranDeChargement(tk.Toplevel):
             from PIL import ImageTk
 
             with av.open(str(self._chemin)) as conteneur:
-                for image in conteneur.decode(conteneur.streams.video[0]):
-                    petite = image.to_image().resize((LARGEUR, HAUTEUR))
+                flux = conteneur.streams.video[0]
+                # Le redimensionnement passe par PyAV (donc par ffmpeg, en C)
+                # plutot que par PIL : c'est la partie la plus couteuse de la
+                # boucle, et la faire en Python coutait les images de marge
+                # qui manquaient au demarrage.
+                for image in conteneur.decode(flux):
+                    petite = image.reformat(
+                        width=LARGEUR, height=HAUTEUR, format="rgb24"
+                    ).to_image()
                     # PhotoImage doit etre construit sur le fil graphique en
                     # theorie ; en pratique Tk l'accepte ici et c'est ce qui
                     # permet de tenir les 30 images par seconde. On ne fait
@@ -112,22 +130,39 @@ class EcranDeChargement(tk.Toplevel):
     # --- affichage, sur le fil graphique -----------------------------------
 
     def _afficher(self) -> None:
-        try:
-            image = self._images.get_nowait()
-        except queue.Empty:
-            # Le decodeur a pris du retard : on garde l'image courante plutot
-            # que d'afficher un trou noir.
-            self.after(33, self._afficher)
-            return
+        """Affiche l'image que l'HORLOGE reclame, pas la suivante de la file.
 
-        if image is None:
-            self._finie = True
-            self._peut_ceder()
-            return
+        Premiere version fautive : une image par tick, et on attendait quand
+        la file etait vide. La duree de l'ecran valait alors celle du
+        DECODAGE, pas celle de la video. Mesure au demarrage reel : les 42
+        images par seconde tombent sous 30 quand l'inventaire, Ollama et
+        PyInstaller travaillent en meme temps, et une video de 6,2 s s'etirait
+        au-dela de 10.
 
-        self._derniere = image        # retenue, sinon Tk la ramasse
-        self._toile.configure(image=image)
-        self.after(33, self._afficher)
+        On calcule donc l'image due au temps ecoule et on JETTE celles qu'on a
+        depassees. Une video qui saute quelques images reste une video de six
+        secondes ; une video qui s'etire devient une attente.
+        """
+        attendue = int((time.monotonic() - self._depart) * IMAGES_PAR_SECONDE)
+
+        image = None
+        while self._rendues <= attendue:
+            try:
+                suivante = self._images.get_nowait()
+            except queue.Empty:
+                break
+            if suivante is None:
+                self._finie = True
+                self._peut_ceder()
+                return
+            image = suivante
+            self._rendues += 1
+
+        if image is not None:
+            self._derniere = image    # retenue, sinon Tk la ramasse
+            self._toile.configure(image=image)
+
+        self.after(TICK, self._afficher)
 
     # --- fin ----------------------------------------------------------------
 
