@@ -813,6 +813,32 @@ TOOLS: list[Tool] = [
         lambda: inventaire.resume(),
     ),
     Tool(
+        "chercher_logiciel_installe",
+        "Cherche un logiciel installe par une partie de son nom, et rend les "
+        "noms exacts. A utiliser AVANT de desinstaller quand le nom donne par "
+        "l'utilisateur est approximatif.",
+        _obj({"nom": {**STR, "description": "Partie du nom du logiciel"}},
+             ["nom"]),
+        lambda nom: "\n".join(
+            f"{l.get('nom')} — {l.get('editeur') or 'editeur inconnu'}"
+            for l in inventaire.chercher_logiciel(nom)
+        ) or f"Aucun logiciel installe ne correspond a \"{nom}\".",
+    ),
+    Tool(
+        "desinstaller_logiciel",
+        "Desinstalle un logiciel installe, par son nom exact, en lancant le "
+        "desinstalleur enregistre par Windows. Demande confirmation et "
+        "n'agit jamais en silence : la fenetre du desinstalleur s'ouvre et "
+        "c'est l'utilisateur qui la termine. Si plusieurs logiciels "
+        "correspondent, l'outil refuse et les liste -- ne choisis pas a la "
+        "place de l'utilisateur. Refuse les pilotes et les briques dont "
+        "d'autres programmes dependent.",
+        _obj({"nom": {**STR, "description": "Nom du logiciel a desinstaller"}},
+             ["nom"]),
+        lambda nom: inventaire.desinstaller(nom),
+        effect=True,
+    ),
+    Tool(
         "oublier",
         "Efface ce que l'assistant a appris, en totalite ou sur un sujet. "
         "Sujets : materiel, disques, logiciels, services, jeux, session...",

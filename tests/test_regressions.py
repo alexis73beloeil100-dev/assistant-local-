@@ -2176,3 +2176,191 @@ def test_un_index_vide_ne_se_declare_pas_pret(tmp_path, monkeypatch):
     abimee.write_bytes(b"ceci n'est pas une base sqlite")
     monkeypatch.setattr(config, "DB_PATH", abimee)
     assert db.is_ready() is False
+
+
+# --- Desinstaller proprement -------------------------------------------------
+
+def _sans_docstring(fonction) -> str:
+    """Le corps d'une fonction, docstring retiree.
+
+    Plusieurs tests ci-dessous verifient qu'un motif dangereux est ABSENT du
+    code. Or les docstrings de ce projet nomment volontiers ce qu'elles
+    ecartent, et pourquoi -- inspecter le source entier reviendrait a
+    interdire d'expliquer.
+
+    Le retrait passe par ast : `inspect.getdoc` dedente la docstring, donc la
+    soustraire du source brut ne retire rien du tout. Ce faux negatif s'est
+    produit deux fois le 24/08/2026.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(fonction)))
+    corps = arbre.body[0].body
+    if (corps and isinstance(corps[0], ast.Expr)
+            and isinstance(corps[0].value, ast.Constant)
+            and isinstance(corps[0].value.value, str)):
+        corps = corps[1:]
+    return "\n".join(ast.unparse(noeud) for noeud in corps)
+
+
+def _faux_inventaire(monkeypatch, logiciels):
+    from assistant.skills import inventaire
+
+    monkeypatch.setattr(inventaire, "collect",
+                        lambda force=False: {"logiciels": logiciels})
+    lances = []
+    monkeypatch.setattr(inventaire.subprocess, "Popen",
+                        lambda *a, **k: lances.append(a[0]))
+    return lances
+
+
+def test_un_nom_ambigu_ne_desinstalle_rien(monkeypatch):
+    """Choisir a la place de l'utilisateur, sur une action irreversible.
+
+    "desinstalle Office" peut viser six entrees du registre. Prendre la
+    premiere de la liste, c'est retirer un logiciel que personne n'a designe
+    -- et une desinstallation ne se defait pas d'un clic.
+
+    La regle du module fixes vaut ici : on agit sur ce que l'utilisateur a
+    designe, jamais sur ce que le modele a devine.
+    """
+    from assistant.skills import inventaire
+
+    lances = _faux_inventaire(monkeypatch, [
+        {"nom": "Office Famille", "desinstalle": "C:/o1.exe"},
+        {"nom": "Office Pro", "desinstalle": "C:/o2.exe"},
+    ])
+
+    reponse = inventaire.desinstaller("office", ask=lambda _t: True)
+
+    assert "Precise lequel" in reponse
+    assert "Office Famille" in reponse and "Office Pro" in reponse
+    assert lances == [], "un desinstalleur a ete lance sur un nom ambigu"
+
+
+def test_une_brique_systeme_ne_se_desinstalle_pas_par_cette_voie(monkeypatch):
+    """Retirer un Visual C++ casse en silence ce qui s'appuie dessus.
+
+    Ces entrees ressemblent a des logiciels dans la liste des programmes
+    installes, et un nettoyage enthousiaste les attrape en premier : elles ne
+    liberent presque rien, et le defaut n'apparait qu'au lancement suivant
+    d'une application sans rapport visible.
+    """
+    from assistant.skills import inventaire
+
+    for nom in ("Microsoft Visual C++ 2015-2022 Redistributable",
+                "NVIDIA Graphics Driver 566.14",
+                "Microsoft .NET Runtime 8.0",
+                "AssistantLocal"):
+        lances = _faux_inventaire(
+            monkeypatch, [{"nom": nom, "desinstalle": "C:/u.exe"}])
+        reponse = inventaire.desinstaller(nom, ask=lambda _t: True)
+        assert "Je ne le fais pas" in reponse, nom
+        assert lances == [], f"{nom} a ete desinstalle"
+
+
+def test_un_logiciel_sans_commande_de_desinstallation_est_explique(monkeypatch):
+    """Ne pas rester muet sur un cas normal.
+
+    Les applications du Microsoft Store ne declarent pas d'UninstallString.
+    Repondre "echec" laisserait croire a une panne, alors qu'il faut
+    simplement passer par le magasin.
+    """
+    from assistant.skills import inventaire
+
+    lances = _faux_inventaire(
+        monkeypatch, [{"nom": "Application du Store", "desinstalle": ""}])
+    reponse = inventaire.desinstaller("Application du Store",
+                                      ask=lambda _t: True)
+
+    assert "Store" in reponse
+    assert lances == []
+
+
+def test_un_refus_n_enleve_aucun_logiciel(monkeypatch):
+    """Refuser doit arreter pour de bon, pas seulement changer le message."""
+    from assistant.skills import inventaire
+
+    lances = _faux_inventaire(
+        monkeypatch, [{"nom": "Un jeu", "desinstalle": "C:/jeu/unins000.exe"}])
+
+    reponse = inventaire.desinstaller("Un jeu", ask=lambda _t: False)
+
+    assert lances == [], "le logiciel a ete desinstalle malgre le refus"
+    assert reponse
+
+
+def test_la_desinstallation_passe_par_la_commande_de_windows(monkeypatch):
+    """Deviner le chemin d'un desinstalleur casse a chaque mise a jour.
+
+    La seule voie fiable est la chaine que Windows a enregistree lui-meme.
+    Elle est passee telle quelle : la redecouper rate les cas a guillemets
+    imbriques, et un desinstalleur lance sur un chemin mal coupe est
+    exactement ce qu'on ne veut pas.
+    """
+    from assistant.skills import inventaire
+
+    commande = '"C:\\Program Files\\Un Jeu\\unins000.exe" /LANG=fr'
+    lances = _faux_inventaire(monkeypatch, [
+        {"nom": "Un Jeu", "desinstalle": commande, "taille_mo": 420,
+         "editeur": "Studio", "version": "2.1"},
+    ])
+
+    reponse = inventaire.desinstaller("Un Jeu", ask=lambda _t: True)
+
+    assert lances == [commande], "la commande n'a pas ete passee telle quelle"
+    assert "lancee" in reponse
+    assert "inventaire" in reponse, (
+        "l'inventaire est perime apres coup, il faut le dire")
+
+
+def test_aucune_desinstallation_n_est_rendue_silencieuse():
+    """Une desinstallation silencieuse sur une phrase mal comprise.
+
+    /quiet et /S sont a portee de main et transformeraient une erreur de
+    comprehension en logiciel disparu sans que personne ait rien vu passer.
+    Le desinstalleur doit ouvrir sa fenetre.
+    """
+    from assistant.skills import inventaire
+
+    # Le CODE seul. La docstring nomme ces drapeaux pour expliquer pourquoi on
+    # ne les met pas : l'examiner reviendrait a interdire d'en parler.
+    code = _sans_docstring(inventaire.desinstaller)
+    for silencieux in ("/quiet", "/qn", "/VERYSILENT", "/silent"):
+        assert silencieux not in code, (
+            f"{silencieux} ajoute a la commande : la desinstallation se ferait "
+            "sans que l'utilisateur voie quoi que ce soit")
+
+
+def test_la_desinstallation_est_declaree_irreversible(monkeypatch):
+    """Le garde-fou ne doit jamais pouvoir la laisser passer sans question."""
+    from assistant import safety
+    from assistant.skills import inventaire
+
+    _faux_inventaire(monkeypatch,
+                     [{"nom": "Un Jeu", "desinstalle": "C:/u.exe"}])
+    vues = []
+    monkeypatch.setattr(safety, "guard",
+                        lambda action, ask=None: vues.append(action) or True)
+
+    inventaire.desinstaller("Un Jeu")
+
+    assert len(vues) == 1
+    assert vues[0].reversible is False
+    assert vues[0].routine is False
+
+
+def test_la_desinstallation_est_exposee_au_modele():
+    """Ecrite mais pas branchee, elle est introuvable a la voix."""
+    from assistant import llm
+
+    noms = {t.name for t in llm.TOOLS}
+    assert "desinstaller_logiciel" in noms
+    assert "chercher_logiciel_installe" in noms
+
+    outil = next(t for t in llm.TOOLS if t.name == "desinstaller_logiciel")
+    assert outil.effect is True
+    assert "ne choisis pas a la place" in outil.description, (
+        "le modele doit savoir qu'il ne tranche pas un nom ambigu lui-meme")

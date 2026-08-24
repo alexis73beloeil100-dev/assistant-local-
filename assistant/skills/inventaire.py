@@ -166,6 +166,134 @@ def pret() -> bool:
     return _donnees is not None
 
 
+# --- Desinstallation ---------------------------------------------------------
+#
+# Ce qu'on refuse de desinstaller par cette voie, et pourquoi.
+#
+# Ce ne sont pas des logiciels au sens ou l'utilisateur l'entend : ce sont des
+# briques dont d'autres programmes dependent, ou des pilotes. Retirer un
+# "Microsoft Visual C++ Redistributable" ne libere presque rien et casse en
+# silence les applications qui s'appuient dessus -- le defaut n'apparait qu'au
+# lancement suivant de l'une d'elles, sans rapport visible avec ce qu'on vient
+# de faire.
+#
+# La liste ne pretend pas etre complete. Elle couvre ce qu'un nettoyage
+# enthousiaste attrape en premier.
+JAMAIS_DESINSTALLER = (
+    "assistantlocal",
+    "microsoft visual c++",
+    "microsoft .net",
+    ".net framework",
+    ".net runtime",
+    "microsoft edge webview",
+    "nvidia graphics driver",
+    "nvidia display",
+    "amd software",
+    "amd chipset",
+    "intel chipset",
+    "realtek",
+    "microsoft defender",
+    "windows update",
+)
+
+
+def _logiciels() -> list[dict]:
+    return (collect() or {}).get("logiciels") or []
+
+
+def chercher_logiciel(nom: str) -> list[dict]:
+    """Les logiciels installes dont le nom contient `nom`."""
+    demande = str(nom).strip().lower()
+    if not demande:
+        return []
+    return [l for l in _logiciels()
+            if demande in str(l.get("nom") or "").lower()]
+
+
+def desinstaller(nom: str, ask=None) -> str:
+    """Lance la desinstallation d'un logiciel installe, par son nom.
+
+    On n'invente jamais le chemin d'un desinstalleur : on prend la commande
+    que Windows lui-meme a enregistree (UninstallString). Deviner un chemin
+    casse a chaque mise a jour du logiciel, et se tromper de cible sur une
+    desinstallation ne se rattrape pas.
+
+    Rien ne se fait en silence. Le desinstalleur ouvre sa propre fenetre, et
+    c'est l'utilisateur qui la termine. Ajouter un /quiet serait techniquement
+    possible et serait une faute : une desinstallation silencieuse declenchee
+    par une phrase mal comprise ne se defait pas.
+
+    Irreversible, donc le garde-fou pose toujours la question -- meme si
+    quelqu'un marquait un jour cette action comme geste courant.
+    """
+    from assistant import safety
+
+    trouves = chercher_logiciel(nom)
+    if not trouves:
+        if not _logiciels():
+            return (_erreur or "L'inventaire logiciel n'est pas encore pret. "
+                    "Redemande dans quelques secondes.")
+        return (f"Aucun logiciel installe ne correspond a \"{nom}\". "
+                "Demande-moi la liste si tu veux verifier le nom exact.")
+
+    if len(trouves) > 1:
+        noms = "\n".join(f"  - {l.get('nom')}" for l in trouves[:12])
+        reste = "\n  ..." if len(trouves) > 12 else ""
+        return (f"{len(trouves)} logiciels correspondent a \"{nom}\" :\n"
+                f"{noms}{reste}\nPrecise lequel.")
+
+    logiciel = trouves[0]
+    vrai_nom = str(logiciel.get("nom") or "").strip()
+    minuscule = vrai_nom.lower()
+
+    if any(marque in minuscule for marque in JAMAIS_DESINSTALLER):
+        return (f"\"{vrai_nom}\" n'est pas une application ordinaire : c'est "
+                "une brique dont d'autres programmes dependent, ou un "
+                "pilote. La retirer casse en silence ce qui s'appuie dessus, "
+                "et le defaut n'apparait qu'au lancement suivant de l'un "
+                "d'eux. Je ne le fais pas par cette voie.")
+
+    commande = str(logiciel.get("desinstalle") or "").strip()
+    if not commande:
+        return (f"\"{vrai_nom}\" ne declare aucune commande de "
+                "desinstallation. C'est le cas des applications du Microsoft "
+                "Store et de certains jeux, qui se retirent par leur magasin "
+                "ou par leur launcher.")
+
+    details = [str(logiciel.get(c)) for c in ("version", "editeur")
+               if logiciel.get(c)]
+    if logiciel.get("taille_mo"):
+        details.append(f"{logiciel['taille_mo']} Mo liberes")
+
+    action = safety.Action(
+        kind="logiciel",
+        summary=f"Desinstaller {vrai_nom}",
+        targets=[str(logiciel.get("dossier") or vrai_nom)],
+        reversible=False,
+        details=("  ".join(details)
+                 + f"\n    Commande enregistree par Windows : {commande[:120]}"),
+    )
+    try:
+        safety.guard(action, ask=ask)
+    except safety.Refused as exc:
+        return str(exc)
+
+    try:
+        # La chaine est une ligne de commande complete, redigee par l'editeur :
+        # chemin entre guillemets, puis arguments. On la passe telle quelle au
+        # shell, qui sait la decouper -- la redecouper nous-memes rate les cas
+        # a guillemets imbriques, et un desinstalleur lance sur un chemin mal
+        # coupe est exactement ce qu'on ne veut pas.
+        subprocess.Popen(commande, shell=True)
+    except OSError as exc:
+        return f"Le desinstalleur n'a pas pu demarrer : {exc}"
+
+    return (f"Desinstallation de {vrai_nom} lancee. Sa fenetre va s'ouvrir : "
+            "c'est toi qui la termines, rien ne se fait en silence.\n"
+            "Quand ce sera fini, demande-moi de refaire l'inventaire pour que "
+            "je cesse de le croire installe.")
+
+
 def resume() -> str:
     """Ce que l'inventaire a trouve, en clair."""
     donnees = collect()

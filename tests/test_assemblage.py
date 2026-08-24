@@ -1045,14 +1045,20 @@ def test_la_reparation_windows_ne_bloque_pas_l_assistant():
     question vocale sans reponse pendant tout ce temps. La console est donc
     ouverte VISIBLE, et on rend la main immediatement.
     """
+    import ast
     import inspect
+    import textwrap
 
     from assistant.skills import fixes
 
     # Le CODE seul : la docstring nomme ces pieges pour les expliquer, et
     # l'inspecter reviendrait a interdire d'en parler.
-    source = inspect.getsource(fixes._lancer_en_admin)
-    code = source.replace(inspect.getdoc(fixes._lancer_en_admin) or "", "")
+    #
+    # Le retrait passe par ast. `inspect.getdoc` dedente la docstring, donc la
+    # soustraire du source brut ne retire rien -- faux negatif verifie.
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(fixes._lancer_en_admin)))
+    corps = arbre.body[0].body[1:]          # [0] est la docstring
+    code = "\n".join(ast.unparse(noeud) for noeud in corps)
 
     assert "-Wait" not in code, (
         "attendre la fin gelerait l'assistant pendant une demi-heure")
