@@ -519,11 +519,22 @@ class Bandeau(tk.Frame):
 
         tk.Label(corps, text=t.espacer(titre or defaut), bg=t.SURFACE,
                  fg=couleur, font=t.FONT_HUD, anchor="w").pack(fill="x")
-        tk.Label(corps, text=texte, bg=t.SURFACE, fg=t.TEXT,
-                 font=t.FONT_UI_SMALL, anchor="w", justify="left",
-                 wraplength=560).pack(fill="x", pady=(2, 0))
+        self._texte = tk.Label(corps, text=texte, bg=t.SURFACE, fg=t.TEXT,
+                               font=t.FONT_UI_SMALL, anchor="w",
+                               justify="left", wraplength=560)
+        self._texte.pack(fill="x", pady=(2, 0))
 
         if action is not None:
             RoundButton(corps, libelle_action or "Corriger", action,
                         width=132, bg=t.SURFACE_2,
                         hover_bg=t.BORDER).pack(anchor="w", pady=(t.PAD, 0))
+
+    def set_wrap(self, width: int) -> None:
+        """Meme interface que Message : la fenetre les redimensionne ensemble.
+
+        Sans cette methode, poser un bandeau dans la liste des messages ferait
+        echouer le reajustement a chaque redimensionnement -- et seulement
+        quand un avertissement est affiche, donc rarement au moment ou l'on
+        essaie.
+        """
+        self._texte.configure(wraplength=max(width - 2 * t.PAD_L, 200))

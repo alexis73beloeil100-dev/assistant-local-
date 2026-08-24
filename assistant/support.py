@@ -111,14 +111,78 @@ def contexte() -> str:
     return "\n".join(lignes)
 
 
+# Les endroits ou ca casse, nommes par ce que la personne a sous les yeux.
+#
+# Une liste libre donne "ca marche pas" ; une liste de modules techniques
+# demande de savoir lequel est en cause, ce que justement on ne sait pas quand
+# on rencontre un defaut. On nomme donc le GESTE, pas le module.
+CATEGORIES = [
+    ("La conversation", "il repond a cote, invente, ou ne repond pas"),
+    ("La voix", "le micro n'ecrit rien, ou la lecture a voix haute"),
+    ("Les fichiers joints", "une image ou un document mal lu"),
+    ("L'eclairage RGB", "les LED ne suivent pas, ou reviennent en arriere"),
+    ("Reparer Windows", "sfc, DISM, ou l'examen antivirus"),
+    ("Le telephone", "presse-papier partage, macros, appairage"),
+    ("Les panneaux", "un affichage faux, vide ou illisible"),
+    ("L'installation", "installer, mettre a jour, desinstaller"),
+    ("Autre chose", ""),
+]
+
+
+def capture_pour_le_rapport() -> tuple[bool, str]:
+    """Photographie l'ecran et la depose sur le Bureau.
+
+    Elle n'est PAS envoyee automatiquement, et ce n'est pas un oubli : GitHub
+    n'accepte pas d'image par adresse, seulement par depot dans le
+    formulaire. On prepare donc le fichier et on dit ou il est -- la personne
+    le glisse dans l'issue, ce qui lui laisse au passage l'occasion de
+    regarder ce qu'elle publie.
+
+    Une capture d'ecran montre tout ce qui etait affiche : une conversation,
+    un nom de dossier, une fenetre restee ouverte a cote. Sur un depot
+    public, cela ne se rattrape pas.
+    """
+    from assistant.skills import vision
+
+    ok, temporaire = vision.capture(0)
+    if not ok:
+        return False, temporaire
+
+    try:
+        from creer_raccourci import desktop  # type: ignore
+
+        dossier = desktop()
+    except Exception:  # noqa: BLE001
+        dossier = Path.home() / "Desktop"
+
+    import shutil
+    import time
+
+    cible = dossier / f"probleme_{time.strftime('%Y-%m-%d_%Hh%M%S')}.png"
+    try:
+        shutil.move(temporaire, cible)
+    except OSError as exc:
+        return False, f"Capture impossible a deposer : {exc}"
+    return True, str(cible)
+
+
 def lien_du_rapport(description: str, technique: str = "",
-                    joindre: bool = True) -> str:
+                    joindre: bool = True, categorie: str = "",
+                    capture: str = "") -> str:
     """Construit l'adresse de l'issue GitHub, formulaire pre-rempli."""
-    corps = [description.strip() or "(decris ici ce qui s'est passe)", ""]
+    corps = []
+    if categorie:
+        corps.append(f"**Ou :** {categorie}")
+        corps.append("")
+    corps += [description.strip() or "(decris ici ce qui s'est passe)", ""]
+    if capture:
+        corps += ["**Capture d'ecran :** glisse ici le fichier",
+                  f"`{capture}`", ""]
     if joindre and technique.strip():
         corps += ["---", "```", technique.strip(), "```"]
 
-    titre = (description.strip().splitlines() or ["Probleme rencontre"])[0]
+    premiere = (description.strip().splitlines() or ["Probleme rencontre"])[0]
+    titre = f"[{categorie}] {premiere}" if categorie else premiere
     parametres = urllib.parse.urlencode({
         "title": titre[:80],
         "body": "\n".join(corps),
@@ -127,22 +191,28 @@ def lien_du_rapport(description: str, technique: str = "",
     return f"https://github.com/{depot()}/issues/new?{parametres}"
 
 
-def ouvrir(description: str, joindre: bool = True) -> str:
+def ouvrir(description: str, joindre: bool = True, categorie: str = "",
+           capture: str = "") -> str:
     """Ouvre le formulaire pre-rempli dans le navigateur.
 
     On OUVRE, on n'envoie pas. C'est la personne qui appuie sur le bouton de
     publication, apres avoir lu ce qui part -- et le depot etant public, ce
     qui part y reste.
     """
-    lien = lien_du_rapport(description, contexte(), joindre)
+    lien = lien_du_rapport(description, contexte(), joindre, categorie,
+                           capture)
     if len(lien) > 8000:
         # Au-dela, les navigateurs tronquent l'adresse en silence et le
         # rapport arrive ampute sans que personne le voie.
-        lien = lien_du_rapport(description, "", False)
+        lien = lien_du_rapport(description, "", False, categorie, capture)
     try:
         subprocess.Popen(["cmd", "/c", "start", "", lien],
                          creationflags=CREATE_NO_WINDOW)
     except OSError as exc:
         return f"Le navigateur n'a pas pu s'ouvrir : {exc}"
-    return ("Formulaire ouvert dans le navigateur. Relis ce qui part, "
-            "puis publie : rien n'est envoye tant que tu n'as pas clique.")
+    fin = ("Formulaire ouvert dans le navigateur. Relis ce qui part, "
+           "puis publie : rien n'est envoye tant que tu n'as pas clique.")
+    if capture:
+        fin += ("\nLa capture est sur ton Bureau : glisse-la dans le "
+                f"formulaire.\n{capture}")
+    return fin

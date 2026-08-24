@@ -34,7 +34,16 @@ SURFACE     = "#131D25"   # panneaux, barre laterale
 SURFACE_2   = "#1D2A34"   # survol, champs de saisie
 BORDER      = "#2A414C"   # traits fins, visibles sans etre durs
 
-TEXT        = "#E2F0F5"   # texte principal
+# Abaisse le 24/08/2026, a la demande de l'utilisateur : "trop lumineux, ca
+# fait mal aux yeux". C'est le defaut classique du mode sombre -- un blanc
+# presque pur sur un fond presque noir "bave" sur ses bords (halation), et
+# l'oeil corrige en permanence.
+#
+# Le remede est double, et l'un sans l'autre echoue : on baisse la luminosite,
+# ce qui amincirait le trait, et on monte la graisse pour le compenser. On
+# reste tres au-dessus du seuil AAA -- 8.60 sur le fond le plus clair, la ou
+# 7 suffit.
+TEXT        = "#B8C9D2"   # texte principal
 TEXT_DIM    = "#9BB6C2"   # remonte : l'ancien gris etait trop efface
 # Remonte le 24/08/2026, apres mesure. L'ancien #66838F donnait 4.23 sur
 # SURFACE et 3.63 sur SURFACE_2, sous les 4.5 exiges par WCAG pour du texte
@@ -72,14 +81,14 @@ _UI_LEGER = "Bahnschrift"
 _MONO = "Cascadia Mono SemiBold"
 _MONO_REPLI = "Cascadia Mono"
 
-FONT_UI        = (_UI, 11)
-FONT_UI_SMALL  = (_UI, 10)
+FONT_UI        = (_UI, 11, "bold")
+FONT_UI_SMALL  = (_UI, 10, "bold")
 # Les libelles des cases de navigation. En Bahnschrift maigre ils s'effacaient
 # a cote de leur icone ; en demi-gras, l'icone et le mot ont le meme poids.
-FONT_UI_TINY   = (_UI, 9)
+FONT_UI_TINY   = (_UI, 9, "bold")
 FONT_TITLE     = (_UI, 16)
-FONT_LABEL     = (_UI, 11)
-FONT_INPUT     = (_UI, 12)
+FONT_LABEL     = (_UI, 11, "bold")
+FONT_INPUT     = (_UI, 12, "bold")
 
 
 def mono_disponible(nom: str) -> bool:
@@ -118,7 +127,7 @@ def resoudre_polices() -> None:
     """
     global FONT_MONO, FONT_MONO_BOLD, FONT_MONO_TITRE
     famille = police_mono()
-    FONT_MONO = (famille, 10)
+    FONT_MONO = (famille, 10, "bold")
     FONT_MONO_BOLD = (famille, 10, "bold")
     FONT_MONO_TITRE = (famille, 11, "bold")
 

@@ -3858,3 +3858,104 @@ def test_l_entete_annonce_l_acces_anticipe():
         gui.AssistantWindow._build_header)
     assert "ACCES_ANTICIPE" in source
     assert "Support" in source, "le bouton de signalement doit etre dans l'entete"
+
+# --- Confort de lecture et rapport enrichi -----------------------------------
+
+def test_le_texte_principal_n_eblouit_plus_mais_reste_lisible():
+    """"Trop lumineux, ca fait mal aux yeux."
+
+    Defaut classique du mode sombre : un blanc presque pur sur un fond presque
+    noir bave sur ses bords, et l'oeil corrige en permanence. Le remede est
+    DOUBLE -- baisser la luminosite amincit le trait, il faut donc monter la
+    graisse pour le compenser. L'un sans l'autre echoue.
+
+    Ce test tient les deux bouts : assez sombre pour ne plus eblouir, assez
+    contraste pour rester AAA.
+    """
+    from assistant import theme as t
+
+    rapport = _contraste(t.TEXT, t.SURFACE_2)
+    assert rapport >= 7, f"{rapport:.2f} : sous le seuil AAA"
+    assert rapport <= 11, (
+        f"{rapport:.2f} : on est remonte vers le blanc pur, qui eblouit")
+
+    for police in (t.FONT_UI, t.FONT_UI_SMALL, t.FONT_LABEL, t.FONT_INPUT):
+        assert "bold" in police, (
+            f"{police} : sans la graisse, le texte attenue devient trop fin")
+
+
+def test_le_rapport_de_support_nomme_le_geste_pas_le_module():
+    """"Quel composant ?" suppose de savoir lequel est en cause.
+
+    C'est precisement ce qu'on ignore quand on rencontre un defaut. Les
+    categories nomment donc ce que la personne avait sous les yeux.
+    """
+    from assistant import support
+
+    noms = [nom for nom, _aide in support.CATEGORIES]
+    assert len(noms) >= 6
+    assert "Autre chose" in noms, "il faut une issue pour ce qui n'entre nulle part"
+    for technique in ("llm.py", "vision", "OCR", "subprocess", "Tkinter"):
+        assert technique not in noms
+
+
+def test_la_categorie_part_dans_le_titre_de_l_issue():
+    """Un titre qui porte la categorie se trie sans etre ouvert."""
+    from assistant import support
+
+    lien = support.lien_du_rapport("Les LED ne suivent pas", "",
+                                   categorie="L'eclairage RGB")
+    import urllib.parse
+
+    titre = urllib.parse.unquote_plus(lien.split("title=")[1].split("&")[0])
+    assert titre.startswith("[L'eclairage RGB]")
+    assert "LED" in titre
+
+
+def test_la_capture_d_ecran_n_est_pas_envoyee_toute_seule():
+    """GitHub n'accepte pas d'image par adresse : elle est PREPAREE.
+
+    Ce detour n'est pas une limite subie mais une garantie : une capture
+    montre tout ce qui etait a l'ecran -- une conversation, un nom de dossier,
+    une fenetre restee ouverte a cote. Sur un depot public, cela ne se
+    rattrape pas. La personne la glisse elle-meme, donc elle la regarde.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant import support
+
+    arbre = ast.parse(textwrap.dedent(
+        inspect.getsource(support.capture_pour_le_rapport)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+
+    for envoi in ("requests", "urlopen", "post"):
+        assert envoi not in code, f"{envoi} : la capture partirait toute seule"
+
+    lien = support.lien_du_rapport("Probleme", "", capture=r"C:\x\y.png")
+    assert "glisse" in urllib_unquote(lien)
+
+
+def urllib_unquote(lien: str) -> str:
+    import urllib.parse
+
+    return urllib.parse.unquote_plus(lien)
+
+
+def test_une_erreur_s_affiche_en_bandeau_pas_en_texte_rouge():
+    """Un message important ecrit en rouge se lit comme du decor.
+
+    Rien ne le separe de ce qui l'entoure, et l'oeil finit par le sauter --
+    c'est ce qui arrivait a l'avertissement de fermeture anormale.
+    """
+    from assistant.gui import AssistantWindow
+
+    assert AssistantWindow.BANDEAUX.get("error") == "erreur"
+    assert AssistantWindow.BANDEAUX.get("warn") == "alerte"
+
+    # Un bandeau doit se redimensionner comme un message, sinon la boucle de
+    # reajustement echoue des qu'un avertissement est affiche.
+    from assistant.widgets import Bandeau
+
+    assert hasattr(Bandeau, "set_wrap")

@@ -30,8 +30,8 @@ from assistant import (apprentissage, config, connaissance, llm, panels,
 from assistant.index import db, scanner, watcher
 from assistant.skills import games, hardware
 from assistant.voice import stt, tts, wake
-from assistant.widgets import (Message, NavCell, PulseRing, RoundButton,
-                               ScrollArea, StatusDot)
+from assistant.widgets import (Bandeau, Message, NavCell, PulseRing,
+                               RoundButton, ScrollArea, StatusDot)
 
 TITLE = "Assistant local"
 SUBTITLE = "tout reste sur cette machine"
@@ -352,7 +352,7 @@ class AssistantWindow(tk.Tk):
         self.ecoute_etat.pack(pady=(0, t.PAD))
 
         tk.Checkbutton(
-            bottom, text=" Repondre a voix haute", variable=self.speak,
+            bottom, text=" Répondre à voix haute", variable=self.speak,
             bg=t.SURFACE, fg=t.TEXT_DIM, font=t.FONT_UI_TINY,
             selectcolor=t.SURFACE_2, activebackground=t.SURFACE,
             activeforeground=t.TEXT, highlightthickness=0, bd=0,
@@ -1014,9 +1014,22 @@ class AssistantWindow(tk.Tk):
         for message in self._messages:
             message.set_wrap(largeur)
 
+    # Les roles qui meritent un cadre plutot qu'une couleur de texte.
+    #
+    # Un message important ecrit en rouge au milieu du reste se lit comme du
+    # decor : rien ne le separe de ce qui l'entoure, et l'oeil finit par le
+    # sauter. C'est ce qui arrivait a l'avertissement de fermeture anormale et
+    # a l'alerte de conflit RGB -- la seule ligne qui explique pourquoi les
+    # LED ne repondent pas.
+    BANDEAUX = {"error": "erreur", "warn": "alerte"}
+
     def add(self, texte: str, role: str = "assistant") -> None:
-        message = Message(self.chat.inner, texte, role, self._wrap_width())
-        message.pack(fill="x")
+        ton = self.BANDEAUX.get(role)
+        if ton:
+            message = Bandeau(self.chat.inner, texte, ton=ton)
+        else:
+            message = Message(self.chat.inner, texte, role, self._wrap_width())
+        message.pack(fill="x", pady=(0, t.PAD) if ton else 0)
         self._messages.append(message)
         self.chat.scroll_to_bottom()
 
@@ -1312,6 +1325,27 @@ class AssistantWindow(tk.Tk):
         tk.Label(cadre, text=t.espacer("signaler un probleme"), bg=t.BG,
                  fg=t.ACCENT_DEEP, font=t.FONT_HUD, anchor="w").pack(
             fill="x", pady=(0, t.PAD))
+        # Ou ca casse, nomme par le GESTE et non par le module.
+        #
+        # Demander "quel composant ?" suppose de savoir lequel est en cause,
+        # ce qu'on ignore precisement quand on rencontre un defaut. Le choix
+        # part aussi dans le titre de l'issue : les rapports se trient seuls.
+        tk.Label(cadre, text="Ou est-ce que ca s'est passe ?", bg=t.BG,
+                 fg=t.TEXT_DIM, font=t.FONT_UI_SMALL, anchor="w").pack(
+            fill="x", pady=(0, 4))
+
+        categorie = tk.StringVar(value=support.CATEGORIES[0][0])
+        grille = tk.Frame(cadre, bg=t.BG)
+        grille.pack(fill="x", pady=(0, t.PAD))
+        for index, (nom, _aide) in enumerate(support.CATEGORIES):
+            tk.Radiobutton(
+                grille, text=nom, value=nom, variable=categorie,
+                bg=t.BG, fg=t.TEXT, selectcolor=t.SURFACE_2,
+                activebackground=t.BG, activeforeground=t.ACCENT,
+                font=t.FONT_UI_SMALL, anchor="w", highlightthickness=0,
+            ).grid(row=index // 3, column=index % 3, sticky="w",
+                   padx=(0, t.PAD))
+
         tk.Label(cadre, text="Qu'est-ce qui s'est passe ? Ce que tu faisais, "
                              "ce que tu attendais, ce qui est arrive.",
                  bg=t.BG, fg=t.TEXT_DIM, font=t.FONT_UI_SMALL, anchor="w",
@@ -1336,6 +1370,18 @@ class AssistantWindow(tk.Tk):
                  font=t.FONT_MONO, anchor="w", justify="left",
                  wraplength=560).pack(fill="x", pady=(4, t.PAD))
 
+        # La capture est PREPAREE, pas envoyee : GitHub n'accepte pas d'image
+        # par adresse. On la depose sur le Bureau et on dit ou elle est. Ce
+        # detour laisse aussi l'occasion de regarder ce qu'on publie -- une
+        # capture montre tout ce qui etait a l'ecran, sur un depot public.
+        avec_capture = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            cadre, variable=avec_capture, bg=t.BG, fg=t.TEXT_DIM,
+            selectcolor=t.SURFACE_2, activebackground=t.BG,
+            activeforeground=t.TEXT, font=t.FONT_UI_SMALL, anchor="w",
+            text="Joindre une capture d'ecran (deposee sur le Bureau, "
+                 "a glisser dans le formulaire)").pack(fill="x")
+
         etat = tk.Label(cadre, text="Le formulaire s'ouvrira dans ton "
                                     "navigateur : rien n'est envoye tant que "
                                     "tu n'as pas publie.",
@@ -1349,9 +1395,25 @@ class AssistantWindow(tk.Tk):
                 etat.configure(text="Ecris d'abord ce qui s'est passe.",
                                fg=t.AMBER)
                 return
-            etat.configure(text=support.ouvrir(texte, joindre.get()),
-                           fg=t.TEXT_FAINT)
-            dialogue.after(1200, dialogue.destroy)
+
+            image = ""
+            if avec_capture.get():
+                # La fenetre se cache le temps du cliche : sinon la capture
+                # montre le formulaire de signalement plutot que le probleme.
+                dialogue.withdraw()
+                self.update_idletasks()
+                ok, resultat = support.capture_pour_le_rapport()
+                dialogue.deiconify()
+                if ok:
+                    image = resultat
+                else:
+                    etat.configure(text=resultat, fg=t.AMBER)
+
+            etat.configure(
+                text=support.ouvrir(texte, joindre.get(), categorie.get(),
+                                    image),
+                fg=t.TEXT_FAINT)
+            dialogue.after(2500, dialogue.destroy)
 
         boutons = tk.Frame(cadre, bg=t.BG)
         boutons.pack(fill="x", pady=(t.PAD_L, 0))
