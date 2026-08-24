@@ -2024,3 +2024,155 @@ def test_une_release_en_cours_d_envoi_n_est_pas_prise_pour_une_reussite():
          "assets": [dict(complet["assets"][0], digest="sha256:" + "b" * 64)]},
         1000, sha)
     assert not ok and "empreinte" in pourquoi
+
+
+def test_la_surveillance_demarre_meme_quand_aucun_scan_n_a_lieu():
+    """Conserver l'index avait desarme ce qui l'empechait de vieillir.
+
+    watcher.start() etait ecrit A L'INTERIEUR du bloc "si l'index n'est pas
+    pret". Tant que l'index vivait en memoire, ce bloc s'executait a chaque
+    demarrage et la surveillance partait toujours.
+
+    En passant PERSIST_INDEX a True le 24/08/2026, is_ready() devient vrai des
+    que le fichier existe : le bloc est saute, et plus rien ne suit les
+    fichiers. L'index se serait fige au premier lancement, en repondant avec
+    assurance sur des fichiers effaces depuis.
+
+    Le defaut ne casse rien de visible -- c'est ce qui le rend dangereux.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "assistant" / "gui.py").read_text(encoding="utf-8")
+
+    debut = source.index("age = db.age_de_l_index()")
+    fin = source.index("self.post(\"status\", (\"Pret\"", debut)
+    bloc = source[debut:fin]
+
+    place_scan = bloc.index("scanner.rebuild")
+    place_veille = bloc.index("watcher.start()")
+    assert place_veille > place_scan, "la surveillance doit venir apres le scan"
+
+    # Elle doit etre au meme niveau d'indentation que le "if", donc hors de
+    # lui : douze espaces dans work(), pas seize.
+    ligne = next(l for l in bloc.splitlines() if "watcher.start()" in l)
+    assert len(ligne) - len(ligne.lstrip()) == 12, (
+        "watcher.start() est de nouveau enferme dans le bloc du scan : "
+        "un index conserve ne serait plus jamais rafraichi")
+
+
+def test_un_index_conserve_trop_vieux_est_refait(tmp_path, monkeypatch):
+    """Un index en memoire etait forcement frais ; conserve, il ne l'est plus.
+
+    La surveillance rattrape ce qui bouge pendant que l'assistant tourne,
+    jamais ce qui a bouge pendant qu'il etait ferme : une installation, un
+    grand menage, un disque rempli le week-end. Sans peremption, l'assistant
+    repondrait sur une photographie vieille de plusieurs mois.
+    """
+    import sqlite3
+    from datetime import datetime, timedelta
+
+    from assistant import config
+    from assistant.index import db
+
+    base = tmp_path / "index.db"
+    monkeypatch.setattr(config, "PERSIST_INDEX", True)
+    monkeypatch.setattr(config, "DB_PATH", base)
+
+    def dater(jours):
+        quand = (datetime.now() - timedelta(days=jours)).isoformat(
+            timespec="seconds")
+        conn = sqlite3.connect(base)
+        conn.execute("CREATE TABLE IF NOT EXISTS meta "
+                     "(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute("INSERT INTO meta(key, value) VALUES('scanned_at', ?) "
+                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                     (quand,))
+        conn.commit()
+        conn.close()
+
+    dater(2)
+    assert round(db.age_de_l_index()) == 2
+    assert db.index_perime() is False, "deux jours, il n'y a rien a refaire"
+
+    dater(db.PEREMPTION_JOURS + 3)
+    assert db.index_perime() is True
+
+    # En memoire, la question ne se pose pas : l'index nait avec le processus.
+    monkeypatch.setattr(config, "PERSIST_INDEX", False)
+    assert db.age_de_l_index() is None
+    assert db.index_perime() is False
+
+
+def test_un_index_sans_date_de_scan_ne_bloque_pas_le_demarrage(tmp_path,
+                                                              monkeypatch):
+    """Une base illisible ou sans date doit se taire, pas lever.
+
+    age_de_l_index() est appele au demarrage, avant que quoi que ce soit
+    fonctionne. Une exception a cet endroit empeche l'application de s'ouvrir
+    -- et le message parlerait de sqlite, pas d'index.
+    """
+    from assistant import config
+    from assistant.index import db
+
+    monkeypatch.setattr(config, "PERSIST_INDEX", True)
+
+    absente = tmp_path / "rien.db"
+    monkeypatch.setattr(config, "DB_PATH", absente)
+    assert db.age_de_l_index() is None
+
+    abimee = tmp_path / "abimee.db"
+    abimee.write_bytes(b"ceci n'est pas une base sqlite")
+    monkeypatch.setattr(config, "DB_PATH", abimee)
+    assert db.age_de_l_index() is None
+    assert db.index_perime() is False
+
+
+def test_un_index_vide_ne_se_declare_pas_pret(tmp_path, monkeypatch):
+    """Le fichier existait, la table non -- et l'assistant se disait pret.
+
+    is_ready() constatait la presence du FICHIER. Or sqlite3.connect() le cree
+    au premier acces, meme pour une lecture : il a suffi d'interroger l'age de
+    l'index pour qu'un index.db vide apparaisse. Toutes les recherches
+    tombaient alors sur "no such table: files", et le panneau Espace affichait
+    "Erreur pendant la preparation" au lieu de son contenu.
+
+    Un scan interrompu en cours de route laisse le meme etat : un fichier
+    present, une table absente ou vide.
+
+    Constate depuis en passant PERSIST_INDEX a True le 24/08/2026.
+    """
+    import sqlite3
+
+    from assistant import config
+    from assistant.index import db
+
+    base = tmp_path / "index.db"
+    monkeypatch.setattr(config, "PERSIST_INDEX", True)
+    monkeypatch.setattr(config, "DB_PATH", base)
+
+    # 1. Aucun fichier.
+    assert db.is_ready() is False
+
+    # 2. Un fichier vide, tel que sqlite3.connect() le cree.
+    sqlite3.connect(base).close()
+    assert base.exists()
+    assert db.is_ready() is False, "un fichier vide n'est pas un index"
+
+    # 3. La table existe, mais le scan n'a rien insere.
+    conn = sqlite3.connect(base)
+    conn.execute("CREATE TABLE files (id INTEGER PRIMARY KEY, path TEXT)")
+    conn.commit()
+    assert db.is_ready() is False, "une table vide n'est pas un index"
+
+    # 4. Une ligne : cette fois, il y a de quoi repondre.
+    conn.execute("INSERT INTO files(path) VALUES('C:/un/fichier.txt')")
+    conn.commit()
+    conn.close()
+    assert db.is_ready() is True
+
+    # 5. Un fichier qui n'est pas une base ne doit pas lever.
+    abimee = tmp_path / "abimee.db"
+    abimee.write_bytes(b"ceci n'est pas une base sqlite")
+    monkeypatch.setattr(config, "DB_PATH", abimee)
+    assert db.is_ready() is False

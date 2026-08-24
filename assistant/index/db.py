@@ -96,16 +96,83 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 def is_ready() -> bool:
     """L'index est-il utilisable ?
 
-    Sur disque il l'est des l'ouverture ; en memoire il faut attendre la fin
-    de la construction, sinon on interrogerait une base a moitie remplie.
+    En memoire, il faut attendre la fin de la construction : interroger une
+    base a moitie remplie donnerait des reponses fausses sans le dire.
+
+    Sur disque, cette fonction se contentait de constater que le FICHIER
+    existe. C'etait faux, et le 24/08/2026 en passant PERSIST_INDEX a True on
+    l'a vu tout de suite : sqlite3.connect() cree le fichier au premier
+    acces, meme pour une simple lecture. Un fichier vide suffisait donc a
+    faire dire "index pret", et toutes les recherches tombaient sur
+    "no such table: files" -- l'assistant se declarait pret et ne repondait
+    rien. Un scan interrompu laisse exactement le meme etat.
+
+    On constate donc la table ET une ligne dedans, pas le fichier.
     """
-    if config.PERSIST_INDEX:
-        return config.DB_PATH.exists()
-    return _ready.is_set()
+    if not config.PERSIST_INDEX:
+        return _ready.is_set()
+
+    if not config.DB_PATH.exists():
+        return False
+    try:
+        conn = sqlite3.connect(config.DB_PATH)
+        try:
+            existe = conn.execute(
+                "SELECT 1 FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'files'").fetchone()
+            if existe is None:
+                return False
+            return conn.execute(
+                "SELECT 1 FROM files LIMIT 1").fetchone() is not None
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
 
 
 def mark_ready(ready: bool = True) -> None:
     _ready.set() if ready else _ready.clear()
+
+
+# Au-dela de cet age, un index conserve est refait au demarrage.
+#
+# Un index en memoire etait forcement frais : il naissait avec le processus.
+# Conserve, il ne l'est plus. La surveillance rattrape ce qui bouge PENDANT
+# que l'assistant tourne, mais rien de ce qui a bouge pendant qu'il etait
+# ferme -- une installation, un grand menage, un disque rempli le week-end.
+# Sans peremption, l'assistant repondrait avec assurance sur des fichiers
+# effaces depuis des mois.
+PEREMPTION_JOURS = 7
+
+
+def age_de_l_index() -> float | None:
+    """Age du dernier scan complet, en jours. None si la question n'a pas lieu.
+
+    Lu dans meta.scanned_at, et pas sur la date du fichier : la surveillance
+    ecrit dans la base a chaque fichier touche, ce qui rajeunirait la date du
+    fichier sans que l'index ait ete refait.
+    """
+    if not config.PERSIST_INDEX or not config.DB_PATH.exists():
+        return None
+    from datetime import datetime
+
+    try:
+        conn = connect()
+        try:
+            quand = get_meta(conn, "scanned_at", "")
+        finally:
+            conn.close()
+        if not quand:
+            return None
+        return (datetime.now() - datetime.fromisoformat(quand)).total_seconds() / 86400
+    except (sqlite3.Error, ValueError, OSError):
+        return None
+
+
+def index_perime() -> bool:
+    """Faut-il refaire le scan complet ?"""
+    age = age_de_l_index()
+    return age is not None and age > PEREMPTION_JOURS
 
 
 def wait_ready(timeout: float | None = None) -> bool:

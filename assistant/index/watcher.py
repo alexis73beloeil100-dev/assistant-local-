@@ -10,8 +10,14 @@ d'evenements par minute dans Windows/, AppData/ et les caches, pour des
 fichiers dont personne ne cherchera jamais le nom. On surveille les dossiers
 ou l'utilisateur travaille vraiment.
 
-Rien n'est ecrit sur le disque : les mises a jour vont dans l'index en
-memoire, qui disparait a la fermeture comme le reste.
+Les mises a jour vont dans l'index, ou qu'il vive : en memoire ou sur le
+disque, selon config.PERSIST_INDEX -- passe a True le 24/08/2026.
+
+Depuis ce jour, cette surveillance ne rafraichit plus une photographie qui
+allait de toute facon mourir a la fermeture : c'est elle qui empeche un index
+CONSERVE de vieillir pendant que l'assistant tourne. Ce qu'elle ne peut pas
+rattraper, c'est ce qui bouge pendant qu'il est ferme -- d'ou la peremption
+de db.PEREMPTION_JOURS, qui refait le scan au-dela de sept jours.
 """
 from __future__ import annotations
 

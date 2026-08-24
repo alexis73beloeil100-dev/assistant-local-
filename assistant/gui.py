@@ -25,8 +25,8 @@ import threading
 import tkinter as tk
 from pathlib import Path
 
-from assistant import (apprentissage, connaissance, llm, panels, settings,
-                       theme as t)
+from assistant import (apprentissage, config, connaissance, llm, panels,
+                       settings, theme as t)
 from assistant.index import db, scanner, watcher
 from assistant.skills import games, hardware
 from assistant.voice import stt, tts, wake
@@ -753,15 +753,30 @@ class AssistantWindow(tk.Tk):
             apprentissage.tout_apprendre()
             self.post("info", connaissance.rapport().splitlines()[0])
 
-            if not db.is_ready():
+            # Trois cas, alors qu'un seul existait avant que l'index soit
+            # conserve : absent, perime, ou utilisable tel quel.
+            age = db.age_de_l_index()
+            if not db.is_ready() or db.index_perime():
+                if age is not None:
+                    self.post("info",
+                              f"Index vieux de {age:.0f} jours : on le refait.")
                 self.post("status", ("Scan des fichiers", t.AMBER))
                 stats = scanner.rebuild(verbose=False)
                 nombre = f"{stats.get('files', 0):,}".replace(",", " ")
-                self.post("info",
-                          f"{nombre} fichiers connus, en memoire uniquement.")
-                if watcher.start() is not None:
-                    self.post("info", watcher.status())
-                panels.prime(["espace", "fichiers"])
+                ou = ("conserves d'une fois sur l'autre"
+                      if config.PERSIST_INDEX else "en memoire uniquement")
+                self.post("info", f"{nombre} fichiers connus, {ou}.")
+            elif age is not None:
+                self.post("info", "Index relu du lancement precedent "
+                                  f"(scan d'il y a {age:.0f} jours).")
+
+            # La surveillance demarre TOUJOURS, index reconstruit ou relu.
+            # Elle etait enfermee dans le bloc du scan : des lors qu'un index
+            # conserve permet d'eviter ce scan, plus rien ne suivait les
+            # fichiers et l'index vieillissait sans que personne le rattrape.
+            if watcher.start() is not None:
+                self.post("info", watcher.status())
+            panels.prime(["espace", "fichiers"])
 
             self.post("status", ("Pret", t.GREEN))
 

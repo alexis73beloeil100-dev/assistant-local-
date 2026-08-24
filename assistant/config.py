@@ -200,7 +200,20 @@ INSERT_BATCH = 20_000
 # en tache de fond, pendant que le reste de l'assistant est deja utilisable).
 #
 # True = l'index est conserve dans data/index.db et le demarrage est immediat.
-PERSIST_INDEX = False
+#
+# Passe a True le 24/08/2026, sur decision de l'utilisateur, en meme temps que
+# la persistance de la connaissance. Les quatre-vingts secondes se payaient a
+# chaque lancement, et une recherche demandee trop tot repondait "l'index est
+# en construction" au lieu de repondre.
+#
+# Ce que le fichier contient : le nom, la taille et l'emplacement de chaque
+# fichier scanne -- jamais leur contenu. C'est neanmoins la liste de ce qui
+# est sur les disques, et elle subsiste apres la fermeture.
+#
+# Deux consequences, traitees ailleurs, qui n'existaient pas en memoire :
+# l'index vieillit (db.PEREMPTION_JOURS le refait au-dela de sept jours), et
+# la surveillance doit demarrer meme quand aucun scan n'a lieu (gui.py).
+PERSIST_INDEX = True
 
 # --- Modele local -----------------------------------------------------------
 
