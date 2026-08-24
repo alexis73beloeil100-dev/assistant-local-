@@ -4,6 +4,11 @@ Assistant vocal et textuel qui connaît cette machine. **Rien ne sort du PC** :
 le modèle de langage, la reconnaissance vocale et la synthèse tournent tous
 en local.
 
+### [⬇️ Télécharger l'installateur (Windows)](https://github.com/alexis73beloeil100-dev/assistant-local-/releases/latest)
+
+Un seul fichier, rien d'autre à installer. La liste de fichiers ci-dessus est
+le code source : elle ne sert qu'à qui veut le lire.
+
 ---
 
 ## Démarrer
