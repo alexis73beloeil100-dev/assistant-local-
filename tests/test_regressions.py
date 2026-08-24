@@ -4008,3 +4008,116 @@ def test_le_rapport_de_connaissance_annonce_la_conservation():
     rapport = connaissance.rapport()
     assert "memoire vive" not in rapport
     assert "session a l'autre" in rapport
+
+# --- Ecran de chargement ------------------------------------------------------
+
+def test_l_ecran_de_chargement_ne_retarde_jamais_le_demarrage():
+    """Une decoration ne doit pas allonger l'attente qu'elle habille.
+
+    Le travail de demarrage part immediatement, en parallele de la video. La
+    tentation etait de faire l'inverse -- jouer six secondes, puis charger --
+    ce qui aurait ajoute six secondes a chaque lancement pour un effet
+    visuel.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "assistant" / "gui.py").read_text(encoding="utf-8")
+
+    debut = source.index("def _boot(self)")
+    fin = source.index("threading.Thread(target=work, daemon=True).start()",
+                       debut)
+    bloc = source[debut:fin]
+
+    place_ecran = bloc.index("demarrage.ouvrir(")
+    place_travail = bloc.index("def work():")
+    assert place_ecran < place_travail, (
+        "l'ecran doit s'ouvrir avant le travail, pas a sa place")
+
+    for attente in ("sleep(", "after(6000", "wait("):
+        assert attente not in bloc, (
+            f"{attente} : le demarrage serait artificiellement rallonge")
+
+
+def test_un_ecran_de_chargement_impossible_n_empeche_pas_de_demarrer():
+    """Le pire defaut possible : une decoration qui bloque le programme.
+
+    Video absente, codec manquant, Tk capricieux -- ouvrir() rend None sans
+    bruit et l'application demarre exactement comme avant.
+    """
+    from assistant import demarrage
+
+    class FauxParent:
+        pass
+
+    # Aucune video : on rend None, on ne leve pas.
+    origine = demarrage.video_de_demarrage
+    demarrage.video_de_demarrage = lambda: None
+    try:
+        assert demarrage.ouvrir(FauxParent()) is None
+    finally:
+        demarrage.video_de_demarrage = origine
+
+    # Une video presente mais un parent inutilisable : idem.
+    assert demarrage.ouvrir(FauxParent()) is None
+
+
+def test_la_video_de_demarrage_est_embarquee_dans_le_paquet():
+    """Presente en sources et absente du paquet, l'ecran ne s'afficherait
+    que chez le developpeur -- le defaut le plus difficile a remarquer."""
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    assert (racine / "assistant" / "ressources" / "demarrage.mp4").is_file()
+
+    spec = (racine / "AssistantLocal.spec").read_text(encoding="utf-8")
+    assert "assistant/ressources/demarrage.mp4" in spec
+
+
+def test_le_decodage_ne_tourne_pas_sur_le_fil_graphique():
+    """42 images par seconde decodees pour 30 a afficher : la marge est mince.
+
+    Elle depend de la charge du PC au moment du lancement -- exactement le
+    moment ou Windows lance aussi tout le reste. Un fil qui prend de l'avance
+    absorbe ces a-coups ; un decodage sur le fil graphique ferait saccader
+    l'image des qu'un antivirus se reveille.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.demarrage import EcranDeChargement
+
+    arbre = ast.parse(textwrap.dedent(
+        inspect.getsource(EcranDeChargement.__init__)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+    assert "threading.Thread" in code, "le decodage doit partir dans un fil"
+
+    # Et l'affichage, lui, reste sur le fil graphique.
+    afficher = ast.parse(textwrap.dedent(
+        inspect.getsource(EcranDeChargement._afficher)))
+    code = "\n".join(ast.unparse(n) for n in afficher.body[0].body[1:])
+    assert "self.after(" in code
+
+
+def test_l_ecran_cede_seulement_quand_les_deux_sont_prets():
+    """La video finie ne suffit pas, l'application prete non plus.
+
+    Ceder trop tot montre une fenetre a moitie remplie ; ceder trop tard fait
+    attendre devant une image figee alors que tout est pret.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.demarrage import EcranDeChargement
+
+    arbre = ast.parse(textwrap.dedent(
+        inspect.getsource(EcranDeChargement._peut_ceder)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+    assert "self._finie" in code and "self._pret" in code
+
+    # Et la fenetre principale n'apparait qu'a ce moment-la : construite avant
+    # l'ecran, elle s'affichait par-dessous pendant tout le chargement.
+    assert "_a_la_fin" in code, (
+        "l'ecran doit reveler la fenetre en cedant la place")

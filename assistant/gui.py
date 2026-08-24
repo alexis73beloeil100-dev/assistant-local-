@@ -907,11 +907,38 @@ class AssistantWindow(tk.Tk):
     # Demarrage
     # =====================================================================
 
+    def _montrer_la_fenetre(self) -> None:
+        """Revele la fenetre principale, une fois l'ecran d'accueil efface."""
+        try:
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+        except tk.TclError:
+            pass
+
     def _boot(self) -> None:
         self.add("Pose ta question ici, ou clique \"Par ou commencer\" a "
                  "gauche pour voir des exemples.", "info")
 
+        # L'ecran de chargement HABILLE l'attente, il ne la cree pas : le
+        # travail ci-dessous part immediatement, en parallele. S'il n'a pas pu
+        # s'ouvrir -- video absente, codec manquant -- accueil vaut None et
+        # tout se passe exactement comme avant.
+        from assistant import demarrage
+
+        accueil = demarrage.ouvrir(self, a_la_fin=self._montrer_la_fenetre)
+        if accueil is not None:
+            # Masquee, pas fermee : elle continue de se construire derriere,
+            # et reapparait remplie. Sans ce retrait, on la voyait se remplir
+            # par-dessous son propre ecran d'accueil.
+            self.withdraw()
+
+        def etape(texte: str) -> None:
+            if accueil is not None:
+                self.post("appel", lambda: accueil.etape(texte))
+
         def work():
+            etape("Demarrage du moteur ...")
             self.post("status", ("Demarrage du moteur", t.AMBER))
             ok, message = llm.available(
                 on_progress=lambda m: self.post("status", (m[:28], t.AMBER))
@@ -919,6 +946,7 @@ class AssistantWindow(tk.Tk):
             if not ok:
                 self.post("error", message)
 
+            etape("Analyse de la machine ...")
             self.post("status", ("Analyse de la machine", t.AMBER))
             hardware.collect()
             games.all_games()
@@ -930,6 +958,7 @@ class AssistantWindow(tk.Tk):
             # taches, les pilotes. Le RELEVE se refait a chaque demarrage --
             # un logiciel desinstalle hier ne doit pas reapparaitre -- mais ce
             # qu'il verse dans la connaissance, lui, est conserve.
+            etape("Inventaire logiciel ...")
             self.post("status", ("Inventaire logiciel", t.AMBER))
             apprentissage.tout_apprendre()
             self.post("info", connaissance.rapport().splitlines()[0])
@@ -959,7 +988,10 @@ class AssistantWindow(tk.Tk):
                 self.post("info", watcher.status())
             panels.prime(["espace", "fichiers"])
 
+            etape("Pret.")
             self.post("status", ("Pret", t.GREEN))
+            if accueil is not None:
+                self.post("appel", accueil.application_prete)
 
         threading.Thread(target=work, daemon=True).start()
         self._brancher_alertes()

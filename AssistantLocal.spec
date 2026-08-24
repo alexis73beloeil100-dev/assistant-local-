@@ -5,7 +5,11 @@ from PyInstaller.utils.hooks import collect_all
 # probe.ps1 n'est pas du Python : sans cette ligne, PyInstaller l'ignore et
 # l'application packagee ne sait plus relever la configuration de la machine.
 datas = [('assistant/skills/probe.ps1', 'assistant/skills'),
-         ('assistant/skills/inventaire.ps1', 'assistant/skills')]
+         ('assistant/skills/inventaire.ps1', 'assistant/skills'),
+         # La video de l'ecran de chargement. Si elle manque, demarrage.ouvrir()
+         # rend None et l'application demarre exactement comme avant : une
+         # decoration ne doit jamais empecher un programme de s'ouvrir.
+         ('assistant/ressources/demarrage.mp4', 'assistant/ressources')]
 
 # Outils tiers portables embarques avec l'application.
 #
