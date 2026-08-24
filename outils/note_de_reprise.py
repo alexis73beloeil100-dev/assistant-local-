@@ -202,7 +202,16 @@ def construire(destination: Path) -> Path:
     # ------------------------------------------------------- fait recemment
     F.append(Paragraph("2. Ce qui vient d'etre fait", s["section"]))
 
-    F.append(Paragraph("Version 1.0.3, et tout est aligne", s["sous_section"]))
+    # Le numero est LU, pas ecrit.
+    #
+    # Il etait en dur, et il est reste sur 1.0.3 pendant que le reste du depot
+    # passait en 1.0.4 : la note qui sert a dire ou en est le projet annoncait
+    # la mauvaise version. Une note dont le premier chiffre est faux perd la
+    # confiance qu'on lui accorde pour tout le reste.
+    from assistant import __version__
+
+    F.append(Paragraph(f"Version {__version__}, et tout est aligne",
+                       s["sous_section"]))
     F.append(Paragraph(
         "Sources, executable et installateur portent le meme numero. Un test "
         "verifie que <font face='Courier'>installateur.iss</font> et "

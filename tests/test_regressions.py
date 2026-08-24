@@ -4201,3 +4201,67 @@ def test_le_redimensionnement_ne_passe_pas_par_python():
 
     assert "reformat(" in code
     assert ".resize(" not in code, "PIL redimensionnerait en Python"
+
+def test_aucun_numero_de_version_n_est_ecrit_en_dur():
+    """Un numero recopie a la main reste en arriere sans que rien ne le dise.
+
+    note_de_reprise.py annoncait "Version 1.0.3, et tout est aligne" alors que
+    le depot entier etait passe en 1.0.4 -- dans la note qui sert justement a
+    dire ou en est le projet. Une note dont le premier chiffre est faux perd
+    la confiance qu'on lui accorde pour tout le reste.
+
+    Les manifestes et les notes de version, eux, PORTENT un numero dans leur
+    nom : ce sont des enregistrements de ce qui a ete distribue, et ils
+    doivent rester tels quels. Effacer ces traces reviendrait a ne plus savoir
+    ce que les gens ont installe.
+    """
+    import ast
+    import re
+    from pathlib import Path
+
+    from assistant import __version__
+
+    racine = Path(__file__).resolve().parent.parent
+    ancienne = re.compile(r"\b1\.0\.[0-9]+\b")
+
+    def lignes_de_prose(source: str) -> set:
+        """Les lignes occupees par une docstring, reconnues par ast.
+
+        Et pas par le premier caractere de la ligne : une docstring de module
+        contient des exemples de ligne de commande qui commencent par tout
+        autre chose qu'un guillemet. Le premier filtre les prenait pour du
+        code et signalait un exemple d'usage comme un numero perime.
+        """
+        occupees = set()
+        for noeud in ast.walk(ast.parse(source)):
+            corps = getattr(noeud, "body", None)
+            if not isinstance(corps, list) or not corps:
+                continue
+            premier = corps[0]
+            if (isinstance(premier, ast.Expr)
+                    and isinstance(premier.value, ast.Constant)
+                    and isinstance(premier.value.value, str)):
+                fin = premier.end_lineno or premier.lineno
+                occupees.update(range(premier.lineno, fin + 1))
+        return occupees
+
+    coupables = []
+    for fichier in list((racine / "assistant").rglob("*.py")) + \
+            list((racine / "outils").rglob("*.py")):
+        source = fichier.read_text(encoding="utf-8", errors="replace")
+        try:
+            prose = lignes_de_prose(source)
+        except SyntaxError:
+            continue
+        for numero, ligne in enumerate(source.splitlines(), 1):
+            # Commentaires et docstrings racontent l'histoire du projet : ils
+            # ont le droit de nommer les versions passees.
+            if numero in prose or ligne.strip().startswith("#"):
+                continue
+            for trouve in ancienne.findall(ligne):
+                if trouve != __version__:
+                    coupables.append(f"{fichier.name}:{numero} {trouve}")
+
+    assert not coupables, (
+        "numeros de version ecrits en dur, et deja perimes :\n  "
+        + "\n  ".join(coupables))
