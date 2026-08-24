@@ -454,6 +454,73 @@ def taper(texte: str, ask=None) -> str:
     return f"{len(texte)} caractere(s) tapes {ou}."
 
 
+# Les touches qu'une combinaison peut nommer.
+#
+# Liste FERMEE, et c'est le point important : une macro declenchee depuis le
+# telephone ne doit pouvoir envoyer que ce qui figure ici. Accepter un code de
+# touche arbitraire venu du reseau reviendrait a offrir un clavier complet a
+# qui trouve le jeton du serveur.
+TOUCHES = {
+    "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10, "maj": 0x10,
+    "win": 0x5B, "windows": 0x5B, "tab": 0x09, "entree": 0x0D,
+    "enter": 0x0D, "echap": 0x1B, "esc": 0x1B, "espace": 0x20,
+    "suppr": 0x2E, "delete": 0x2E, "retour": 0x08, "backspace": 0x08,
+    "haut": 0x26, "bas": 0x28, "gauche": 0x25, "droite": 0x27,
+    "debut": 0x24, "fin": 0x23, "pageup": 0x21, "pagedown": 0x22,
+    "impr": 0x2C, "inser": 0x2D,
+    **{f"f{n}": 0x6F + n for n in range(1, 13)},
+    **{c: ord(c.upper()) for c in "abcdefghijklmnopqrstuvwxyz"},
+    **{c: ord(c) for c in "0123456789"},
+}
+
+
+def raccourci(combinaison: str, ask=None) -> str:
+    """Envoie une combinaison de touches, par exemple "ctrl+s" ou "alt+tab".
+
+    Les modificateurs sont enfonces dans l'ordre donne, la derniere touche est
+    frappee, puis tout est relache DANS L'ORDRE INVERSE. Relacher dans le
+    desordre laisse Windows croire qu'une touche est encore enfoncee : la
+    machine se met a tout selectionner ou a ouvrir des menus, et il faut
+    appuyer soi-meme sur la touche fantome pour s'en sortir.
+    """
+    import ctypes
+
+    noms = [m.strip().lower() for m in str(combinaison).split("+") if m.strip()]
+    if not noms:
+        return "Aucune touche donnee."
+
+    inconnues = [n for n in noms if n not in TOUCHES]
+    if inconnues:
+        return (f"Touche inconnue : {', '.join(inconnues)}. "
+                "Je n'envoie que des touches nommees, jamais un code brut.")
+
+    action = safety.Action(
+        kind="clavier",
+        summary=f"Envoyer la combinaison {'+'.join(noms)}",
+        targets=[f"touches: {'+'.join(noms)}"],
+        reversible=False,
+        details="La combinaison part dans l'application au premier plan.",
+    )
+    try:
+        safety.guard(action, ask=ask or (lambda _texte: True))
+    except safety.Refused as exc:
+        return str(exc)
+
+    _rendre_le_focus()
+    user32 = ctypes.windll.user32
+    codes = [TOUCHES[n] for n in noms]
+    try:
+        for code in codes:
+            user32.keybd_event(code, 0, 0, 0)
+            time.sleep(0.01)
+        for code in reversed(codes):
+            user32.keybd_event(code, 0, KEYEVENTF_KEYUP, 0)
+            time.sleep(0.01)
+    except Exception as exc:  # noqa: BLE001
+        return f"Combinaison impossible : {type(exc).__name__}: {exc}"
+    return f"Combinaison {'+'.join(noms)} envoyee."
+
+
 def _injecter(texte: str) -> None:
     """Envoie le texte en Unicode via SendInput."""
     import ctypes

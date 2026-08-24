@@ -3163,3 +3163,138 @@ def test_un_fichier_joint_illisible_ne_disparait_pas_en_silence():
     assert "illisible" in code, (
         "l'echec de lecture doit partir au modele, pas etre avale")
     assert "except" in code, "un fichier abime ne doit pas interrompre les autres"
+
+# --- Serveur local : le telephone parle au PC --------------------------------
+
+def test_le_serveur_est_eteint_tant_que_personne_ne_l_allume():
+    """La porte la plus dangereuse du projet ne doit jamais s'ouvrir seule.
+
+    Un serveur qui demarrerait avec l'application ecouterait sur le reseau de
+    la maison a chaque session, sans que personne l'ait demande ni ne s'en
+    souvienne.
+    """
+    from assistant import serveur
+
+    assert serveur.allume() is False
+    assert "ETEINT" in serveur.etat()
+
+
+def test_le_telephone_ne_peut_pas_decrire_une_action(monkeypatch):
+    """Accepter une suite de touches venue du reseau, c'est offrir un clavier.
+
+    Toute la surete du serveur tient a cette regle : le telephone NOMME une
+    macro deja enregistree sur le PC, il ne la decrit jamais. Un genre
+    arbitraire -- une commande shell, un chemin d'executable -- rendrait le
+    jeton equivalent a un acces administrateur a distance.
+    """
+    from assistant import serveur
+
+    enregistrees = {}
+    monkeypatch.setattr(serveur.settings, "get",
+                        lambda cle, defaut=None: enregistrees
+                        if cle == "macros" else defaut)
+    monkeypatch.setattr(serveur.settings, "set",
+                        lambda cle, valeur: enregistrees.update(valeur)
+                        if cle == "macros" else None)
+
+    for genre in ("commande", "shell", "powershell", "exec", "python", ""):
+        reponse = serveur.enregistrer_macro("piege", genre, "quelque chose")
+        assert "Genre inconnu" in reponse, genre
+    assert enregistrees == {}
+
+    assert "enregistree" in serveur.enregistrer_macro("ok", "touches", "ctrl+s")
+
+
+def test_une_macro_inconnue_ne_declenche_rien(monkeypatch):
+    """Le nom vient du reseau : il n'est pas digne de confiance."""
+    from assistant import serveur
+
+    monkeypatch.setattr(serveur, "macros", lambda: {})
+    ok, message = serveur.jouer_macro("../../evasion")
+    assert ok is False
+    assert "Aucune macro" in message
+
+
+def test_un_raccourci_n_envoie_que_des_touches_nommees():
+    """Un code de touche brut venu du reseau, c'est un clavier complet.
+
+    La liste est FERMEE : ce qui n'y figure pas est refuse, plutot que
+    transmis a Windows au benefice du doute.
+    """
+    from assistant.skills import control
+
+    for piege in ("0x5B", "vk123", "touche-inventee", "ctrl+0x41", ";calc"):
+        reponse = control.raccourci(piege)
+        assert "Touche inconnue" in reponse, piege
+
+    assert "ctrl" in control.TOUCHES and "f5" in control.TOUCHES
+    assert "0x5B" not in control.TOUCHES
+
+
+def test_le_jeton_est_compare_en_temps_constant():
+    """Comparer avec == fuit la longueur du prefixe correct.
+
+    Un attaquant sur le meme reseau mesure le temps de reponse et reconstruit
+    le jeton caractere par caractere. compare_digest ne varie pas selon
+    l'endroit ou la difference se trouve.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant import serveur
+
+    arbre = ast.parse(textwrap.dedent(
+        inspect.getsource(serveur._Poignee._autorise)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+
+    assert "compare_digest" in code
+    assert "== jeton()" not in code and "== self" not in code
+
+
+def test_le_serveur_n_ecoute_pas_sur_toutes_les_interfaces():
+    """0.0.0.0 ecouterait aussi sur un VPN ou un partage de connexion.
+
+    Se lier a l'adresse locale et a elle seule limite la porte au reseau que
+    l'utilisateur a en tete quand il allume le serveur.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant import serveur
+
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(serveur.demarrer)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+
+    assert "0.0.0.0" not in code
+    assert "adresse_locale()" in code
+
+
+def test_le_jeton_ne_reste_pas_dans_l_adresse_du_telephone():
+    """Un jeton dans la barre d'adresse survit dans l'historique.
+
+    Il repartirait aussi dans tout partage de lien, et dans les captures
+    d'ecran. La page le range puis l'efface de l'adresse des le chargement.
+    """
+    from assistant import serveur
+
+    page = serveur.PAGE_MOBILE
+    assert "localStorage.setItem('jeton'" in page
+    assert "history.replaceState" in page
+    # Le jeton part en en-tete, jamais dans l'adresse des appels suivants.
+    assert "'X-Jeton': J()" in page
+
+
+def test_les_outils_du_serveur_sont_exposes_au_modele():
+    from assistant import llm
+
+    noms = {t.name for t in llm.TOOLS}
+    for outil in ("appairer_le_telephone", "eteindre_le_serveur",
+                  "etat_du_serveur", "enregistrer_macro", "lister_macros",
+                  "supprimer_macro", "raccourci_clavier"):
+        assert outil in noms, outil
+
+    # Allumer une porte reseau est un effet, pas une lecture.
+    for outil in ("appairer_le_telephone", "eteindre_le_serveur"):
+        assert next(t for t in llm.TOOLS if t.name == outil).effect is True

@@ -15,6 +15,7 @@ import requests
 from assistant import config
 from assistant import connaissance
 from assistant import selftest
+from assistant import serveur
 from assistant.skills import (apps, archives, cleanup, content, control,
                               debit, desk, documents, files, fixes, gamemode,
                               games, hardware, inventaire, reminders, rgb,
@@ -816,6 +817,69 @@ TOOLS: list[Tool] = [
         "taches planifiees, pilotes tiers, navigateurs.",
         _obj({}),
         lambda: inventaire.resume(),
+    ),
+    Tool(
+        "appairer_le_telephone",
+        "Allume le serveur local et affiche un QR code a scanner avec le "
+        "telephone, pour le presse-papier partage et les macros. Le serveur "
+        "est eteint par defaut et n'ecoute que sur le reseau local.",
+        _obj({}),
+        lambda: serveur.appairer(),
+        effect=True,
+    ),
+    Tool(
+        "eteindre_le_serveur",
+        "Eteint le serveur local : le telephone ne peut plus rien envoyer.",
+        _obj({}),
+        lambda: serveur.arreter(),
+        effect=True,
+    ),
+    Tool(
+        "etat_du_serveur",
+        "Dit si le serveur local est allume, ce qu'il a recu, et combien de "
+        "macros sont enregistrees.",
+        _obj({}),
+        lambda: serveur.etat(),
+    ),
+    Tool(
+        "enregistrer_macro",
+        "Enregistre une macro declenchable depuis le telephone. genre vaut "
+        "\"texte\" (taper une suite de caracteres) ou \"touches\" (une "
+        "combinaison comme ctrl+s). Le telephone ne peut QUE nommer une macro "
+        "deja enregistree ici : il n'envoie jamais de frappes lui-meme.",
+        _obj({"nom": STR,
+              "genre": {**STR, "description": "texte ou touches"},
+              "valeur": {**STR,
+                         "description": "le texte a taper, ou la combinaison"}},
+             ["nom", "genre", "valeur"]),
+        lambda nom, genre, valeur: serveur.enregistrer_macro(
+            str(nom), str(genre), str(valeur)),
+        effect=True,
+    ),
+    Tool(
+        "lister_macros",
+        "Les macros enregistrees, declenchables depuis le telephone.",
+        _obj({}),
+        lambda: "\n".join(
+            f"{n} : {m.get('genre')} -> {m.get('valeur')}"
+            for n, m in sorted(serveur.macros().items())
+        ) or "Aucune macro enregistree.",
+    ),
+    Tool(
+        "supprimer_macro",
+        "Supprime une macro enregistree.",
+        _obj({"nom": STR}, ["nom"]),
+        lambda nom: serveur.oublier_macro(str(nom)),
+        effect=True,
+    ),
+    Tool(
+        "raccourci_clavier",
+        "Envoie une combinaison de touches a la fenetre active, par exemple "
+        "ctrl+s ou alt+tab. Seules des touches nommees sont acceptees.",
+        _obj({"combinaison": {**STR, "description": "ex: ctrl+s, alt+tab"}},
+             ["combinaison"]),
+        lambda combinaison: control.raccourci(str(combinaison)),
+        effect=True,
     ),
     Tool(
         "analyser_video",
