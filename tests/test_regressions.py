@@ -515,17 +515,124 @@ def test_un_vrai_secret_n_est_jamais_retenu():
         assert not connaissance.apprendre("test", "cle", texte)
 
 
-def test_la_connaissance_n_ecrit_rien_sur_le_disque():
-    """L'exigence de l'utilisateur, verifiee dans le code lui-meme."""
-    import inspect
+def test_un_secret_dicte_n_atteint_jamais_le_disque(tmp_path, monkeypatch):
+    """Le filtre a secrets comptait deja ; depuis la persistance, il est vital.
 
+    Tant que la connaissance mourait avec le processus, un secret mal filtre
+    disparaissait a la fermeture. Le 24/08/2026, l'utilisateur a leve la
+    regle du tout-en-memoire : le meme oubli laisse desormais le secret dans
+    un fichier, en clair, jusqu'a ce que quelqu'un l'efface.
+
+    Ce test verifie les deux bouts de la chaine : le secret n'est pas retenu,
+    et le fichier ecrit ne le contient pas.
+    """
     from assistant import connaissance
 
-    source = inspect.getsource(connaissance)
-    for interdit in ("open(", "write_text", "Path(", "json.dump"):
-        assert interdit not in source, (
-            f"{interdit} dans connaissance.py : la connaissance doit vivre "
-            "en memoire vive uniquement")
+    monkeypatch.setattr(connaissance, "CHEMIN", tmp_path / "connaissance.json")
+    connaissance.oublier()
+
+    assert connaissance.apprendre("session", "wifi", "password: hunter2") is False
+    assert connaissance.apprendre("session", "api",
+                                  "token = a1b2c3d4e5f6g7h8") is False
+    assert connaissance.apprendre("materiel", "processeur",
+                                  "Ryzen 7 5800X") is True
+
+    assert connaissance.sauvegarder()
+    ecrit = (tmp_path / "connaissance.json").read_text(encoding="utf-8")
+    assert "hunter2" not in ecrit
+    assert "a1b2c3d4e5f6g7h8" not in ecrit
+    assert "5800X" in ecrit
+
+
+def test_la_connaissance_survit_a_la_fermeture(tmp_path, monkeypatch):
+    """Un assistant qui oublie tout la nuit ne peut pas aider sur la duree.
+
+    C'est la raison pour laquelle la regle du tout-en-memoire a ete levee :
+    l'assistant redecouvrait le meme disque sature chaque matin, et ne savait
+    pas qu'une reparation avait deja ete tentee la veille.
+    """
+    from assistant import connaissance
+
+    monkeypatch.setattr(connaissance, "CHEMIN", tmp_path / "connaissance.json")
+    connaissance.oublier()
+
+    connaissance.apprendre("problemes", "disque C", "sature a 95 %", "hardware")
+    connaissance.apprendre("problemes", "reparation", "sfc lance le 24/08")
+    assert connaissance.sauvegarder()
+
+    # Ce que voit le processus suivant : une memoire vide, puis le fichier.
+    connaissance._faits.clear()
+    assert connaissance.total() == 0
+    assert connaissance.charger() == 2
+
+    trouve = {f.cle: f.valeur for f in connaissance.chercher("disque")}
+    assert trouve["disque C"] == "sature a 95 %"
+
+
+def test_un_fichier_de_connaissance_abime_ne_bloque_pas_le_demarrage(
+        tmp_path, monkeypatch):
+    """Perdre la memoire d'hier est desagreable ; ne pas demarrer serait pire.
+
+    Une coupure au milieu d'une ecriture, un disque plein, un fichier
+    tronque : la relecture doit repartir a vide, jamais lever.
+    """
+    from assistant import connaissance
+
+    fichier = tmp_path / "connaissance.json"
+    monkeypatch.setattr(connaissance, "CHEMIN", fichier)
+
+    for contenu in ('{"faits": [', "", "pas du json", '{"autre": 1}'):
+        connaissance.oublier()
+        fichier.write_text(contenu, encoding="utf-8")
+        assert connaissance.charger() == 0
+
+    connaissance.oublier()
+    assert connaissance.charger() == 0
+
+
+def test_oublier_efface_aussi_le_fichier(tmp_path, monkeypatch):
+    """Une connaissance qu'on ne peut pas effacer n'est pas acceptable.
+
+    Vider le dictionnaire suffisait tant que rien n'etait ecrit. Depuis la
+    persistance, un oubli qui laisserait le fichier en place rendrait tout au
+    redemarrage suivant -- l'utilisateur croirait avoir efface.
+    """
+    from assistant import connaissance
+
+    fichier = tmp_path / "connaissance.json"
+    monkeypatch.setattr(connaissance, "CHEMIN", fichier)
+
+    connaissance.apprendre("materiel", "carte mere", "B550")
+    connaissance.sauvegarder()
+    assert fichier.is_file()
+
+    connaissance.oublier()
+    assert not fichier.exists(), "le fichier survit a un oubli complet"
+    assert connaissance.charger() == 0
+
+
+def test_les_faits_ne_sont_pas_ecrits_a_chaque_apprentissage(tmp_path,
+                                                             monkeypatch):
+    """Des milliers de faits au demarrage, ce serait des milliers d'ecritures.
+
+    tout_apprendre() verse tout le releve materiel et logiciel d'affilee.
+    Ecrire le fichier a chaque fait ferait travailler le disque pour un seul
+    etat final utile. L'ecriture est donc repoussee tant que la rafale dure.
+    """
+    from assistant import connaissance
+
+    monkeypatch.setattr(connaissance, "CHEMIN", tmp_path / "connaissance.json")
+    connaissance.oublier()
+
+    ecritures = []
+    monkeypatch.setattr(connaissance, "sauvegarder",
+                        lambda: ecritures.append(1) or True)
+
+    for i in range(50):
+        connaissance.apprendre("logiciels", f"programme {i}", "version 1.0")
+
+    assert ecritures == [], "une ecriture a eu lieu pendant la rafale"
+    connaissance._annuler_minuterie()
 
 
 def test_une_source_d_apprentissage_qui_echoue_est_signalee():

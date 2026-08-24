@@ -144,8 +144,19 @@ echecs: dict[str, str] = {}
 
 
 def tout_apprendre(on_progress=None) -> int:
-    """Verse toutes les sources dans la connaissance. Rend le nombre de faits."""
+    """Verse toutes les sources dans la connaissance. Rend le nombre de faits.
+
+    Ce qui a ete retenu lors des sessions precedentes est relu AVANT de
+    relever quoi que ce soit, et l'ordre compte : les sources ci-dessous
+    ecrasent ce qui a ete relu. C'est voulu. Un disque sature hier peut avoir
+    ete vide depuis, et un releve frais doit toujours primer sur un souvenir.
+
+    Ce qui survit de l'ancien, c'est ce qu'aucune source ne redecouvre : les
+    pannes rencontrees, les reparations tentees, ce qui s'est dit. C'est
+    precisement ce qu'on voulait garder en levant la regle du tout-en-memoire.
+    """
     echecs.clear()
+    connaissance.charger()
     for nom, source in SOURCES:
         if on_progress:
             on_progress(nom)
@@ -153,6 +164,7 @@ def tout_apprendre(on_progress=None) -> int:
             source()
         except Exception as exc:  # noqa: BLE001 - une source muette vaut mieux qu'un plantage
             echecs[nom] = f"{type(exc).__name__}: {exc}"
+    connaissance.sauvegarder()
     return connaissance.total()
 
 

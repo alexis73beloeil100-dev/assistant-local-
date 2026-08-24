@@ -1,34 +1,56 @@
-"""Ce que l'assistant apprend de cette machine, en memoire vive uniquement.
+"""Ce que l'assistant apprend de cette machine, et retient d'une fois sur l'autre.
 
-La regle, posee par l'utilisateur et non negociable : **rien n'est ecrit sur
-le disque**. Cette connaissance vit dans le processus, et disparait avec lui.
-A chaque demarrage, elle se reconstruit toute seule.
+Cette connaissance a longtemps vecu en memoire vive UNIQUEMENT, sur une regle
+que l'utilisateur avait posee et que ce module declarait non negociable :
+rien sur le disque, jamais. Elle se reconstruisait a chaque demarrage, et
+disparaissait avec le processus.
 
-C'est la meme decision que pour l'index des fichiers (config.PERSIST_INDEX =
-False), etendue a tout le reste : materiel, logiciels installes, services,
-taches planifiees, ce qui a ete lu pendant la session. Le cout est une
-reconstruction au lancement ; le benefice est qu'aucune photographie de la
-machine ne subsiste apres la fermeture.
+L'utilisateur a leve cette regle le 24/08/2026, en toute connaissance de ce
+qu'elle protegeait. La raison : un assistant qui oublie tout a la fermeture ne
+peut pas aider sur la duree. Il redecouvre le meme disque sature chaque matin,
+il ne sait pas qu'une reparation a deja ete tentee hier, et il repose la
+question qu'on lui a deja repondue. C'etait le defaut le plus visible a
+l'usage.
 
-Quatre limites, appliquees ici et pas ailleurs :
+Ce qui a change, et RIEN d'autre : les faits sont ecrits dans
+DATA_DIR/connaissance.json et relus au demarrage.
 
-  1. Rien sur le disque, jamais. Aucune fonction de ce module n'ouvre un
-     fichier en ecriture.
-  2. Aucun contenu de fichier n'est conserve. On retient qu'un fichier existe,
-     ou qu'il a ete lu, pas ce qu'il contient -- sinon la memoire vive
-     finirait par contenir l'integralite des documents ouverts.
-  3. Ce qui ressemble a un secret n'est jamais retenu, meme si l'utilisateur
-     le dicte. Un mot de passe range en memoire est un mot de passe qui
-     ressortira un jour dans une reponse.
-  4. Un plafond, avec eviction du plus ancien. Sans lui, une session longue
-     ferait gonfler la memoire sans limite.
+Ce qui n'a PAS change, et ne doit pas :
+
+  1. Aucun contenu de fichier n'est conserve. On retient qu'un fichier existe,
+     ou qu'il a ete lu, pas ce qu'il contient -- sinon le fichier finirait par
+     contenir l'integralite des documents ouverts.
+  2. Ce qui ressemble a un secret n'est jamais retenu, meme dicte
+     explicitement. Ce filtre comptait deja beaucoup ; il compte davantage
+     maintenant qu'un refus rate laisserait le secret sur le disque au lieu de
+     mourir avec le processus. Il s'applique donc DEUX fois : a
+     l'apprentissage, et de nouveau a la relecture -- ainsi un filtre ameliore
+     nettoie ce qu'une version plus permissive avait laisse passer.
+  3. Un plafond, avec eviction du plus ancien.
+  4. `oublier()` reprend la main, et efface le fichier avec la memoire. Une
+     connaissance qu'on ne peut pas effacer n'est pas acceptable.
+
+Ce fichier vit dans DATA_DIR, hors du depot et hors du dossier d'installation.
+Il contient une photographie de la machine : c'est le prix assume du choix
+ci-dessus.
 """
 from __future__ import annotations
 
+import atexit
+import json
 import re
 import threading
 import time
 from dataclasses import dataclass, field
+
+from assistant import config
+
+CHEMIN = config.DATA_DIR / "connaissance.json"
+
+# Delai avant ecriture, en secondes. L'apprentissage du demarrage verse des
+# milliers de faits d'affilee : ecrire a chacun ferait des milliers d'ecritures
+# pour un seul resultat utile. On attend que la rafale se calme.
+DELAI_ECRITURE = 5.0
 
 # Plafond global. 4000 faits representent quelques mega-octets : largement de
 # quoi connaitre une machine, sans risque de gonflement.
@@ -86,6 +108,7 @@ class Fait:
 _faits: dict[tuple[str, str], Fait] = {}
 _verrou = threading.RLock()
 _refuses = 0            # combien de faits ont ete ecartes comme sensibles
+_minuterie: threading.Timer | None = None
 
 
 def _ressemble_a_un_jeton(morceau: str) -> bool:
@@ -139,6 +162,7 @@ def apprendre(sujet: str, cle: str, valeur, source: str = "") -> bool:
             # gonfler la memoire sans fin.
             for perime in sorted(_faits.values(), key=lambda f: f.quand)[:200]:
                 _faits.pop((perime.sujet, perime.cle), None)
+    _planifier_ecriture()
     return True
 
 
@@ -149,16 +173,123 @@ def apprendre_lot(sujet: str, paires, source: str = "") -> int:
 
 
 def oublier(sujet: str | None = None) -> int:
-    """Efface un sujet, ou tout. L'utilisateur doit pouvoir reprendre la main."""
+    """Efface un sujet, ou tout. L'utilisateur doit pouvoir reprendre la main.
+
+    Efface AUSSI sur le disque. Tant que la connaissance mourait avec le
+    processus, vider le dictionnaire suffisait ; maintenant qu'elle survit,
+    un oubli qui laisserait le fichier en place ne serait pas un oubli. Le
+    fichier est supprime plutot que reecrit vide -- il n'y a rien a garder.
+    """
     with _verrou:
         if sujet is None:
             nombre = len(_faits)
             _faits.clear()
+            _annuler_minuterie()
+            try:
+                CHEMIN.unlink(missing_ok=True)
+            except OSError:
+                pass
             return nombre
         cibles = [c for c in _faits if c[0] == sujet]
         for cle in cibles:
             del _faits[cle]
+        if cibles:
+            _planifier_ecriture()
         return len(cibles)
+
+
+# --- Persistance -------------------------------------------------------------
+
+def _annuler_minuterie() -> None:
+    global _minuterie
+    if _minuterie is not None:
+        _minuterie.cancel()
+        _minuterie = None
+
+
+def _planifier_ecriture() -> None:
+    """Repousse l'ecriture tant que les faits arrivent en rafale.
+
+    tout_apprendre() verse des milliers de faits d'affilee au demarrage.
+    Ecrire a chacun, c'est des milliers de reecritures du meme fichier pour
+    un seul etat final utile -- et sur un disque, ca se sent.
+    """
+    global _minuterie
+    with _verrou:
+        _annuler_minuterie()
+        _minuterie = threading.Timer(DELAI_ECRITURE, sauvegarder)
+        _minuterie.daemon = True
+        _minuterie.start()
+
+
+def sauvegarder() -> bool:
+    """Ecrit les faits sur le disque. Rend False si l'ecriture a echoue.
+
+    Ecriture atomique : un fichier temporaire, puis un remplacement. Une
+    coupure de courant au milieu d'un json.dump laisserait sinon un fichier
+    tronque, que la relecture rejetterait -- et toute la connaissance serait
+    perdue au lieu d'etre simplement vieille d'une session.
+    """
+    with _verrou:
+        _annuler_minuterie()
+        donnees = {
+            "version": 1,
+            "faits": [
+                {"sujet": f.sujet, "cle": f.cle, "valeur": f.valeur,
+                 "source": f.source, "quand": f.quand}
+                for f in _faits.values()
+            ],
+        }
+    temporaire = CHEMIN.with_suffix(".json.tmp")
+    try:
+        temporaire.parent.mkdir(parents=True, exist_ok=True)
+        temporaire.write_text(
+            json.dumps(donnees, ensure_ascii=False), encoding="utf-8")
+        temporaire.replace(CHEMIN)
+    except (OSError, TypeError, ValueError):
+        return False
+    return True
+
+
+def charger() -> int:
+    """Relit les faits de la session precedente. Rend le nombre retenu.
+
+    Le filtre a secrets est REJOUE sur ce qui est relu. Ce n'est pas de la
+    defiance envers le fichier : c'est que le filtre s'ameliore avec le
+    temps, et qu'un secret passe hier sous une regle trop permissive doit
+    disparaitre des qu'on sait le reconnaitre.
+
+    Un fichier absent, illisible ou abime ne bloque rien : on repart d'une
+    connaissance vide, exactement comme avant la persistance. Perdre la
+    memoire d'hier est desagreable ; ne pas demarrer serait pire.
+    """
+    try:
+        brut = json.loads(CHEMIN.read_text(encoding="utf-8"))
+        entrees = brut["faits"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return 0
+
+    retenus = 0
+    with _verrou:
+        for entree in entrees:
+            try:
+                sujet = str(entree["sujet"])
+                cle = str(entree["cle"])
+                valeur = str(entree["valeur"])
+            except (KeyError, TypeError):
+                continue
+            if _sensible(valeur) or _sensible(cle):
+                continue
+            _faits[(sujet, cle)] = Fait(
+                sujet, cle, valeur, str(entree.get("source") or ""),
+                float(entree.get("quand") or time.time()))
+            retenus += 1
+    return retenus
+
+
+# La derniere rafale de faits ne doit pas mourir avec le processus : la
+# minuterie attend cinq secondes, et une fermeture arrive plus vite que ca.
+atexit.register(sauvegarder)
 
 
 def sujets() -> dict[str, int]:
