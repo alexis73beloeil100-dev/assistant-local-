@@ -1,6 +1,6 @@
 {
   "version": "1.0.4",
-  "genere": "2026-08-24T21:46:13",
+  "genere": "2026-08-24T22:22:42",
   "fichiers": {
     "_internal/_asyncio.pyd": {
       "sha256": "c77de90cad749087a0c5dc5e19d78d24f6ef44e7e5ac19b8420cfc0cea62395d",
@@ -4255,7 +4255,7 @@
       "taille": 126464
     },
     "_internal/base_library.zip": {
-      "sha256": "10a31458d3aaed4758cc204d42c36c47a2ad63d7d959a1c33b4f8f339448eb8a",
+      "sha256": "9bf5b6876950d469546ee52b660689d185a1a510c2af84d9805c1c16e33209ca",
       "taille": 1333717
     },
     "_internal/certifi/cacert.pem": {
@@ -10171,8 +10171,8 @@
       "taille": 148336
     },
     "AssistantLocal.exe": {
-      "sha256": "f65e609dc631db68f44997e1bf53b742edb930ea93cefd9d35d4f0855d5e5669",
-      "taille": 26972763
+      "sha256": "85f28bf6715d72d59183a8607072483facaf2ce0f91f52bd8fdd084f4cff7b3e",
+      "taille": 26973654
     },
     "LICENCE-INSTALLATION.txt": {
       "sha256": "4a730fd1448bd8671111654f8eec145872193fe6adba1c576302c21f7c56fec6",
