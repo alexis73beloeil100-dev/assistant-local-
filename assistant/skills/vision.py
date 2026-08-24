@@ -174,6 +174,33 @@ def vision_model() -> str | None:
     return None
 
 
+# Fenetre de contexte pour le modele de vision.
+#
+# Une image coute des milliers de jetons : une capture 3440x1440 en a pese
+# 4049 a la mesure. Avec la fenetre par defaut, il ne restait plus la place
+# d'ecrire une reponse -- le modele s'arretait sur done_reason "length" apres
+# cinquante jetons, et rendait une chaine VIDE. read_image annoncait alors
+# "(modele de vision)" suivi de rien, et le modele de langage, devant ce vide,
+# comblait. C'est ainsi que deux captures d'ecran ont ete decrites sans avoir
+# ete vues, le 24/08/2026.
+CONTEXTE_VISION = 16384
+
+# Budget de generation, et il doit etre LARGE.
+#
+# Les modeles de vision recents raisonnent avant de repondre. Ce raisonnement
+# compte dans le budget sans apparaitre dans la reponse : mesure sur cette
+# machine, 4696 caracteres de reflexion pour 240 de reponse. A 600 jetons le
+# modele s'arretait EN PLEINE reflexion et rendait une chaine vide.
+#
+# L'option "think": false existe dans l'API mais n'est pas honoree par ce
+# modele. Ce qui marche, c'est la consigne ci-dessous, dans l'invite.
+REPONSE_VISION_MAX = 1500
+
+# Coupe court au raisonnement, faute de pouvoir le desactiver.
+SANS_DETOUR = ("Reponds immediatement et brievement, sans reflechir a voix "
+               "haute. ")
+
+
 def describe(path: str, question: str = "") -> tuple[bool, str]:
     """Fait decrire l'image par un modele de vision, s'il y en a un."""
     modele = vision_model()
@@ -185,10 +212,10 @@ def describe(path: str, question: str = "") -> tuple[bool, str]:
     except OSError as exc:
         return False, f"Image illisible : {exc}"
 
-    invite = question or (
+    invite = SANS_DETOUR + (question or (
         "Decris cette capture d'ecran en francais : de quel logiciel ou menu "
         "s'agit-il, et quels reglages y sont visibles avec leurs valeurs ?"
-    )
+    ))
 
     try:
         reponse = requests.post(
@@ -201,14 +228,36 @@ def describe(path: str, question: str = "") -> tuple[bool, str]:
                     "images": [base64.b64encode(donnees).decode("ascii")],
                 }],
                 "stream": False,
-                "options": {"temperature": 0.2},
+                # Les modeles de vision recents raisonnent avant de repondre,
+                # et rangent cette reflexion dans un champ separe. Elle
+                # consommait toute la place disponible : la reponse, elle,
+                # sortait vide.
+                "think": False,
+                "options": {
+                    "temperature": 0.2,
+                    "num_ctx": CONTEXTE_VISION,
+                    "num_predict": REPONSE_VISION_MAX,
+                },
             },
             timeout=300,
         )
         reponse.raise_for_status()
-        return True, reponse.json()["message"]["content"].strip()
+        donnees_json = reponse.json()
+        texte = (donnees_json.get("message") or {}).get("content", "").strip()
     except (requests.RequestException, KeyError, ValueError) as exc:
         return False, f"Le modele de vision n'a pas repondu : {exc}"
+
+    # Une reponse vide est un ECHEC, pas une description vide.
+    #
+    # Sans ce controle, read_image rendait "--- image.png (modele de vision)
+    # ---" suivi de rien, et l'appelant croyait l'image regardee. Retomber sur
+    # l'OCR vaut infiniment mieux : il rend du texte deforme, mais il rend
+    # quelque chose, et il est annonce pour ce qu'il est.
+    if not texte:
+        raison = donnees_json.get("done_reason") or "reponse vide"
+        return False, (f"Le modele de vision n'a rien produit ({raison}). "
+                       "L'image est peut-etre trop grande pour lui.")
+    return True, texte
 
 
 # --- Capture d'ecran --------------------------------------------------------

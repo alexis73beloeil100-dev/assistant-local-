@@ -3379,3 +3379,117 @@ def test_le_texte_d_un_panneau_interactif_dit_la_meme_chose_que_ses_boutons():
     assert "PAS PU reparer" in texte, (
         "l'ordre entre sfc et DISM est la seule chose qui compte : il doit "
         "etre dans le texte comme sur le bouton")
+
+# --- Voir vraiment une image -------------------------------------------------
+
+def test_une_reponse_de_vision_vide_est_un_echec(monkeypatch):
+    """Le modele s'arretait en pleine reflexion et rendait une chaine vide.
+
+    Le 24/08/2026, l'assistant a decrit deux captures d'ecran qu'il n'avait
+    pas vues. La cause : le modele de vision raisonne avant de repondre, ce
+    raisonnement remplissait tout le budget de generation, et la reponse
+    sortait VIDE. read_image annoncait quand meme "(modele de vision)" suivi
+    de rien -- et le modele de langage, devant ce vide, comblait.
+
+    Une reponse vide doit donc faire echouer describe() pour que l'OCR
+    reprenne la main : il rend du texte deforme, mais il rend quelque chose,
+    et il est annonce pour ce qu'il est.
+    """
+    from assistant.skills import vision
+
+    class FausseReponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"message": {"content": "   ", "thinking": "beaucoup"},
+                    "done_reason": "length"}
+
+    monkeypatch.setattr(vision, "vision_model", lambda: "qwen3-vl:4b")
+    monkeypatch.setattr(vision.requests, "post",
+                        lambda *a, **k: FausseReponse())
+
+    ok, message = vision.describe(__file__)
+    assert ok is False
+    assert "length" in message
+
+
+def test_le_budget_de_vision_couvre_le_raisonnement():
+    """Mesure sur cette machine : 4696 caracteres de reflexion, 240 de reponse.
+
+    A 600 jetons, le modele n'atteignait jamais sa reponse. Le budget doit
+    couvrir les deux, et l'invite doit couper court au raisonnement --
+    l'option "think": false de l'API n'est pas honoree par ce modele.
+    """
+    from assistant.skills import vision
+
+    assert vision.REPONSE_VISION_MAX >= 1200
+    assert vision.CONTEXTE_VISION >= 16384, (
+        "une capture 3440x1440 pese 4049 jetons : la fenetre par defaut ne "
+        "laisse pas la place d'ecrire une reponse")
+    assert "sans reflechir" in vision.SANS_DETOUR
+
+
+def test_une_image_jointe_passe_par_le_modele_de_vision():
+    """Le trombone appelait l'OCR directement, court-circuitant la vision.
+
+    Meme un modele de vision installe n'aurait jamais servi pour un fichier
+    joint : l'utilisateur l'aurait telecharge pour rien.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.gui import AssistantWindow
+
+    arbre = ast.parse(textwrap.dedent(
+        inspect.getsource(AssistantWindow._lire_fichiers_joints)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+
+    assert "vision.read_image" in code, (
+        "read_image essaie la vision puis retombe sur l'OCR ; read_text saute "
+        "directement a l'OCR")
+    assert "vision.read_text" not in code
+
+
+def test_le_modele_est_prevenu_qu_il_n_a_pas_vu_l_image():
+    """Sans cet avertissement, il remet le charabia en mots plausibles.
+
+    "Eure Truck Simul" est ressorti "Elite Simulator", presente comme une
+    lecture. Un modele de langage devant du texte abime ne doute pas : il
+    repare. Il faut lui dire que ce qu'il lit n'est pas l'image.
+    """
+    from assistant import llm
+
+    joint = llm.message_de_fichier_joint("image ecran.png", "Assetto Cors",
+                                         image=True)
+    contenu = joint["content"]
+    assert "n'est PAS l'image" in contenu
+    assert "Assetto Cors" in contenu
+    assert "(?)" in contenu, "le marquage d'incertitude doit etre explique"
+
+    # Un document ordinaire ne recoit pas cet avertissement : il n'y a rien
+    # d'incertain dans un PDF lu correctement.
+    doc = llm.message_de_fichier_joint("fichier devis.pdf", "Montant : 1250")
+    assert "n'est PAS l'image" not in doc["content"]
+
+
+def test_le_prompt_dit_ce_que_l_assistant_voit_vraiment():
+    """Il a repondu "je ne peux pas voir les images" -- c'est faux aussi.
+
+    Le prompt ne disait rien des images, alors il a invente sa propre limite,
+    dans un sens puis dans l'autre. Il lit le texte des images, et il les voit
+    vraiment quand un modele de vision est installe : il doit dire lequel des
+    deux s'applique.
+    """
+    from assistant import llm
+
+    # Les phrases du prompt sont coupees a la ligne : on cherche des morceaux
+    # qui ne franchissent pas un retour.
+    prompt = llm.SYSTEM_PROMPT
+    assert "CE QUE TU VOIS D'UNE IMAGE" in prompt
+    assert "je ne peux pas voir les" in prompt
+    assert "modele de vision" in prompt
+    assert "ne devine pas ta propre nature" in prompt

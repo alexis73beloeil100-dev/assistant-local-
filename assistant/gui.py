@@ -704,6 +704,14 @@ class AssistantWindow(tk.Tk):
     def _lire_fichiers_joints(self, chemins: list[str]) -> list[dict]:
         """Lit les fichiers joints et les presente au modele comme des donnees.
 
+        Les IMAGES passent par vision.read_image(), pas par read_text(). La
+        premiere version appelait directement l'OCR, ce qui court-circuitait
+        le modele de vision : meme installe, il n'aurait jamais servi pour un
+        fichier joint. Le 24/08/2026 l'assistant a decrit deux captures
+        d'ecran qu'il n'avait pas vues -- il avait recu du texte OCR deforme
+        ("Eure Truck Simul", "Assetto Cors") et l'avait remis en mots
+        plausibles. Une lecture inventee ressemble a une lecture.
+
         Un fichier illisible n'interrompt pas les autres et ne disparait pas
         en silence : la raison part au modele, qui pourra la dire. Un joint
         qu'on croit lu et qui ne l'est pas est pire qu'un joint refuse.
@@ -715,21 +723,27 @@ class AssistantWindow(tk.Tk):
         messages = []
         for chemin in chemins:
             nom = Path(chemin).name
+            image = False
             try:
                 if vision.is_image(chemin):
-                    ok, texte = vision.read_text(chemin)
+                    image = True
+                    # read_image essaie le modele de vision, puis retombe sur
+                    # l'OCR. Il annonce lui-meme lequel a servi.
+                    texte = vision.read_image(chemin)
+                    ok = bool(str(texte).strip())
                     libelle = f"image {nom}"
                 else:
                     ok, texte = content.extract(chemin)
                     libelle = f"fichier {nom}"
             except Exception as exc:  # noqa: BLE001 - un joint muet vaut mieux qu'un plantage
                 ok, texte = False, f"{type(exc).__name__}: {exc}"
-                libelle = f"fichier {nom}"
+                libelle = f"{'image' if image else 'fichier'} {nom}"
 
             if not ok or not str(texte).strip():
                 texte = (f"[illisible : {texte}]" if texte
                          else "[aucun texte lisible dans ce fichier]")
-            messages.append(llm.message_de_fichier_joint(libelle, str(texte)))
+            messages.append(
+                llm.message_de_fichier_joint(libelle, str(texte), image=image))
         return messages
 
     def oublier_contexte(self) -> None:
