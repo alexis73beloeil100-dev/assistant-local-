@@ -448,16 +448,20 @@ def catalogue() -> list[Component]:
             size_gb=3.2,
             detect=lambda: _model_installed("qwen3-vl:4b"),
             install=_install_vision,
-            # Coche par defaut depuis le 24/08/2026.
+            # FACULTATIF, decide par l'utilisateur le 24/08/2026.
             #
-            # Il etait facultatif, et cela faisait une promesse non tenue : les
-            # notes annoncent que l'assistant comprend une capture d'ecran,
-            # alors que personne ne serait alle cocher une case dans un ecran
-            # de composants. Ceux qui installaient obtenaient l'OCR -- du texte
-            # deforme la ou on leur promettait une lecture. Mieux vaut 3,2 Go
-            # de plus qu'une fonction annoncee et absente.
-            note="Sans lui, seul le TEXTE des images est lu, et il se deforme. "
-                 "A decocher si la place manque.",
+            # Il a d'abord ete coche par defaut, puis decoche de nouveau : 3,2
+            # Go imposes a tout le monde pour une fonction que beaucoup
+            # n'utiliseront pas. L'installation de base reste a 5,5 Go.
+            #
+            # La contrepartie est tenue AILLEURS : les notes de version ne
+            # promettent plus que l'assistant voit les images, elles disent
+            # qu'il en lit le texte et qu'un composant facultatif ajoute la
+            # comprehension. Une fonction facultative doit etre annoncee comme
+            # telle, sinon elle devient une promesse non tenue.
+            default=False,
+            note="Facultatif. Sans lui, seul le TEXTE des images est lu, et "
+                 "il se deforme parfois.",
         ),
         Component(
             key="motcle",

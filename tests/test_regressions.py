@@ -4266,8 +4266,13 @@ def test_aucun_numero_de_version_n_est_ecrit_en_dur():
         "numeros de version ecrits en dur, et deja perimes :\n  "
         + "\n  ".join(coupables))
 
-def test_la_vision_est_installee_par_defaut():
-    """Une fonction annoncee dans les notes et decochee dans l'installateur.
+def test_la_vision_est_annoncee_comme_elle_est_livree():
+    """Ce que l'installateur livre et ce que les notes promettent, d'accord.
+
+    Deux facons de tenir cet accord, et l'utilisateur a tranche pour la
+    seconde : cocher le composant par defaut, ou le presenter comme
+    facultatif dans les notes. Ce qu'on refuse, c'est l'ecart -- annoncer
+    qu'il voit les images alors que le modele est decoche.
 
     Les notes de la 1.0.4 disent que l'assistant comprend une capture
     d'ecran. Le composant qui le permet etait facultatif et decoche : personne
@@ -4279,9 +4284,19 @@ def test_la_vision_est_installee_par_defaut():
     """
     from assistant import components
 
+    from pathlib import Path
+
     vision = next(c for c in components.catalogue() if c.key == "vision")
-    assert getattr(vision, "default", True) is True, (
-        "la vision est annoncee dans les notes de version : elle ne peut pas "
-        "etre decochee dans l'installateur")
-    assert "TEXTE" in vision.note, (
-        "la note doit dire ce qu'on perd en la decochant")
+    notes = (Path(__file__).resolve().parent.parent / "notes_de_version"
+             / "1.0.4.md").read_text(encoding="utf-8")
+
+    if getattr(vision, "default", True):
+        assert "TEXTE" in vision.note, (
+            "la note doit dire ce qu'on perd en la decochant")
+        return
+
+    # Facultative : les notes ne doivent alors PAS promettre qu'il voit.
+    assert "facultatif" in notes.lower(), (
+        "le composant est decoche : les notes doivent le dire, sinon elles "
+        "promettent une fonction que personne n'aura")
+    assert "Facultatif" in vision.note
