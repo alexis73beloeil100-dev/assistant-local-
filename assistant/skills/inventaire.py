@@ -294,6 +294,215 @@ def desinstaller(nom: str, ask=None) -> str:
             "je cesse de le croire installe.")
 
 
+# --- Preinstalle : ce qui etait la avant vous --------------------------------
+#
+# On ne tient AUCUNE liste de "bloatwares" connus. Une liste de marques serait
+# fausse le mois suivant, injuste pour les logiciels utiles du meme editeur, et
+# ne dirait rien de CETTE machine -- exactement le defaut qu'on evite partout
+# ailleurs dans ce projet, ou tout est decouvert plutot que suppose.
+#
+# On deduit, a partir de ce que la machine dit d'elle-meme :
+#
+#   1. Ce que l'editeur du logiciel a en commun avec le fabricant du PC. Sur
+#      une machine Asus, un logiciel signe Asus n'a pas ete installe par
+#      l'utilisateur : il etait la a l'ouverture du carton.
+#   2. Les applications du Microsoft Store, qui se retirent d'un geste et se
+#      reinstallent d'un autre -- ce qui rend la decision peu couteuse.
+#
+# Le resultat est une PROPOSITION. Rien n'est retire ici : la liste part vers
+# desinstaller(), qui pose la question comme pour tout le reste.
+
+# Editeurs dont les logiciels ne s'enlevent pas par cette voie, meme quand ils
+# portent le nom du fabricant : ce sont des pilotes ou des utilitaires dont
+# depend le materiel.
+PREINSTALLE_A_GARDER = ("driver", "pilote", "chipset", "audio", "graphics",
+                        "firmware", "bios", "management engine", "wireless",
+                        "bluetooth", "touchpad", "camera")
+
+# Cote Store, Windows declare "retirables" des choses qui ne sont pas des
+# applications : des codecs video, la reconnaissance vocale, l'ecriture
+# manuscrite. Windows dit vrai -- elles se retirent -- mais les presenter
+# comme du preinstalle inutile serait un mauvais conseil : enlever
+# VP9VideoExtensions casse la lecture des videos, et Speech.fr-FR casse la
+# dictee de cet assistant meme.
+#
+# On reconnait ces briques a ce qu'elles annoncent d'elles-memes dans leur
+# nom. Aucune marque n'est citee : c'est la fonction qui les distingue.
+CAPACITES_PAS_APPLICATIONS = ("videoextension", "mediaextension",
+                              "videoextensions", "mediaextensions",
+                              "speech", "handwriting", "ocr", "codec",
+                              "hevc", "vp9", "av1", "webp",
+                              "compatibilityenhancements", "runtime",
+                              "framework", "vclibs", "dotnet", "ui.xaml")
+
+
+def _fabricant() -> str:
+    """Qui a fabrique ce PC, en minuscules. Vide si on ne sait pas."""
+    from assistant.skills import hardware
+
+    try:
+        donnees = hardware.collect() or {}
+    except Exception:  # noqa: BLE001 - un releve muet vaut mieux qu'un plantage
+        return ""
+    machine = donnees.get("machine") or {}
+    return str(machine.get("manufacturer") or "").strip().lower()
+
+
+def _est_une_capacite(nom) -> bool:
+    """Ce paquet est-il une brique du systeme plutot qu'une application ?"""
+    minuscule = str(nom or "").lower()
+    return any(mot in minuscule for mot in CAPACITES_PAS_APPLICATIONS)
+
+
+def _applications_store() -> list[dict]:
+    """Les applications du Store retirables, telles que Windows les declare."""
+    resultat = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command",
+         "Get-AppxPackage | Where-Object { -not $_.IsFramework -and "
+         "-not $_.NonRemovable } | Select-Object Name, PackageFullName, "
+         "Publisher | ConvertTo-Json -Compress"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=TIMEOUT, creationflags=CREATE_NO_WINDOW,
+    )
+    if resultat.returncode != 0 or not (resultat.stdout or "").strip():
+        return []
+    try:
+        donnees = json.loads(resultat.stdout)
+    except json.JSONDecodeError:
+        return []
+    return donnees if isinstance(donnees, list) else [donnees]
+
+
+def preinstalle() -> str:
+    """Ce qui etait sur la machine avant que l'utilisateur y touche."""
+    fabricant = _fabricant()
+    logiciels = _logiciels()
+
+    du_fabricant = []
+    if fabricant:
+        # Le premier mot suffit : "ASUSTeK COMPUTER INC." signe ses logiciels
+        # "ASUS". Comparer les chaines entieres ne trouverait jamais rien.
+        marque = fabricant.split()[0]
+        du_fabricant = [
+            l for l in logiciels
+            if marque in str(l.get("editeur") or "").lower()
+            and not any(mot in str(l.get("nom") or "").lower()
+                        for mot in PREINSTALLE_A_GARDER)
+        ]
+
+    tout_store = _applications_store()
+    store = [a for a in tout_store if not _est_une_capacite(a.get("Name"))]
+    capacites = len(tout_store) - len(store)
+
+    lignes = ["PREINSTALLE", ""]
+    if not fabricant:
+        lignes.append("  Fabricant du PC inconnu : la detection par editeur "
+                      "n'a pas pu se faire.")
+    else:
+        lignes.append(f"  Machine {fabricant.title()}")
+    lignes.append("")
+
+    if du_fabricant:
+        lignes.append(f"  {len(du_fabricant)} logiciels signes par le "
+                      "fabricant du PC :")
+        for l in du_fabricant[:15]:
+            poids = f"  {l['taille_mo']} Mo" if l.get("taille_mo") else ""
+            lignes.append(f"    {l.get('nom')}{poids}")
+        lignes.append("")
+        lignes.append("    Les pilotes et utilitaires materiels sont ecartes "
+                      "de cette liste.")
+    else:
+        lignes.append("  Aucun logiciel du fabricant du PC.")
+
+    lignes.append("")
+    if store:
+        lignes.append(f"  {len(store)} applications du Microsoft Store "
+                      "retirables :")
+        for app in store[:15]:
+            lignes.append(f"    {app.get('Name')}")
+        if len(store) > 15:
+            lignes.append(f"    ... et {len(store) - 15} autres")
+        lignes.append("")
+        lignes.append("    Elles se reinstallent depuis le Store : les "
+                      "retirer n'engage a rien.")
+    else:
+        lignes.append("  Aucune application du Store retirable.")
+
+    if capacites:
+        lignes.append("")
+        lignes.append(f"  {capacites} autres paquets sont retirables mais ne "
+                      "sont pas des applications :")
+        lignes.append("    codecs video, reconnaissance vocale, ecriture "
+                      "manuscrite. Les enlever")
+        lignes.append("    casse la lecture de certaines videos ou la dictee. "
+                      "Ils ne sont pas listes.")
+
+    lignes.append("")
+    lignes.append("  Rien n'a ete retire. Dis-moi lesquelles enlever, une par "
+                  "une.")
+    return "\n".join(lignes)
+
+
+def retirer_application_store(nom: str, ask=None) -> str:
+    """Retire une application du Microsoft Store, par son nom."""
+    from assistant import safety
+
+    demande = str(nom).strip().lower()
+    if not demande:
+        return "Quelle application ?"
+
+    trouves = [a for a in _applications_store()
+               if demande in str(a.get("Name") or "").lower()]
+
+    briques = [a for a in trouves if _est_une_capacite(a.get("Name"))]
+    if briques and len(briques) == len(trouves):
+        return (f"\"{briques[0].get('Name')}\" n'est pas une application mais "
+                "une brique du systeme : codec video, reconnaissance vocale "
+                "ou ecriture manuscrite. La retirer casse la lecture de "
+                "certaines videos ou la dictee. Je ne le fais pas par cette "
+                "voie.")
+    trouves = [a for a in trouves if not _est_une_capacite(a.get("Name"))]
+
+    if not trouves:
+        return (f"Aucune application du Store retirable ne correspond a "
+                f"\"{nom}\". Demande-moi la liste du preinstalle.")
+    if len(trouves) > 1:
+        noms = "\n".join(f"  - {a.get('Name')}" for a in trouves[:12])
+        return (f"{len(trouves)} applications correspondent :\n{noms}\n"
+                "Precise laquelle.")
+
+    app = trouves[0]
+    complet = str(app.get("PackageFullName") or "")
+    if not complet:
+        return f"{app.get('Name')} ne declare pas de paquet retirable."
+
+    action = safety.Action(
+        kind="logiciel",
+        summary=f"Retirer l'application {app.get('Name')}",
+        targets=[complet],
+        # Une application du Store se reinstalle d'un clic : c'est la seule
+        # desinstallation de ce module qui se defasse vraiment.
+        reversible=True,
+        details="Se reinstalle depuis le Microsoft Store si besoin.",
+    )
+    try:
+        safety.guard(action, ask=ask)
+    except safety.Refused as exc:
+        return str(exc)
+
+    resultat = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command",
+         f"Remove-AppxPackage -Package '{complet}'"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=TIMEOUT, creationflags=CREATE_NO_WINDOW,
+    )
+    if resultat.returncode != 0:
+        return (f"Le retrait a echoue : "
+                f"{(resultat.stderr or resultat.stdout or '').strip()[:300]}")
+    return (f"{app.get('Name')} retiree. Elle reste disponible dans le "
+            "Microsoft Store si tu la veux de nouveau.")
+
+
 def resume() -> str:
     """Ce que l'inventaire a trouve, en clair."""
     donnees = collect()

@@ -814,6 +814,26 @@ TOOLS: list[Tool] = [
         lambda: inventaire.resume(),
     ),
     Tool(
+        "preinstalle",
+        "Ce qui etait sur la machine avant l'utilisateur : logiciels signes "
+        "par le fabricant du PC, et applications du Microsoft Store "
+        "retirables. Ne retire rien, propose seulement. A utiliser quand "
+        "l'utilisateur parle de bloatwares, de logiciels inutiles ou de "
+        "nettoyer ce qui etait preinstalle.",
+        _obj({}),
+        lambda: inventaire.preinstalle(),
+    ),
+    Tool(
+        "retirer_application_store",
+        "Retire une application du Microsoft Store par son nom. Reversible : "
+        "elle se reinstalle depuis le Store. Pour les autres logiciels, "
+        "utiliser desinstaller_logiciel.",
+        _obj({"nom": {**STR, "description": "Nom de l'application du Store"}},
+             ["nom"]),
+        lambda nom: inventaire.retirer_application_store(str(nom)),
+        effect=True,
+    ),
+    Tool(
         "compresser",
         "Fabrique une archive zip a partir de fichiers ou de dossiers. Refuse "
         "d'ecraser une archive existante.",

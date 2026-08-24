@@ -2736,3 +2736,107 @@ def test_les_quatre_capacites_ajoutees_sont_exposees_au_modele():
     for outil in ("compresser", "decompresser", "inspecter_archive",
                   "ecrire_document", "etat_antivirus", "analyser_menaces"):
         assert outil in noms, outil
+
+
+# --- Preinstalle -------------------------------------------------------------
+
+def test_un_codec_n_est_pas_propose_comme_un_bloatware(monkeypatch):
+    """Windows declare "retirables" des choses qui ne sont pas des applications.
+
+    Sur la machine de developpement, la premiere version listait
+    VP9VideoExtensions, WebMediaExtensions et Speech.fr-FR parmi le
+    preinstalle a nettoyer, avec la mention "les retirer n'engage a rien".
+    C'etait faux : le premier casse la lecture des videos, le dernier casse la
+    dictee de cet assistant meme.
+
+    Windows ne ment pas -- ces paquets se retirent. C'est le CONSEIL qui
+    serait mauvais.
+    """
+    from assistant.skills import inventaire
+
+    paquets = [
+        {"Name": "4DF9E0F8.Netflix", "PackageFullName": "netflix_1"},
+        {"Name": "Microsoft.VP9VideoExtensions", "PackageFullName": "vp9_1"},
+        {"Name": "MicrosoftWindows.Speech.fr-FR.1", "PackageFullName": "sp_1"},
+        {"Name": "Microsoft.WebMediaExtensions", "PackageFullName": "web_1"},
+        {"Name": "Microsoft.UI.Xaml.2.8", "PackageFullName": "xaml_1"},
+    ]
+    monkeypatch.setattr(inventaire, "_applications_store", lambda: paquets)
+    monkeypatch.setattr(inventaire, "_fabricant", lambda: "")
+    monkeypatch.setattr(inventaire, "_logiciels", lambda: [])
+
+    rapport = inventaire.preinstalle()
+
+    assert "Netflix" in rapport
+    for brique in ("VP9VideoExtensions", "Speech", "WebMediaExtensions",
+                   "Xaml"):
+        assert brique not in rapport, f"{brique} propose au retrait"
+    assert "4 autres paquets" in rapport
+
+
+def test_retirer_un_codec_est_refuse_avec_sa_raison(monkeypatch):
+    """Demande nommement, le codec doit encore etre refuse.
+
+    Filtrer la liste ne suffit pas : l'utilisateur peut donner le nom
+    directement, et le modele peut le repeter depuis un ancien message.
+    """
+    from assistant.skills import inventaire
+
+    monkeypatch.setattr(inventaire, "_applications_store", lambda: [
+        {"Name": "Microsoft.VP9VideoExtensions", "PackageFullName": "vp9_1"}])
+
+    reponse = inventaire.retirer_application_store("VP9VideoExtensions",
+                                                   ask=lambda _t: True)
+    assert "brique du systeme" in reponse
+    assert "Je ne le fais pas" in reponse
+
+
+def test_le_preinstalle_se_deduit_de_la_machine_pas_d_une_liste():
+    """Une liste de marques serait fausse le mois suivant.
+
+    Tout le projet decouvre au lieu de supposer -- le materiel, les modes RGB,
+    les jeux. Le preinstalle suit la meme regle : on compare l'editeur du
+    logiciel au fabricant du PC, releve sur la machine. Sur un Dell, un
+    logiciel Dell ; sur un Gigabyte, un logiciel Gigabyte.
+    """
+    from assistant.skills import inventaire
+
+    code = _sans_docstring(inventaire.preinstalle)
+    for marque in ("mcafee", "norton", "candy crush", "dell", "hp", "asus",
+                   "lenovo", "acer", "gigabyte"):
+        assert marque not in code.lower(), (
+            f"la marque {marque} est ecrite en dur : la detection doit venir "
+            "de la machine")
+    assert "_fabricant()" in code
+
+
+def test_le_fabricant_est_compare_sur_son_premier_mot(monkeypatch):
+    """"Gigabyte Technology Co., Ltd." signe ses logiciels "GIGABYTE".
+
+    Comparer les chaines entieres ne trouverait jamais rien, et le preinstalle
+    reviendrait vide sur toutes les machines.
+    """
+    from assistant.skills import inventaire
+
+    monkeypatch.setattr(inventaire, "_fabricant",
+                        lambda: "gigabyte technology co., ltd.")
+    monkeypatch.setattr(inventaire, "_applications_store", lambda: [])
+    monkeypatch.setattr(inventaire, "_logiciels", lambda: [
+        {"nom": "RGB Fusion", "editeur": "GIGABYTE", "taille_mo": 153},
+        {"nom": "Steam", "editeur": "Valve Corporation"},
+        {"nom": "Gigabyte Audio Driver", "editeur": "GIGABYTE"},
+    ])
+
+    rapport = inventaire.preinstalle()
+
+    assert "RGB Fusion" in rapport
+    assert "Steam" not in rapport, "un logiciel installe par l'utilisateur"
+    assert "Audio Driver" not in rapport, "un pilote, ecarte volontairement"
+
+
+def test_le_preinstalle_est_expose_au_modele():
+    from assistant import llm
+
+    noms = {t.name for t in llm.TOOLS}
+    assert "preinstalle" in noms
+    assert "retirer_application_store" in noms
