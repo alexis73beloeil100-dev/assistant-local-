@@ -139,19 +139,27 @@ class EcranDeChargement(tk.Toplevel):
             pass
 
     def application_prete(self) -> None:
-        """Le chargement est fini. On cede des que la video l'est aussi."""
+        """Le chargement est fini -- l'ecran a normalement deja cede."""
         self._pret = True
         self._peut_ceder()
 
     def _peut_ceder(self) -> None:
-        """Cede la place quand la video ET le chargement sont finis.
+        """Cede la place des que la VIDEO est finie. Pas quand tout est pret.
 
-        Les deux conditions, pas l'une ou l'autre. Ceder des la fin de la
-        video montrerait une fenetre a moitie remplie ; ceder des que
-        l'application est prete ferait disparaitre l'ecran au milieu d'une
-        image.
+        Premiere version fautive, et le defaut n'est apparu qu'a l'usage : on
+        attendait les DEUX -- video terminee ET application prete. Or la
+        video dure six secondes et le chargement une quarantaine. On restait
+        donc trente-cinq secondes devant une image figee, et devant RIEN du
+        tout si l'ecran echouait dans la version packagee. L'utilisateur a
+        appele ca un plantage, et il avait raison : une application qui ne
+        montre rien pendant quarante secondes EST plantee, de son point de
+        vue.
+
+        La fenetre revient donc a la fin de la video et finit de se remplir
+        sous les yeux, comme avant l'ecran d'accueil. C'est ce que fait
+        n'importe quel logiciel : l'ecran couvre le debut, pas la totalite.
         """
-        if not (self._finie and self._pret):
+        if not self._finie:
             return
         try:
             self.destroy()

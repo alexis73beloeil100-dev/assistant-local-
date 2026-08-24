@@ -4100,11 +4100,20 @@ def test_le_decodage_ne_tourne_pas_sur_le_fil_graphique():
     assert "self.after(" in code
 
 
-def test_l_ecran_cede_seulement_quand_les_deux_sont_prets():
-    """La video finie ne suffit pas, l'application prete non plus.
+def test_l_ecran_cede_des_la_fin_de_la_video():
+    """Trente-cinq secondes devant une image figee, ou devant rien du tout.
 
-    Ceder trop tot montre une fenetre a moitie remplie ; ceder trop tard fait
-    attendre devant une image figee alors que tout est pret.
+    La premiere version attendait les DEUX : video terminee ET application
+    prete. La video dure six secondes, le chargement une quarantaine. On
+    restait donc trente-cinq secondes devant la derniere image -- et devant
+    RIEN si l'ecran echouait dans la version packagee, puisque la fenetre
+    principale etait masquee en attendant.
+
+    L'utilisateur a appele ca un plantage. Il avait raison : une application
+    qui ne montre rien pendant quarante secondes EST plantee, de son point de
+    vue. L'ecran couvre le DEBUT du chargement, pas sa totalite -- la fenetre
+    revient a la fin de la video et finit de se remplir sous les yeux, comme
+    n'importe quel logiciel.
     """
     import ast
     import inspect
@@ -4115,9 +4124,30 @@ def test_l_ecran_cede_seulement_quand_les_deux_sont_prets():
     arbre = ast.parse(textwrap.dedent(
         inspect.getsource(EcranDeChargement._peut_ceder)))
     code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
-    assert "self._finie" in code and "self._pret" in code
 
-    # Et la fenetre principale n'apparait qu'a ce moment-la : construite avant
-    # l'ecran, elle s'affichait par-dessous pendant tout le chargement.
+    assert "self._finie" in code
+    assert "self._pret" not in code, (
+        "attendre la fin du chargement remet les trente-cinq secondes")
     assert "_a_la_fin" in code, (
         "l'ecran doit reveler la fenetre en cedant la place")
+
+
+def test_la_fenetre_reapparait_meme_si_l_ecran_meurt():
+    """Une decoration ne doit jamais laisser l'application invisible.
+
+    Codec absent dans la version packagee, Tk qui refuse une image : si
+    l'ecran se bloque ou meurt sans prevenir, la fenetre resterait masquee
+    pour toujours et l'application paraitrait plantee. Le filet la ramene au
+    bout de dix secondes, quoi qu'il arrive.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "assistant" / "gui.py").read_text(encoding="utf-8")
+
+    debut = source.index("def _boot(self)")
+    bloc = source[debut:source.index("def work():", debut)]
+
+    assert "self.withdraw()" in bloc
+    assert "self.after(10000, self._montrer_la_fenetre)" in bloc, (
+        "sans filet, un ecran mort laisse l'application invisible")

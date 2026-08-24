@@ -928,10 +928,17 @@ class AssistantWindow(tk.Tk):
 
         accueil = demarrage.ouvrir(self, a_la_fin=self._montrer_la_fenetre)
         if accueil is not None:
-            # Masquee, pas fermee : elle continue de se construire derriere,
-            # et reapparait remplie. Sans ce retrait, on la voyait se remplir
-            # par-dessous son propre ecran d'accueil.
+            # Masquee, pas fermee : elle continue de se construire derriere.
+            # Sans ce retrait, on la voyait se remplir par-dessous son propre
+            # ecran d'accueil.
             self.withdraw()
+            # FILET DE SECURITE, et il n'est pas theorique : si l'ecran
+            # d'accueil se bloque ou meurt sans prevenir -- codec absent dans
+            # la version packagee, Tk qui refuse une image -- la fenetre
+            # resterait masquee pour toujours et l'application paraitrait
+            # plantee. Au-dela de dix secondes, elle revient quoi qu'il
+            # arrive. deiconify sur une fenetre deja visible ne coute rien.
+            self.after(10000, self._montrer_la_fenetre)
 
         def etape(texte: str) -> None:
             if accueil is not None:
