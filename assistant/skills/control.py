@@ -521,6 +521,115 @@ def raccourci(combinaison: str, ask=None) -> str:
     return f"Combinaison {'+'.join(noms)} envoyee."
 
 
+# --- Souris ------------------------------------------------------------------
+#
+# Le clic change la nature de ce que l'assistant peut faire, et il faut le dire
+# ici plutot que le decouvrir plus tard. Jusqu'a present, la pire chose qu'une
+# erreur pouvait produire etait du texte de travers. Un clic mal place appuie
+# sur "Supprimer", "Formater" ou "Accepter" dans une fenetre que personne n'a
+# comprise, et cela ne se defait pas.
+#
+# D'ou la regle : ces fonctions executent des COORDONNEES, elles ne cherchent
+# rien a l'ecran. Le modele ne decide jamais ou cliquer -- il ne voit l'ecran
+# qu'a travers un modele de vision qui se trompe encore. Ce qui les appelle,
+# c'est une macro que l'utilisateur a enregistree lui-meme, en sachant ou.
+
+BOUTONS = {
+    "gauche": (0x0002, 0x0004),
+    "droit": (0x0008, 0x0010),
+    "milieu": (0x0020, 0x0040),
+}
+
+
+def position_souris() -> tuple[int, int]:
+    """Ou est le curseur, pour enregistrer une macro sans deviner."""
+    import ctypes
+    from ctypes import wintypes
+
+    point = wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
+    return point.x, point.y
+
+
+def cliquer(x=None, y=None, bouton: str = "gauche", double: bool = False,
+            ask=None) -> str:
+    """Clique a une position donnee, ou la ou est deja le curseur.
+
+    Sans coordonnees, on clique sur place : c'est ce qu'on veut dans une macro
+    qui suit un deplacement, et cela evite de deplacer le curseur sous la main
+    de l'utilisateur pour rien.
+    """
+    import ctypes
+
+    if bouton not in BOUTONS:
+        return (f"Bouton inconnu : \"{bouton}\". "
+                f"Choisis parmi {', '.join(BOUTONS)}.")
+
+    ou = "sur place"
+    if x is not None and y is not None:
+        try:
+            x, y = int(x), int(y)
+        except (TypeError, ValueError):
+            return "Coordonnees illisibles."
+        ou = f"en {x},{y}"
+
+    action = safety.Action(
+        kind="souris",
+        summary=f"Clic {bouton}{' double' if double else ''} {ou}",
+        targets=[f"souris: {ou}"],
+        reversible=False,
+        details="Le clic part dans la fenetre au premier plan. Un clic ne se "
+                "defait pas : ce qu'il declenche non plus.",
+    )
+    try:
+        safety.guard(action, ask=ask or (lambda _texte: True))
+    except safety.Refused as exc:
+        return str(exc)
+
+    user32 = ctypes.windll.user32
+    enfonce, relache = BOUTONS[bouton]
+    try:
+        if x is not None and y is not None:
+            user32.SetCursorPos(x, y)
+            time.sleep(0.03)
+        for _ in range(2 if double else 1):
+            user32.mouse_event(enfonce, 0, 0, 0, 0)
+            time.sleep(0.02)
+            user32.mouse_event(relache, 0, 0, 0, 0)
+            time.sleep(0.05)
+    except Exception as exc:  # noqa: BLE001
+        return f"Clic impossible : {type(exc).__name__}: {exc}"
+    return f"Clic {bouton}{' double' if double else ''} {ou}."
+
+
+def deplacer_souris(x, y) -> str:
+    """Deplace le curseur, sans cliquer."""
+    import ctypes
+
+    try:
+        x, y = int(x), int(y)
+    except (TypeError, ValueError):
+        return "Coordonnees illisibles."
+    ctypes.windll.user32.SetCursorPos(x, y)
+    return f"Curseur en {x},{y}."
+
+
+def molette(crans: int) -> str:
+    """Fait tourner la molette. Positif vers le haut, negatif vers le bas."""
+    import ctypes
+
+    try:
+        crans = int(crans)
+    except (TypeError, ValueError):
+        return "Nombre de crans illisible."
+    ROULETTE = 0x0800
+    for _ in range(abs(crans)):
+        ctypes.windll.user32.mouse_event(
+            ROULETTE, 0, 0, 120 if crans > 0 else -120, 0)
+        time.sleep(0.02)
+    return f"Molette : {crans} cran(s)."
+
+
 def _injecter(texte: str) -> None:
     """Envoie le texte en Unicode via SendInput."""
     import ctypes

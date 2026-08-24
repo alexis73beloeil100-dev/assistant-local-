@@ -894,6 +894,38 @@ TOOLS: list[Tool] = [
         effect=True,
     ),
     Tool(
+        "position_souris",
+        "Ou se trouve le curseur en ce moment, en pixels. Sert a enregistrer "
+        "une macro de clic : l'utilisateur place sa souris, demande la "
+        "position, et on l'enregistre.",
+        _obj({}),
+        lambda: "x={}, y={}".format(*control.position_souris()),
+    ),
+    Tool(
+        "cliquer",
+        "Clique a des coordonnees precises, ou sur place si aucune n'est "
+        "donnee. N'invente JAMAIS de coordonnees : ne l'appelle que si "
+        "l'utilisateur les a donnees ou fait enregistrer. Un clic ne se "
+        "defait pas, et ce qu'il declenche non plus.",
+        _obj({"x": INT, "y": INT,
+              "bouton": {**STR, "description": "gauche, droit ou milieu"},
+              "double": {"type": "boolean"}}),
+        lambda x=None, y=None, bouton="gauche", double=False: control.cliquer(
+            x, y, str(bouton), bool(double)),
+        effect=True,
+    ),
+    Tool(
+        "lire_zone_ecran",
+        "Lit le texte d'une ZONE de l'ecran, donnee en pixels. Bien plus "
+        "fiable qu'une capture entiere : cadrer sur un message d'erreur ou un "
+        "champ donne un texte net la ou l'ecran complet rend du charabia.",
+        _obj({"x": INT, "y": INT, "largeur": INT, "hauteur": INT,
+              "question": {**STR, "description": "Ce qu'on cherche dans la zone"}},
+             ["x", "y", "largeur", "hauteur"]),
+        lambda x, y, largeur, hauteur, question="": vision.lire_zone(
+            x, y, largeur, hauteur, str(question)),
+    ),
+    Tool(
         "raccourci_clavier",
         "Envoie une combinaison de touches a la fenetre active, par exemple "
         "ctrl+s ou alt+tab. Seules des touches nommees sont acceptees.",

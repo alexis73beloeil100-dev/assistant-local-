@@ -291,6 +291,58 @@ def capture(ecran: int = 0) -> tuple[bool, str]:
         return False, f"Capture impossible ({type(exc).__name__}: {exc})."
 
 
+def capture_zone(x: int, y: int, largeur: int, hauteur: int) -> tuple[bool, str]:
+    """Photographie une ZONE de l'ecran, et elle seule.
+
+    Une capture plein ecran est le pire cas pour la reconnaissance de texte :
+    sur un bureau 3440 pixels charge, le texte d'interface fait dix pixels de
+    haut et ressort en charabia -- mesure sur cette machine, "Assetto Cors"
+    pour "Assetto Corsa". Cadrer sur la zone qui interesse fait tenir le meme
+    texte sur bien plus de pixels apres agrandissement, et change tout.
+
+    C'est aussi ce que demande l'usage : on veut lire UN message d'erreur, UN
+    champ, UN paragraphe -- pas l'ecran entier.
+    """
+    try:
+        largeur, hauteur = int(largeur), int(hauteur)
+        x, y = int(x), int(y)
+    except (TypeError, ValueError):
+        return False, "Coordonnees de zone illisibles."
+    if largeur < 8 or hauteur < 8:
+        return False, "Zone trop petite pour contenir du texte."
+
+    try:
+        import mss
+        from PIL import Image
+
+        with mss.mss() as capteur:
+            image = capteur.grab({"left": x, "top": y,
+                                  "width": largeur, "height": hauteur})
+        photo = Image.frombytes("RGB", image.size, image.bgra, "raw", "BGRX")
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as fh:
+            chemin = fh.name
+        photo.save(chemin, "PNG")
+        return True, chemin
+    except Exception as exc:  # noqa: BLE001
+        return False, f"Capture de zone impossible ({type(exc).__name__}: {exc})."
+
+
+def lire_zone(x: int, y: int, largeur: int, hauteur: int,
+              question: str = "") -> str:
+    """Lit le texte d'une zone de l'ecran. L'image est supprimee apres."""
+    ok, chemin = capture_zone(x, y, largeur, hauteur)
+    if not ok:
+        return chemin
+    try:
+        return read_image(chemin, question).replace(
+            Path(chemin).name, f"zone {largeur}x{hauteur} de l'ecran")
+    finally:
+        try:
+            os.unlink(chemin)
+        except OSError:
+            pass
+
+
 def screens() -> int:
     try:
         import mss

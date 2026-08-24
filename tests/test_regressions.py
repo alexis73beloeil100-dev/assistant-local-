@@ -3493,3 +3493,134 @@ def test_le_prompt_dit_ce_que_l_assistant_voit_vraiment():
     assert "je ne peux pas voir les" in prompt
     assert "modele de vision" in prompt
     assert "ne devine pas ta propre nature" in prompt
+
+# --- Souris et lecture de zone ----------------------------------------------
+
+def test_le_clic_execute_des_coordonnees_et_n_en_cherche_aucune():
+    """Un clic mal place appuie sur "Supprimer", et ne se defait pas.
+
+    Jusqu'a la souris, la pire chose qu'une erreur pouvait produire etait du
+    texte de travers. Ces fonctions executent donc des coordonnees decidees
+    par l'utilisateur : elles ne cherchent rien a l'ecran, et le modele ne
+    choisit jamais ou cliquer -- il ne voit l'ecran qu'a travers un modele de
+    vision qui se trompe encore regulierement.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.skills import control
+
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(control.cliquer)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+
+    for recherche in ("read_screen", "read_image", "describe", "lire_zone",
+                      "find", "chercher"):
+        assert recherche not in code, (
+            f"{recherche} dans cliquer() : la cible serait devinee a l'ecran")
+
+    outil = None
+    from assistant import llm
+    outil = next(t for t in llm.TOOLS if t.name == "cliquer")
+    assert "N'invente JAMAIS" in outil.description
+
+
+def test_un_bouton_de_souris_inconnu_est_refuse():
+    """Liste fermee, comme pour les touches : ce qui n'y est pas ne part pas."""
+    from assistant.skills import control
+
+    for piege in ("droite", "left", "0x02", "; calc"):
+        reponse = control.cliquer(10, 10, bouton=piege, ask=lambda _t: False)
+        assert "Bouton inconnu" in reponse, piege
+
+    assert set(control.BOUTONS) == {"gauche", "droit", "milieu"}
+
+
+def test_un_refus_n_envoie_aucun_clic(monkeypatch):
+    """Refuser doit vraiment empecher le clic, pas seulement le message."""
+    import ctypes
+
+    from assistant.skills import control
+
+    envoyes = []
+    monkeypatch.setattr(ctypes.windll.user32, "mouse_event",
+                        lambda *a: envoyes.append(a))
+
+    control.cliquer(500, 500, ask=lambda _t: False)
+    assert envoyes == []
+
+
+def test_une_macro_de_clic_se_lit_sans_ambiguite(monkeypatch):
+    """Le telephone appuie sur un bouton dont le contenu a ete decide ici.
+
+    La valeur enregistree doit se relire exactement : coordonnees, bouton,
+    double. Une lecture approximative cliquerait ailleurs, ou avec le mauvais
+    bouton -- sur une action irreversible.
+    """
+    from assistant import serveur
+    from assistant.skills import control
+
+    appels = []
+    monkeypatch.setattr(control, "cliquer",
+                        lambda x, y, bouton="gauche", double=False, ask=None:
+                        appels.append((x, y, bouton, double)) or "ok")
+    monkeypatch.setattr(serveur, "macros", lambda: {
+        "simple": {"genre": "clic", "valeur": "1200,400"},
+        "droit": {"genre": "clic", "valeur": "10,20 droit"},
+        "double": {"genre": "clic", "valeur": "30 40 gauche double"},
+        "casse": {"genre": "clic", "valeur": "sans coordonnees"},
+    })
+
+    assert serveur.jouer_macro("simple")[0]
+    assert appels[-1] == (1200, 400, "gauche", False)
+    assert serveur.jouer_macro("droit")[0]
+    assert appels[-1] == (10, 20, "droit", False)
+    assert serveur.jouer_macro("double")[0]
+    assert appels[-1] == (30, 40, "gauche", True)
+
+    ok, message = serveur.jouer_macro("casse")
+    assert ok is False and "coordonnees" in message
+    assert len(appels) == 3, "une macro illisible a quand meme clique"
+
+
+def test_le_genre_clic_ne_rouvre_pas_la_porte_aux_commandes(monkeypatch):
+    """Ajouter un genre ne doit pas elargir ce que le telephone peut demander."""
+    from assistant import serveur
+
+    enregistrees = {}
+    monkeypatch.setattr(serveur.settings, "recharger",
+                        lambda: {"macros": enregistrees})
+    monkeypatch.setattr(serveur.settings, "set",
+                        lambda cle, valeur: enregistrees.update(valeur))
+
+    assert serveur.GENRES == ("texte", "touches", "clic")
+    for genre in ("commande", "shell", "exec", "python", "souris"):
+        assert "Genre inconnu" in serveur.enregistrer_macro("x", genre, "y")
+    assert enregistrees == {}
+
+
+def test_une_zone_trop_petite_ne_part_pas_a_l_ocr():
+    """Huit pixels de cote ne contiennent aucun texte.
+
+    Sans ce garde-fou, une zone vide part au modele de vision, qui met dix
+    secondes a repondre qu'il n'a rien vu.
+    """
+    from assistant.skills import vision
+
+    ok, message = vision.capture_zone(0, 0, 4, 4)
+    assert ok is False
+    assert "trop petite" in message
+
+    ok, message = vision.capture_zone("abc", 0, 100, 100)
+    assert ok is False
+    assert "illisibles" in message
+
+
+def test_les_trois_capacites_manquantes_sont_exposees():
+    """Presse-papier, zone d'ecran, clic : les trois demandes de l'utilisateur."""
+    from assistant import llm
+
+    noms = {t.name for t in llm.TOOLS}
+    for outil in ("cliquer", "position_souris", "lire_zone_ecran"):
+        assert outil in noms, outil
+    assert next(t for t in llm.TOOLS if t.name == "cliquer").effect is True

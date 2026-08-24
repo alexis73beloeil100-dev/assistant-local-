@@ -105,6 +105,11 @@ def adresse_locale() -> str:
 # Une macro est enregistree SUR LE PC, et le telephone ne peut que la nommer.
 # Le contenu ne voyage jamais dans l'autre sens.
 
+# Les seuls genres de macro acceptes. Liste FERMEE : c'est elle qui empeche
+# le jeton du serveur de valoir un acces administrateur a distance.
+GENRES = ("texte", "touches", "clic")
+
+
 def macros() -> dict:
     """Les macros enregistrees, relues sur le disque a chaque appel.
 
@@ -124,16 +129,21 @@ def macros() -> dict:
 def enregistrer_macro(nom: str, genre: str, valeur: str) -> str:
     """Enregistre une macro, depuis le PC uniquement.
 
-    `genre` vaut "texte" (taper une suite de caracteres) ou "touches" (une
-    combinaison, par exemple "ctrl+s"). Rien d'autre n'est accepte : ouvrir
-    ce champ a une commande arbitraire reviendrait a offrir un shell distant
-    a qui connait le jeton.
+    `genre` vaut "texte" (taper une suite de caracteres), "touches" (une
+    combinaison, par exemple "ctrl+s") ou "clic" (des coordonnees, par
+    exemple "1200,400" ou "1200,400 droit"). Rien d'autre n'est accepte :
+    ouvrir ce champ a une commande arbitraire reviendrait a offrir un shell
+    distant a qui connait le jeton.
+
+    Le clic execute des COORDONNEES enregistrees par l'utilisateur, jamais
+    une cible cherchee a l'ecran. Le telephone appuie sur un bouton dont le
+    contenu a ete decide devant la machine.
     """
     nom = str(nom).strip()
     if not nom:
         return "Une macro a besoin d'un nom."
-    if genre not in ("texte", "touches"):
-        return "Genre inconnu : \"texte\" ou \"touches\"."
+    if genre not in GENRES:
+        return f"Genre inconnu : {', '.join(chr(34) + g + chr(34) for g in GENRES)}."
     if not str(valeur).strip():
         return "Une macro vide ne ferait rien."
 
@@ -169,6 +179,24 @@ def jouer_macro(nom: str) -> tuple[bool, str]:
             control.taper(valeur, ask=lambda _t: True)
         elif genre == "touches":
             control.raccourci(valeur)
+        elif genre == "clic":
+            # "1200,400" ou "1200,400 droit" ou "1200,400 gauche double".
+            morceaux = str(valeur).replace(",", " ").split()
+            # Compter les morceaux ne suffit pas : "sans coordonnees" en fait
+            # deux, passait la verification, et la macro s'annoncait jouee
+            # alors qu'aucun clic n'etait parti. Un bouton du telephone qui
+            # ne fait rien en disant que si est pire qu'un bouton en erreur.
+            try:
+                x, y = int(morceaux[0]), int(morceaux[1])
+            except (IndexError, ValueError):
+                return False, (f"La macro \"{nom}\" n'a pas de coordonnees "
+                               f"lisibles : \"{valeur}\". Attendu par exemple "
+                               "\"1200,400\" ou \"1200,400 droit\".")
+            options = [m.lower() for m in morceaux[2:]]
+            bouton = next((b for b in control.BOUTONS if b in options),
+                          "gauche")
+            control.cliquer(x, y, bouton=bouton, double="double" in options,
+                            ask=lambda _t: True)
         else:
             return False, f"Genre de macro inconnu : {genre}"
     except Exception as exc:  # noqa: BLE001
