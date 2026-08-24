@@ -145,6 +145,7 @@ class AssistantWindow(tk.Tk):
         # self.current : pour taper une question il faut revenir sur la
         # conversation, donc le panneau est deja "ferme" au moment de l'envoi.
         self._contexte_panneau: str | None = None
+        self._fichiers_joints: list[str] = []
 
         self._build()
         self.after(50, self._drain)
@@ -555,6 +556,22 @@ class AssistantWindow(tk.Tk):
         self.contexte_retirer.bind("<Button-1>",
                                    lambda _e: self.oublier_contexte())
 
+        # Temoin des fichiers joints, sur le meme principe que celui du
+        # panneau : visible et retirable. Un fichier qui reste attache sans
+        # qu'on le sache partirait avec une question sans rapport, dix minutes
+        # plus tard.
+        self.fichiers_bar = tk.Frame(self.chat_view, bg=t.BG)
+        self.fichiers_texte = tk.Label(
+            self.fichiers_bar, text="", bg=t.BG, fg=t.TEXT_FAINT,
+            font=t.FONT_UI_TINY, anchor="w")
+        self.fichiers_texte.pack(side="left")
+        self.fichiers_retirer = tk.Label(
+            self.fichiers_bar, text="  retirer", bg=t.BG, fg=t.ACCENT,
+            font=t.FONT_UI_TINY, cursor="hand2")
+        self.fichiers_retirer.pack(side="left")
+        self.fichiers_retirer.bind("<Button-1>",
+                                   lambda _e: self.oublier_fichiers())
+
         # Conserve : le temoin de contexte s'insere au-dessus de cette barre,
         # et pack() sans reference le placerait en dessous.
         bar = self._barre_saisie = tk.Frame(self.chat_view, bg=t.BG)
@@ -568,6 +585,15 @@ class AssistantWindow(tk.Tk):
                               font=t.FONT_INPUT)
         self.entry.pack(fill="x", padx=t.PAD_L, pady=10)
         self.entry.bind("<Return>", lambda _e: self.send())
+
+        # Le trombone. Il ouvre le selecteur de Windows plutot que de demander
+        # un chemin : personne ne tape "C:\\Users\\...\\Documents\\devis.pdf"
+        # a la main, et une faute de frappe rendait un "fichier introuvable"
+        # qu'on prenait pour une incapacite de l'assistant.
+        self.joindre_btn = RoundButton(bar, "Joindre", self.joindre_fichiers,
+                                       width=96, bg=t.SURFACE_2,
+                                       hover_bg=t.BORDER)
+        self.joindre_btn.pack(side="left", padx=(t.PAD, 0))
 
         self.mic_btn = RoundButton(bar, "Parler", self.listen_once, width=96,
                                    bg=t.SURFACE_2, hover_bg=t.BORDER)
@@ -595,6 +621,94 @@ class AssistantWindow(tk.Tk):
         self.contexte_texte.configure(text=f"Joint a ta question : {libelle}")
         self.contexte_bar.pack(fill="x", padx=t.PAD_L, pady=(0, 4),
                                before=self._barre_saisie)
+
+    # =====================================================================
+    # Fichiers joints a la question
+    # =====================================================================
+
+    def joindre_fichiers(self) -> None:
+        """Ouvre le selecteur de Windows et retient ce qui a ete choisi.
+
+        Rien n'est LU ici. La lecture d'un PDF de deux cents pages prend
+        plusieurs secondes, et la faire sur le fil graphique figerait la
+        fenetre entre le clic et la question -- l'utilisateur croirait
+        l'application plantee. On lit au moment de l'envoi, sur le fil de
+        travail, comme tout le reste.
+        """
+        from tkinter import filedialog
+
+        choisis = filedialog.askopenfilenames(
+            parent=self,
+            title="Joindre des fichiers a la question",
+            filetypes=[
+                ("Tout ce que je sais lire",
+                 "*.txt *.md *.pdf *.docx *.xlsx *.pptx *.csv *.json *.log "
+                 "*.png *.jpg *.jpeg *.bmp *.gif *.webp"),
+                ("Documents", "*.pdf *.docx *.xlsx *.pptx *.txt *.md *.csv"),
+                ("Images", "*.png *.jpg *.jpeg *.bmp *.gif *.webp"),
+                ("Tous les fichiers", "*.*"),
+            ],
+        )
+        if not choisis:
+            return
+        # On ajoute a ce qui est deja joint : deux clics sur le trombone
+        # doivent additionner, pas remplacer.
+        for chemin in choisis:
+            if chemin not in self._fichiers_joints:
+                self._fichiers_joints.append(chemin)
+        self._montrer_fichiers()
+
+    def _montrer_fichiers(self) -> None:
+        """Affiche le bandeau des fichiers joints, ou le masque."""
+        from pathlib import Path
+
+        if not self._fichiers_joints:
+            self.fichiers_bar.pack_forget()
+            return
+
+        noms = ", ".join(Path(c).name for c in self._fichiers_joints[:3])
+        reste = len(self._fichiers_joints) - 3
+        if reste > 0:
+            noms += f" et {reste} autre" + ("s" if reste > 1 else "")
+        self.fichiers_texte.configure(text=f"Joint a ta question : {noms}")
+        self.fichiers_bar.pack(fill="x", padx=t.PAD_L, pady=(0, 4),
+                               before=self._barre_saisie)
+
+    def oublier_fichiers(self) -> None:
+        """Detache les fichiers, sur demande de l'utilisateur."""
+        self._fichiers_joints = []
+        self._montrer_fichiers()
+
+    def _lire_fichiers_joints(self, chemins: list[str]) -> list[dict]:
+        """Lit les fichiers joints et les presente au modele comme des donnees.
+
+        Un fichier illisible n'interrompt pas les autres et ne disparait pas
+        en silence : la raison part au modele, qui pourra la dire. Un joint
+        qu'on croit lu et qui ne l'est pas est pire qu'un joint refuse.
+        """
+        from pathlib import Path
+
+        from assistant.skills import content, vision
+
+        messages = []
+        for chemin in chemins:
+            nom = Path(chemin).name
+            try:
+                if vision.is_image(chemin):
+                    ok, texte = vision.read_text(chemin)
+                    libelle = f"image {nom}"
+                else:
+                    ok, texte = content.extract(chemin)
+                    libelle = f"fichier {nom}"
+            except Exception as exc:  # noqa: BLE001 - un joint muet vaut mieux qu'un plantage
+                ok, texte = False, f"{type(exc).__name__}: {exc}"
+                libelle = f"fichier {nom}"
+
+            if not ok or not str(texte).strip():
+                texte = (f"[illisible : {texte}]" if texte
+                         else "[aucun texte lisible dans ce fichier]")
+            messages.append(llm.message_de_fichier_joint(libelle, str(texte)))
+        return messages
 
     def oublier_contexte(self) -> None:
         """Detache le panneau, sur demande de l'utilisateur."""
@@ -861,6 +975,14 @@ class AssistantWindow(tk.Tk):
         joint = (panels.contexte(self._contexte_panneau)
                  if self._contexte_panneau else None)
 
+        # Les fichiers joints partent AVEC cette question-la, puis sont
+        # detaches. Les laisser colles rejouerait un devis de trois cents
+        # pages a chaque phrase suivante, sans que personne comprenne
+        # pourquoi les reponses derivent.
+        fichiers = list(self._fichiers_joints)
+        if fichiers:
+            self.oublier_fichiers()
+
         def work():
             # Le contexte est remplace, jamais empile : cinq questions devant
             # le meme panneau ne doivent pas laisser cinq copies de son
@@ -868,6 +990,9 @@ class AssistantWindow(tk.Tk):
             self.convo = llm.sans_contexte(self.convo)
             if joint is not None:
                 self.convo.append(llm.message_de_contexte(*joint))
+            if fichiers:
+                self.post("status", ("Lecture des fichiers", t.AMBER))
+                self.convo.extend(self._lire_fichiers_joints(fichiers))
             self.convo.append({"role": "user", "content": question})
             try:
                 reponse, self.convo = llm.chat(
