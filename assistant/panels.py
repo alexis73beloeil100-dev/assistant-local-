@@ -35,6 +35,13 @@ class Panel:
     # Icone dessinee sous ce nom (voir assistant.icons). Une icone vaut un
     # coup d'oeil la ou un libelle demande une lecture.
     icone: str = ""
+    # Rubrique de la barre laterale.
+    #
+    # Dix-huit destinations tenaient encore dans une grille sans titres. A
+    # vingt-deux, la grille devient un mur d'icones ou l'on cherche : les
+    # rubriques rendent la place de chaque chose previsible, et surtout elles
+    # montrent ce qui existe. Une fonction qu'on ne trouve pas n'existe pas.
+    categorie: str = "machine"
 
 
 
@@ -404,6 +411,61 @@ def _correctifs() -> str:
     return fixes.disponibles()
 
 
+def _atelier_windows() -> str:
+    """Texte de secours du panneau Reparer Windows.
+
+    Le panneau affiche des boutons ; ce texte est ce que le MODELE lit quand
+    l'utilisateur joint le panneau a une question. Les deux doivent dire la
+    meme chose, sinon l'assistant repond a cote de ce qu'il y a a l'ecran.
+    """
+    from assistant.skills import fixes
+
+    return "\n".join([
+        "REPARER WINDOWS", "",
+        "  Verifier les fichiers systeme   sfc, 5 a 15 min",
+        "    Compare chaque fichier de Windows a sa version d'origine et",
+        "    remplace ceux qui sont abimes.", "",
+        "  Reparer l'image de Windows      DISM, 10 a 30 min",
+        "    A lancer quand sfc dit qu'il n'a PAS PU reparer : c'est sa",
+        "    source qui est abimee, et le relancer ne sert a rien.", "",
+        "  Analyser les menaces            Defender, signatures a jour", "",
+        fixes.menaces(),
+    ])
+
+
+def _preinstalle() -> str:
+    from assistant.skills import inventaire
+
+    return inventaire.preinstalle()
+
+
+def _connexion() -> str:
+    """Etat de la connexion, SANS lancer de test.
+
+    Un test de debit dure une dizaine de secondes et sort de la machine :
+    ouvrir un panneau ne doit pas le declencher. Le bouton est la pour ca.
+    """
+    from assistant.skills import system
+
+    taux = system.network_rates()
+    return "\n".join([
+        "CONNEXION", "",
+        f"  Trafic a l'instant   {taux['recu'] / 1024:.0f} Ko/s recus, "
+        f"{taux['envoye'] / 1024:.0f} Ko/s envoyes",
+        "",
+        "  Ce chiffre est le trafic qui passe MAINTENANT, pas la vitesse de",
+        "  la ligne. Pour la mesurer, lance le test de debit : il contacte le",
+        "  point de mesure de Cloudflare et n'envoie que des octets nuls.",
+        "",
+        "  C'est la seule fonction de l'assistant qui sort de la machine.",
+    ])
+
+
+def _telephone() -> str:
+    from assistant import serveur
+
+    return serveur.etat()
+
 
 def _controle() -> str:
     from assistant.skills import control
@@ -490,57 +552,82 @@ def _journal() -> str:
 PANELS: list[Panel] = [
     Panel("accueil", "Par ou commencer",
           "ce qu'il sait faire, avec des exemples", _accueil,
-          court="Debuter", icone="boussole"),
+          court="Debuter", icone="boussole", categorie="assistant"),
     Panel("configuration", "Ma configuration",
           "carte mere, CPU, RAM, GPU, disques, Windows", _configuration,
-          court="Config", icone="puce"),
+          court="Config", icone="puce", categorie="machine"),
     Panel("problemes", "Problemes detectes",
           "disques, materiel, journal Windows", _problemes,
-          court="Sante", icone="alerte"),
+          court="Sante", icone="alerte", categorie="machine"),
     Panel("etat", "Etat en direct",
           "charge CPU par coeur, RAM, GPU, processus", _etat, live=True,
-          court="En direct", icone="pouls"),
+          court="En direct", icone="pouls", categorie="machine"),
     Panel("lenteurs", "Pourquoi ca rame",
           "ce qui sature la machine maintenant", _lenteurs, live=True,
-          court="Lenteurs", icone="jauge"),
+          court="Lenteurs", icone="jauge", categorie="machine"),
     Panel("jeux", "Mes jeux", "tailles, booster, desinstaller", _jeux,
-          interactif="ludotheque", court="Jeux", icone="manette"),
+          interactif="ludotheque", court="Jeux", icone="manette", categorie="logiciels"),
     Panel("espace", "Espace disque", "ce qui prend de la place", _espace,
-          court="Espace", icone="disque"),
+          court="Espace", icone="disque", categorie="machine"),
     Panel("fichiers", "Mes fichiers", "index et surveillance", _fichiers,
-          court="Fichiers", icone="dossier"),
+          court="Fichiers", icone="dossier", categorie="machine"),
     Panel("demarrage", "Demarrage de Windows",
           "cocher ce qui se lance avec la session", _demarrage,
-          interactif="startup", court="Session", icone="alimentation"),
+          interactif="startup", court="Session", icone="alimentation", categorie="reparer"),
     Panel("correctifs", "Ce que je peux reparer",
           "ce qui cloche, et le bouton qui corrige", _correctifs,
           interactif="reparation", live=True,
-          court="Reparer", icone="cle"),
+          court="Reparer", icone="cle", categorie="reparer"),
     Panel("controle", "Controle du PC",
           "son, lecture, clavier, alimentation", _controle, live=True,
-          interactif="pupitre", court="Controle", icone="curseurs"),
+          interactif="pupitre", court="Controle", icone="curseurs", categorie="assistant"),
     Panel("applications", "Mes applications",
           "tout ce qui peut etre ouvert", _applications,
-          court="Apps", icone="grille"),
+          court="Apps", icone="grille", categorie="logiciels"),
     Panel("modejeu", "Mode jeu",
           "preparer la machine avant de jouer", _mode_jeu, live=True,
-          court="Mode jeu", icone="fusee"),
+          court="Mode jeu", icone="fusee", categorie="logiciels"),
     Panel("alertes", "Minuteurs et alertes",
           "rappels et surveillances", _alertes, live=True,
-          court="Alertes", icone="cloche"),
+          court="Alertes", icone="cloche", categorie="assistant"),
     Panel("notes", "Mes notes", "ce que tu as dicte", _notes, live=True,
-          court="Notes", icone="note"),
+          court="Notes", icone="note", categorie="assistant"),
     Panel("commandes", "Commandes Windows",
           "ce qui est autorise et refuse", _commandes,
-          court="Console", icone="terminal"),
+          court="Console", icone="terminal", categorie="reparer"),
     Panel("journal", "Journal des actions",
           "tout ce qui a ete fait ou refuse", _journal, live=True,
-          court="Journal", icone="registre"),
+          court="Journal", icone="registre", categorie="assistant"),
     Panel("connaissance", "Ce qu'il sait de ce PC",
           "appris au demarrage, en memoire vive", _connaissance, live=True,
-          court="Su", icone="cerveau"),
+          court="Su", icone="cerveau", categorie="assistant"),
     Panel("autotest", "Autotest", "verifier que tout fonctionne", _autotest,
-          court="Autotest", icone="bouclier"),
+          court="Autotest", icone="bouclier", categorie="assistant"),
+    Panel("atelier", "Reparer Windows",
+          "fichiers systeme, image, antivirus", _atelier_windows,
+          interactif="atelier", live=True,
+          court="Windows", icone="bouclier", categorie="reparer"),
+    Panel("preinstalle", "Preinstalle",
+          "ce qui etait la avant vous", _preinstalle,
+          court="Preinstalle", icone="grille", categorie="logiciels"),
+    Panel("connexion", "Connexion",
+          "vitesse reelle de la ligne", _connexion,
+          interactif="connexion", live=True,
+          court="Connexion", icone="jauge", categorie="reseau"),
+    Panel("telephone", "Telephone",
+          "presse-papier partage et macros", _telephone,
+          interactif="telephone", live=True,
+          court="Telephone", icone="terminal", categorie="reseau"),
+]
+
+# Rubriques de la barre laterale, dans l'ordre d'affichage. Le libelle est ce
+# que l'utilisateur lit ; la cle est ce que porte chaque Panel.
+CATEGORIES = [
+    ("machine", "ma machine"),
+    ("reparer", "reparer"),
+    ("logiciels", "logiciels"),
+    ("reseau", "reseau"),
+    ("assistant", "l'assistant"),
 ]
 
 BY_KEY = {p.key: p for p in PANELS}

@@ -3298,3 +3298,84 @@ def test_les_outils_du_serveur_sont_exposes_au_modele():
     # Allumer une porte reseau est un effet, pas une lecture.
     for outil in ("appairer_le_telephone", "eteindre_le_serveur"):
         assert next(t for t in llm.TOOLS if t.name == outil).effect is True
+
+# --- Rubriques et nouveaux panneaux -----------------------------------------
+
+def test_chaque_panneau_appartient_a_une_rubrique_affichee():
+    """Un panneau sans rubrique valide disparait de la barre laterale.
+
+    La barre construit une grille PAR rubrique : une categorie mal ecrite ne
+    leve rien, elle rend simplement le panneau introuvable. C'est le defaut
+    exact qu'on cherchait a corriger en les classant.
+    """
+    from assistant import panels
+
+    connues = {cle for cle, _libelle in panels.CATEGORIES}
+    for panneau in panels.PANELS:
+        assert panneau.categorie in connues, (
+            f"{panneau.key} porte la rubrique \"{panneau.categorie}\", "
+            f"qui n'est pas affichee : il serait invisible")
+
+
+def test_aucune_rubrique_n_est_vide():
+    """Un titre suivi de rien occupe de la place et n'apprend rien."""
+    from assistant import panels
+
+    for cle, libelle in panels.CATEGORIES:
+        assert any(p.categorie == cle for p in panels.PANELS), (
+            f"la rubrique \"{libelle}\" n'a aucun panneau")
+
+
+def test_les_nouvelles_fonctions_ont_un_endroit_ou_cliquer():
+    """Une fonction qu'on ne trouve pas n'existe pas.
+
+    Vingt-cinq capacites ont ete ajoutees le 24/08/2026, toutes branchees sur
+    le modele et aucune sur l'interface. L'utilisateur les cherchait a la
+    souris sans les trouver, et il avait raison : rien ne les montrait.
+    """
+    from assistant import panels
+
+    cles = {p.key for p in panels.PANELS}
+    for attendu in ("atelier", "preinstalle", "connexion", "telephone"):
+        assert attendu in cles, f"le panneau {attendu} manque"
+
+
+def test_ouvrir_un_panneau_reseau_ne_declenche_aucune_sortie():
+    """Cliquer sur une icone ne doit contacter personne.
+
+    Le panneau Connexion affiche le trafic instantane, lu sur la carte
+    reseau. Lancer le test de debit a l'ouverture ferait sortir des donnees
+    parce qu'on a clique en cherchant autre chose -- et ferait attendre dix
+    secondes devant un panneau qu'on voulait juste consulter.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant import panels
+
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(panels._connexion)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+    assert "debit.tester" not in code
+    assert "network_rates" in code
+
+    # Et le panneau Telephone n'allume pas le serveur en s'affichant.
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(panels._telephone)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+    assert "demarrer" not in code and "appairer" not in code
+
+
+def test_le_texte_d_un_panneau_interactif_dit_la_meme_chose_que_ses_boutons():
+    """Le modele lit le TEXTE quand l'utilisateur joint le panneau.
+
+    Si le texte et les boutons divergent, l'assistant repond a cote de ce qui
+    est affiche -- et l'utilisateur croit qu'il ne voit pas son ecran.
+    """
+    from assistant import panels
+
+    texte = panels.content("atelier", force=True)
+    assert "sfc" in texte
+    assert "DISM" in texte
+    assert "PAS PU reparer" in texte, (
+        "l'ordre entre sfc et DISM est la seule chose qui compte : il doit "
+        "etre dans le texte comme sur le bouton")

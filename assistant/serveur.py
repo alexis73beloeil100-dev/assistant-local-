@@ -106,7 +106,18 @@ def adresse_locale() -> str:
 # Le contenu ne voyage jamais dans l'autre sens.
 
 def macros() -> dict:
-    donnees = settings.get("macros", {})
+    """Les macros enregistrees, relues sur le disque a chaque appel.
+
+    Relues, et pas prises dans le cache des reglages : le serveur peut tourner
+    dans un processus qui n'est pas celui qui enregistre. Le 24/08/2026, une
+    macro ajoutee pendant que le serveur tournait est restee invisible au
+    telephone, qui affichait une liste vide sans qu'aucune erreur ne soit
+    levee -- on a cherche du cote du reseau.
+
+    Le fichier fait quelques centaines d'octets : le relire a chaque appel
+    coute moins qu'une liste fausse.
+    """
+    donnees = settings.recharger().get("macros", {})
     return dict(donnees) if isinstance(donnees, dict) else {}
 
 
@@ -408,11 +419,37 @@ def demarrer(port: int = PORT_DEFAUT) -> str:
     with _verrou:
         _echecs = 0
         _journal.clear()
+    # Fil DAEMON, volontairement : la fenetre de l'assistant doit pouvoir se
+    # fermer sans qu'un serveur oublie retienne le processus en vie. La
+    # contrepartie est que le serveur meurt avec son processus -- voir servir()
+    # pour l'usage hors interface.
     _fil = threading.Thread(target=_serveur.serve_forever,
                             name="serveur-local", daemon=True)
     _fil.start()
     _noter(f"serveur allume sur {hote}:{port}")
     return url(port, hote)
+
+
+def servir(port: int = PORT_DEFAUT) -> None:
+    """Allume le serveur et BLOQUE tant qu'il tourne.
+
+    Pour tout ce qui n'est pas l'interface graphique : un script, la ligne de
+    commande, une tache. Sans cela, le serveur s'eteint a la fin du script qui
+    l'a lance -- le 24/08/2026, un appairage a affiche son QR code alors que
+    plus rien n'ecoutait deja, et il a fallu regarder les ports pour s'en
+    apercevoir. Le message annoncait "serveur allume", ce qui etait vrai
+    pendant quelques millisecondes.
+    """
+    adresse = demarrer(port)
+    if adresse.startswith("Impossible"):
+        print(adresse)
+        return
+    print(f"Serveur local sur {adresse_locale()}:{port}. Ctrl+C pour arreter.")
+    try:
+        while allume():
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n" + arreter())
 
 
 def arreter() -> str:
@@ -472,6 +509,10 @@ def appairer(port: int = PORT_DEFAUT) -> str:
         f"Serveur allume sur {adresse_locale()}:{port}.{ouvert}\n"
         "  Scanne le QR avec l'appareil photo du telephone, sur le MEME "
         "reseau Wi-Fi.\n\n"
+        "  IL VIT TANT QUE CETTE APPLICATION RESTE OUVERTE. La fermer coupe "
+        "la liaison :\n"
+        "  ce n'est pas une panne, et le telephone retrouvera le serveur au "
+        "prochain lancement.\n\n"
         "  Ce code contient la cle d'acces : qui le photographie peut "
         "envoyer du texte\n"
         "  et declencher tes macros. Ne le laisse pas affiche a l'ecran "

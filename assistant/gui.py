@@ -260,14 +260,24 @@ class AssistantWindow(tk.Tk):
         self._cellule(interieur, CHAT_KEY, "Parler", "parole",
                       colonne=None)
 
-        self._entete_rail(interieur, "consulter")
-
-        grille = tk.Frame(interieur, bg=t.SURFACE)
-        grille.pack(fill="x", padx=(t.PAD, 0))
-        for index, panel in enumerate(panels.PANELS):
-            self._cellule(grille, panel.key, panel.court or panel.label,
-                          panel.icone, colonne=index % RAIL_COLONNES,
-                          ligne=index // RAIL_COLONNES)
+        # Une grille par rubrique, plutot qu'un seul mur d'icones.
+        #
+        # A dix-huit destinations, la grille passait encore. A vingt-deux, on
+        # cherchait -- et c'est exactement ce qui s'est produit : les
+        # nouvelles fonctions etaient invisibles faute d'un endroit ou les
+        # attendre. Les rubriques rendent la place de chaque chose previsible,
+        # et surtout elles MONTRENT ce qui existe.
+        for cle, libelle in panels.CATEGORIES:
+            dedans = [p for p in panels.PANELS if p.categorie == cle]
+            if not dedans:
+                continue
+            self._entete_rail(interieur, libelle)
+            grille = tk.Frame(interieur, bg=t.SURFACE)
+            grille.pack(fill="x", padx=(t.PAD, 0))
+            for index, panel in enumerate(dedans):
+                self._cellule(grille, panel.key, panel.court or panel.label,
+                              panel.icone, colonne=index % RAIL_COLONNES,
+                              ligne=index // RAIL_COLONNES)
 
     def _entete_rail(self, parent, texte: str) -> None:
         tk.Label(parent, text=t.espacer(texte), bg=t.SURFACE,
@@ -504,6 +514,18 @@ class AssistantWindow(tk.Tk):
                 from assistant.reparation import Reparateur
 
                 widget = Reparateur(self.panel_widget_host, self)
+            elif panel.interactif == "atelier":
+                from assistant.atelier import Atelier
+
+                widget = Atelier(self.panel_widget_host, self)
+            elif panel.interactif == "connexion":
+                from assistant.reseau_panneaux import Connexion
+
+                widget = Connexion(self.panel_widget_host, self)
+            elif panel.interactif == "telephone":
+                from assistant.reseau_panneaux import Telephone
+
+                widget = Telephone(self.panel_widget_host, self)
             else:
                 return
             self.panel_widgets[panel.key] = widget

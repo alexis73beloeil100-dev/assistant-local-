@@ -42,6 +42,26 @@ def _load(chemin: Path) -> dict:
         return {}
 
 
+def recharger() -> dict:
+    """Relit le fichier, en ignorant ce qui est deja en memoire.
+
+    Le cache suffit tant qu'un seul processus ecrit et lit. Il ne suffit plus
+    des qu'un autre modifie le fichier : le 24/08/2026, une macro enregistree
+    depuis un script est restee invisible au serveur local, qui gardait la
+    liste chargee a son demarrage. Rien n'echouait -- le telephone affichait
+    simplement une liste vide, et on cherchait la cause du cote du reseau.
+
+    A appeler quand la fraicheur compte davantage que le cout d'une lecture :
+    ce fichier fait quelques centaines d'octets.
+    """
+    global _cache
+
+    chemin = _path()
+    with _lock:
+        _cache = _load(chemin)
+        return dict(_cache)
+
+
 def all() -> dict:
     global _cache
     chemin = _path()          # hors du verrou : cet appel importe config
