@@ -417,18 +417,165 @@ def vider_cache(nom: str, ask=None) -> Result:
     return Result(reussi, message)
 
 
+# --- Reparation de Windows lui-meme -----------------------------------------
+#
+# Deux outils de Microsoft, et l'ordre entre eux n'est pas une preference.
+#
+# sfc compare chaque fichier systeme a sa version d'origine et remplace ceux
+# qui sont abimes. Il prend cette version d'origine dans le magasin de
+# composants de Windows -- si CE magasin est lui-meme abime, sfc annonce
+# qu'il a trouve des erreurs sans pouvoir les corriger, et le relancer dix
+# fois n'y changera rien.
+#
+# DISM repare le magasin. C'est pour cela qu'il vient AVANT quand sfc echoue :
+# il refait la source dans laquelle sfc puise.
+
+SFC = "sfc /scannow"
+DISM = "DISM /Online /Cleanup-Image /RestoreHealth"
+
+
+def _lancer_en_admin(commande: str, fenetre: str) -> tuple[bool, str]:
+    """Ouvre une console administrateur VISIBLE, et n'attend pas la fin.
+
+    Visible, parce que ces deux commandes durent de cinq a trente minutes et
+    affichent leur progression. Les faire tourner cachees derriere un
+    assistant qui semble fige est le meilleur moyen qu'on les interrompe a
+    mi-chemin -- et une reparation interrompue laisse Windows moins sain
+    qu'avant de commencer.
+
+    Sans attendre, parce que bloquer l'assistant une demi-heure le rendrait
+    inutilisable, et qu'une commande vocale ne peut pas rester en suspens
+    aussi longtemps.
+
+    Le script est ecrit dans un fichier qui SURVIT a cette fonction : on ne
+    l'attend pas, et un TemporaryDirectory l'effacerait avant que cmd ait eu
+    le temps de le lire.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    script = _Path(tempfile.gettempdir()) / "assistant_reparation_windows.cmd"
+    try:
+        script.write_text("\r\n".join([
+            "@echo off",
+            f"title {fenetre}",
+            "echo Ne fermez pas cette fenetre avant la fin.",
+            "echo.",
+            commande,
+            "echo.",
+            "echo Termine. Cette fenetre peut etre fermee.",
+            "pause",
+        ]), encoding="utf-8")
+    except OSError as exc:
+        return False, f"Ecriture du script impossible : {exc}"
+
+    try:
+        subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-Command", f"Start-Process -FilePath '{script}' -Verb RunAs"],
+            capture_output=True, text=True, timeout=60,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        return False, f"Elevation impossible : {type(exc).__name__}: {exc}"
+    return True, ""
+
+
+def verifier_fichiers_systeme(ask=None) -> Result:
+    """Lance sfc /scannow : les fichiers systeme abimes sont remplaces.
+
+    Irreversible au sens du garde-fou, et c'est voulu : une reparation ne
+    s'annule pas. Rien n'est detruit pour autant -- sfc ne touche qu'aux
+    fichiers de Windows, jamais aux donnees personnelles.
+    """
+    action = safety.Action(
+        kind="systeme",
+        summary="Verifier et reparer les fichiers systeme de Windows (sfc)",
+        targets=["fichiers systeme de Windows"],
+        reversible=False,
+        details=(f"{SFC} -- compare chaque fichier systeme a sa version "
+                 "d'origine et remplace ceux qui sont abimes. 5 a 15 minutes, "
+                 "dans une fenetre administrateur separee. Aucune donnee "
+                 "personnelle n'est touchee."),
+    )
+    try:
+        safety.guard(action, ask=ask)
+    except safety.Refused as exc:
+        return Result(False, str(exc))
+
+    ok, erreur = _lancer_en_admin(SFC, "Verification des fichiers systeme")
+    if not ok:
+        return Result(False, erreur)
+
+    return Result(True, (
+        "Verification lancee dans une fenetre administrateur. Compte 5 a 15 "
+        "minutes, et ne la ferme pas avant la fin.\n"
+        "  \"aucune violation d'integrite\" : Windows est sain.\n"
+        "  \"a reussi a reparer\"           : c'etait abime, c'est corrige.\n"
+        "  \"n'a pas pu reparer\"           : le magasin de composants est "
+        "lui-meme abime. Demande-moi alors de reparer l'image de Windows, "
+        "puis relance cette verification."
+    ))
+
+
+def reparer_image_windows(ask=None) -> Result:
+    """Lance DISM /RestoreHealth : repare le magasin dont sfc se sert.
+
+    A demander quand sfc annonce avoir trouve des erreurs sans pouvoir les
+    corriger. Relancer sfc dans ce cas ne sert a rien : c'est sa source qui
+    est en cause, pas sa lecture.
+
+    Seule reparation de l'assistant qui utilise le reseau : DISM va chercher
+    les fichiers sains manquants aupres de Windows Update. C'est une
+    exception assumee -- sans elle, un magasin abime ne se repare pas -- et
+    elle ne part que sur demande explicite.
+    """
+    action = safety.Action(
+        kind="systeme",
+        summary="Reparer l'image de Windows (DISM RestoreHealth)",
+        targets=["magasin de composants de Windows"],
+        reversible=False,
+        details=(f"{DISM} -- repare la reserve de fichiers d'origine dans "
+                 "laquelle sfc puise. 10 a 30 minutes, dans une fenetre "
+                 "administrateur separee. Peut telecharger des fichiers sains "
+                 "depuis Windows Update."),
+    )
+    try:
+        safety.guard(action, ask=ask)
+    except safety.Refused as exc:
+        return Result(False, str(exc))
+
+    ok, erreur = _lancer_en_admin(DISM, "Reparation de l'image de Windows")
+    if not ok:
+        return Result(False, erreur)
+
+    return Result(True, (
+        "Reparation de l'image lancee dans une fenetre administrateur. "
+        "Compte 10 a 30 minutes ; la progression reste longtemps a 20 %, "
+        "c'est normal.\n"
+        "Quand elle est finie, demande-moi la verification des fichiers "
+        "systeme : c'est elle qui repare, maintenant qu'elle a une source "
+        "saine."
+    ))
+
+
 # --- Catalogue des correctifs disponibles ------------------------------------
 
 def disponibles() -> str:
     """Ce que l'assistant sait reparer, pour que l'utilisateur le sache."""
     return "\n".join([
-        "Correctifs disponibles (chacun demande confirmation et est reversible) :",
+        "Correctifs disponibles (chacun demande confirmation) :",
         "",
         "  desactiver un programme au demarrage   la commande est conservee",
         "  reactiver un programme au demarrage    depuis la sauvegarde",
         "  arreter un processus                   refuse les processus systeme",
         "  redemarrer un service                  refuse les services critiques",
         "  vider un cache                         part a la corbeille",
+        "  verifier les fichiers systeme          sfc, 5 a 15 min, en admin",
+        "  reparer l'image de Windows             DISM, 10 a 30 min, en admin",
+        "",
+        "Les cinq premiers sont reversibles. Les deux reparations de Windows "
+        "ne le sont pas : on ne defait pas un fichier repare.",
         "",
         "Tout est journalise dans data/logs/actions.jsonl, accepte comme refuse.",
     ])

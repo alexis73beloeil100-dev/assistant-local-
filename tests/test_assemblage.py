@@ -969,3 +969,131 @@ def test_les_notes_de_version_ne_sont_pas_inventees():
     attendu = racine / "notes_de_version" / f"{__version__}.md"
     assert attendu.is_file(), (
         f"les notes de la version courante manquent : {attendu}")
+
+
+# --- Reparer Windows : sfc et DISM ------------------------------------------
+
+def test_les_commandes_de_reparation_windows_sont_orthographiees_juste():
+    """Une lettre de travers, et la commande ne repare rien sans le dire.
+
+    sfc et DISM ne renvoient pas d'erreur lisible sur un drapeau inconnu :
+    ils affichent leur aide et rendent la main. Dans une fenetre qui se ferme
+    apres coup, cela ressemble trait pour trait a une reparation qui s'est
+    bien passee.
+
+    Ces deux chaines sont donc figees ici. "/RestoreHealth" en particulier
+    s'ecrit sans espace et sans tiret, contrairement a ce que la plupart des
+    pages web recopient de travers.
+    """
+    from assistant.skills import fixes
+
+    assert fixes.SFC == "sfc /scannow"
+    assert fixes.DISM == "DISM /Online /Cleanup-Image /RestoreHealth"
+
+
+def test_un_refus_ne_lance_aucune_reparation_windows(monkeypatch):
+    """Refuser doit vraiment tout arreter, pas seulement changer le message.
+
+    Ces deux commandes reecrivent des fichiers systeme et durent jusqu'a une
+    demi-heure. Un refus qui laisserait passer l'execution serait le pire
+    defaut possible de ce module.
+    """
+    from assistant.skills import fixes
+
+    lancements = []
+    monkeypatch.setattr(fixes, "_lancer_en_admin",
+                        lambda *a: lancements.append(a) or (True, ""))
+
+    for fonction in (fixes.verifier_fichiers_systeme,
+                     fixes.reparer_image_windows):
+        resultat = fonction(ask=lambda _texte: False)
+        assert not resultat.ok
+        assert lancements == [], "une reparation a ete lancee malgre le refus"
+
+
+def test_les_reparations_windows_ne_se_declarent_pas_reversibles(monkeypatch):
+    """On ne defait pas un fichier repare.
+
+    Le garde-fou traite `routine` et `reversible` ensemble : une action
+    irreversible pose toujours la question, meme si quelqu'un la marquait un
+    jour comme geste courant. Encore faut-il qu'elle soit declaree pour ce
+    qu'elle est.
+    """
+    from assistant import safety
+    from assistant.skills import fixes
+
+    vues = []
+    monkeypatch.setattr(safety, "guard",
+                        lambda action, ask=None: vues.append(action) or True)
+    monkeypatch.setattr(fixes, "_lancer_en_admin", lambda *a: (True, ""))
+
+    fixes.verifier_fichiers_systeme()
+    fixes.reparer_image_windows()
+
+    assert len(vues) == 2
+    for action in vues:
+        assert action.reversible is False
+        assert action.routine is False, (
+            "une reparation systeme ne doit jamais passer sans etre annoncee")
+
+
+def test_la_reparation_windows_ne_bloque_pas_l_assistant():
+    """Une demi-heure d'attente bloquee, et la commande vocale est perdue.
+
+    sfc dure de cinq a quinze minutes, DISM jusqu'a trente. Attendre leur fin
+    dans le processus de l'assistant gelerait la fenetre et laisserait une
+    question vocale sans reponse pendant tout ce temps. La console est donc
+    ouverte VISIBLE, et on rend la main immediatement.
+    """
+    import inspect
+
+    from assistant.skills import fixes
+
+    # Le CODE seul : la docstring nomme ces pieges pour les expliquer, et
+    # l'inspecter reviendrait a interdire d'en parler.
+    source = inspect.getsource(fixes._lancer_en_admin)
+    code = source.replace(inspect.getdoc(fixes._lancer_en_admin) or "", "")
+
+    assert "-Wait" not in code, (
+        "attendre la fin gelerait l'assistant pendant une demi-heure")
+    assert "WindowStyle Hidden" not in code, (
+        "cachee, la reparation se fait interrompre sans qu'on sache pourquoi")
+    assert "-Verb RunAs" in code, "sfc et DISM exigent l'elevation"
+
+    # Le fichier doit survivre a l'appel : on ne l'attend pas.
+    assert "TemporaryDirectory(" not in code, (
+        "un dossier temporaire serait efface avant que cmd lise le script")
+
+
+def test_le_catalogue_annonce_les_deux_reparations_windows():
+    """Un correctif que personne ne sait demander n'existe pas.
+
+    disponibles() est ce que l'assistant recite quand on lui demande ce qu'il
+    sait reparer. Y ajouter une capacite sans l'y annoncer revient a ne pas
+    l'avoir ecrite.
+    """
+    from assistant.skills import fixes
+
+    catalogue = fixes.disponibles()
+    assert "sfc" in catalogue
+    assert "DISM" in catalogue
+    assert "reversibles" in catalogue, (
+        "le catalogue annoncait tout comme reversible : ces deux-la ne le sont pas")
+
+
+def test_les_deux_reparations_windows_sont_exposees_au_modele():
+    """Ecrite mais pas branchee, une fonction ne sert a rien.
+
+    Le defaut s'est deja produit dans ce projet : pousser sur GitHub existait
+    dans sauvegarder.py et main() ne l'appelait pas. Une capacite absente de
+    TOOLS est invisible pour le modele, donc introuvable a la voix.
+    """
+    from assistant import llm
+
+    noms = {t.name for t in llm.TOOLS}
+    assert "verifier_fichiers_systeme" in noms
+    assert "reparer_image_windows" in noms
+
+    dism = next(t for t in llm.TOOLS if t.name == "reparer_image_windows")
+    assert "sfc" in dism.description.lower(), (
+        "le modele doit savoir que DISM ne se lance qu'apres un echec de sfc")

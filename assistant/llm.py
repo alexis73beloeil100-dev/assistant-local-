@@ -404,6 +404,28 @@ TOOLS: list[Tool] = [
         effect=True,
     ),
     Tool(
+        "verifier_fichiers_systeme",
+        "Lance sfc /scannow : verifie les fichiers systeme de Windows et "
+        "remplace ceux qui sont abimes. A proposer devant des plantages "
+        "inexpliques, des services qui refusent de demarrer ou une mise a "
+        "jour qui echoue. Ouvre une fenetre administrateur pour 5 a 15 "
+        "minutes.",
+        _obj({}, []),
+        lambda: str(fixes.verifier_fichiers_systeme()),
+        effect=True,
+    ),
+    Tool(
+        "reparer_image_windows",
+        "Lance DISM /Online /Cleanup-Image /RestoreHealth : repare le magasin "
+        "de composants dans lequel sfc puise ses fichiers d'origine. A "
+        "utiliser UNIQUEMENT quand sfc annonce qu'il n'a pas pu reparer -- "
+        "relancer sfc ne sert alors a rien. Telecharge depuis Windows Update. "
+        "Ouvre une fenetre administrateur pour 10 a 30 minutes.",
+        _obj({}, []),
+        lambda: str(fixes.reparer_image_windows()),
+        effect=True,
+    ),
+    Tool(
         "lire_image",
         "Lit une image : capture d'ecran, photo d'un menu, document scanne. "
         "Rend ce qui y est ecrit et, si un modele de vision est installe, ce "
