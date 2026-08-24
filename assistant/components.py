@@ -448,8 +448,16 @@ def catalogue() -> list[Component]:
             size_gb=3.2,
             detect=lambda: _model_installed("qwen3-vl:4b"),
             install=_install_vision,
-            default=False,
-            note="Facultatif : la lecture de texte fonctionne sans lui.",
+            # Coche par defaut depuis le 24/08/2026.
+            #
+            # Il etait facultatif, et cela faisait une promesse non tenue : les
+            # notes annoncent que l'assistant comprend une capture d'ecran,
+            # alors que personne ne serait alle cocher une case dans un ecran
+            # de composants. Ceux qui installaient obtenaient l'OCR -- du texte
+            # deforme la ou on leur promettait une lecture. Mieux vaut 3,2 Go
+            # de plus qu'une fonction annoncee et absente.
+            note="Sans lui, seul le TEXTE des images est lu, et il se deforme. "
+                 "A decocher si la place manque.",
         ),
         Component(
             key="motcle",

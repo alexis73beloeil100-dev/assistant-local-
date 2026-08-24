@@ -4265,3 +4265,23 @@ def test_aucun_numero_de_version_n_est_ecrit_en_dur():
     assert not coupables, (
         "numeros de version ecrits en dur, et deja perimes :\n  "
         + "\n  ".join(coupables))
+
+def test_la_vision_est_installee_par_defaut():
+    """Une fonction annoncee dans les notes et decochee dans l'installateur.
+
+    Les notes de la 1.0.4 disent que l'assistant comprend une capture
+    d'ecran. Le composant qui le permet etait facultatif et decoche : personne
+    ne serait alle le cocher, et ceux qui installaient obtenaient l'OCR -- du
+    texte deforme la ou on leur promettait une lecture.
+
+    Le defaut n'est pas visible chez le developpeur, qui a le modele installe
+    depuis longtemps. Il ne se voit que chez celui qui telecharge.
+    """
+    from assistant import components
+
+    vision = next(c for c in components.catalogue() if c.key == "vision")
+    assert getattr(vision, "default", True) is True, (
+        "la vision est annoncee dans les notes de version : elle ne peut pas "
+        "etre decochee dans l'installateur")
+    assert "TEXTE" in vision.note, (
+        "la note doit dire ce qu'on perd en la decochant")
