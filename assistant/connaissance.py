@@ -110,6 +110,18 @@ _verrou = threading.RLock()
 _refuses = 0            # combien de faits ont ete ecartes comme sensibles
 _minuterie: threading.Timer | None = None
 
+# Ce processus a-t-il appris ou oublie quelque chose ?
+#
+# Sans ce drapeau, le fichier a ete efface le 24/08/2026 par un simple script
+# de verification. atexit est enregistre a l'IMPORT, donc dans tout processus
+# qui touche au paquet : la CLI, un test, un outil de trois lignes. Aucun
+# d'eux n'apprend rien, tous ont une connaissance vide, et tous ecrivaient
+# cette connaissance vide par-dessus les 145 Ko de la vraie en se terminant.
+#
+# L'assistant repartait donc de zero apres n'importe quelle commande annexe,
+# sans qu'aucune erreur ne soit levee nulle part.
+_modifie = False
+
 
 def _ressemble_a_un_jeton(morceau: str) -> bool:
     """Une chaine aleatoire, par opposition a un nom lisible.
@@ -162,6 +174,7 @@ def apprendre(sujet: str, cle: str, valeur, source: str = "") -> bool:
             # gonfler la memoire sans fin.
             for perime in sorted(_faits.values(), key=lambda f: f.quand)[:200]:
                 _faits.pop((perime.sujet, perime.cle), None)
+    _marquer_modifie()
     _planifier_ecriture()
     return True
 
@@ -184,6 +197,7 @@ def oublier(sujet: str | None = None) -> int:
         if sujet is None:
             nombre = len(_faits)
             _faits.clear()
+            _marquer_modifie()
             _annuler_minuterie()
             try:
                 CHEMIN.unlink(missing_ok=True)
@@ -194,11 +208,28 @@ def oublier(sujet: str | None = None) -> int:
         for cle in cibles:
             del _faits[cle]
         if cibles:
+            _marquer_modifie()
             _planifier_ecriture()
         return len(cibles)
 
 
 # --- Persistance -------------------------------------------------------------
+
+def _marquer_modifie() -> None:
+    global _modifie
+    _modifie = True
+
+
+def _a_la_fermeture() -> None:
+    """Rattrape la derniere rafale -- et seulement si elle existe.
+
+    La minuterie attend cinq secondes, et une fermeture arrive plus vite que
+    ca. Mais un processus qui n'a rien appris n'a rien a ecrire : c'est ce
+    qui a efface le fichier une premiere fois.
+    """
+    if _modifie:
+        sauvegarder()
+
 
 def _annuler_minuterie() -> None:
     global _minuterie
@@ -229,9 +260,16 @@ def sauvegarder() -> bool:
     coupure de courant au milieu d'un json.dump laisserait sinon un fichier
     tronque, que la relecture rejetterait -- et toute la connaissance serait
     perdue au lieu d'etre simplement vieille d'une session.
+
+    Une connaissance vide ne remplace jamais un fichier qui ne l'est pas.
+    C'est le garde-fou de dernier recours, celui qui tient meme si un futur
+    appelant oublie le drapeau : le seul moyen legitime de vider le fichier
+    est oublier(), qui le supprime franchement.
     """
     with _verrou:
         _annuler_minuterie()
+        if not _faits and CHEMIN.exists() and CHEMIN.stat().st_size > 32:
+            return False
         donnees = {
             "version": 1,
             "faits": [
@@ -287,9 +325,7 @@ def charger() -> int:
     return retenus
 
 
-# La derniere rafale de faits ne doit pas mourir avec le processus : la
-# minuterie attend cinq secondes, et une fermeture arrive plus vite que ca.
-atexit.register(sauvegarder)
+atexit.register(_a_la_fermeture)
 
 
 def sujets() -> dict[str, int]:

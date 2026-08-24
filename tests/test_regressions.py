@@ -2840,3 +2840,49 @@ def test_le_preinstalle_est_expose_au_modele():
     noms = {t.name for t in llm.TOOLS}
     assert "preinstalle" in noms
     assert "retirer_application_store" in noms
+
+def test_un_script_qui_n_apprend_rien_n_efface_pas_la_connaissance(tmp_path,
+                                                                   monkeypatch):
+    """145 Ko de connaissance effaces par un script de verification.
+
+    atexit est enregistre a l'IMPORT du module, donc dans TOUT processus qui
+    touche au paquet : la CLI, un test, un outil de trois lignes. Aucun d'eux
+    n'apprend quoi que ce soit, tous ont une connaissance vide en memoire, et
+    tous ecrivaient cette connaissance vide par-dessus la vraie en se
+    terminant.
+
+    Constate le 24/08/2026 : le fichier est tombe de 144 960 a 27 octets --
+    "faits": [] -- apres une simple commande listant les outils du modele.
+    Aucune erreur nulle part, et l'assistant repartait de zero au lancement
+    suivant.
+
+    Deux garde-fous, parce qu'un seul se contourne par oubli : le processus
+    n'ecrit que s'il a appris ou oublie quelque chose, et sauvegarder() refuse
+    de toute facon de remplacer un fichier rempli par une connaissance vide.
+    """
+    from assistant import connaissance
+
+    fichier = tmp_path / "connaissance.json"
+    monkeypatch.setattr(connaissance, "CHEMIN", fichier)
+
+    # Un processus qui a travaille : il ecrit.
+    connaissance.oublier()
+    connaissance.apprendre("materiel", "processeur", "Ryzen 7 5800X")
+    assert connaissance.sauvegarder()
+    plein = fichier.read_text(encoding="utf-8")
+    assert "5800X" in plein
+
+    # Un processus neuf qui n'a rien appris : sa fermeture ne doit rien ecrire.
+    connaissance._faits.clear()
+    monkeypatch.setattr(connaissance, "_modifie", False)
+    connaissance._a_la_fermeture()
+    assert fichier.read_text(encoding="utf-8") == plein, (
+        "un processus sans apprentissage a ecrase la connaissance")
+
+    # Et meme appele de force, sauvegarder refuse d'ecrire du vide par-dessus.
+    assert connaissance.sauvegarder() is False
+    assert fichier.read_text(encoding="utf-8") == plein
+
+    # Seul oublier() vide pour de bon, et il supprime franchement le fichier.
+    connaissance.oublier()
+    assert not fichier.exists()
