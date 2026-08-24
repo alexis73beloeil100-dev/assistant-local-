@@ -3624,3 +3624,94 @@ def test_les_trois_capacites_manquantes_sont_exposees():
     for outil in ("cliquer", "position_souris", "lire_zone_ecran"):
         assert outil in noms, outil
     assert next(t for t in llm.TOOLS if t.name == "cliquer").effect is True
+
+# --- Plus de fenetres noires -------------------------------------------------
+
+def test_aucune_reparation_n_ouvre_de_console_visible():
+    """Une fenetre noire par action, sur une application qui en enchaine.
+
+    La premiere version ouvrait une console pour que la progression reste
+    visible : une reparation cachee derriere un assistant qui semble fige se
+    fait interrompre a mi-chemin. Le raisonnement tenait, la mise en oeuvre
+    etait mauvaise -- l'utilisateur l'a dit avant meme d'avoir fini de les
+    essayer. La progression revient maintenant DANS l'application.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.skills import fixes
+
+    arbre = ast.parse(textwrap.dedent(
+        inspect.getsource(fixes._lancer_en_admin)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+
+    assert "-WindowStyle Hidden" in code, "la console redeviendrait visible"
+    assert "pause" not in code, (
+        "un pause laisse la fenetre ouverte en attendant une touche")
+    assert "-Verb RunAs" in code, "sfc et DISM exigent l'elevation"
+
+
+def test_le_journal_ne_melange_pas_deux_encodages(tmp_path, monkeypatch):
+    """Une heure perdue sur un octet de decalage.
+
+    sfc.exe ecrit en UTF-16. Une ligne d'en-tete ecrite en UTF-8 avant lui
+    decalait tout le reste d'un octet, et le panneau affichait du chinois :
+    "敄慭牲条⁥" au lieu de "La verification est a 97% terminee".
+
+    Un fichier, un encodage. Le signal de fin vit donc dans un fichier a part.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.skills import fixes
+
+    arbre = ast.parse(textwrap.dedent(
+        inspect.getsource(fixes._lancer_en_admin)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+    assert ".fini" in code, "le temoin de fin doit etre un fichier separe"
+    assert "[TERMINE]" not in code, (
+        "un marqueur ecrit dans le journal le rend d'encodage mixte")
+
+
+def test_la_progression_lit_l_utf16_de_sfc(tmp_path, monkeypatch):
+    """Le pourcentage doit etre lisible, sinon l'avoir rapatrie ne sert a rien."""
+    from assistant.skills import fixes
+
+    journal = tmp_path / "op.log"
+    # Ce que sfc ecrit vraiment : UTF-16, progression sur une seule ligne.
+    journal.write_bytes(
+        "La verification est a 96% terminee.\r"
+        "La verification est a 97% terminee.\r".encode("utf-16-le"))
+
+    fini, ligne = fixes.progression(str(journal))
+    assert fini is False, "sans temoin, l'operation n'est pas finie"
+    assert "97%" in ligne
+    assert "\x00" not in ligne
+
+    # Une sortie 8 bits ordinaire, celle de DISM, reste lisible aussi.
+    journal.write_text("Operation terminee avec succes.\n", encoding="utf-8")
+    journal.with_suffix(".fini").write_text("fini", encoding="utf-8")
+    fini, ligne = fixes.progression(str(journal))
+    assert fini is True
+    assert "succes" in ligne
+
+
+def test_le_panneau_suit_le_journal_au_lieu_d_attendre():
+    """Sans suivi, l'assistant parait fige une demi-heure.
+
+    C'est exactement ce qui fait interrompre une reparation. Supprimer la
+    console imposait donc de rapatrier ce qu'elle montrait, pas seulement de
+    la faire disparaitre.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    from assistant.atelier import Atelier
+
+    arbre = ast.parse(textwrap.dedent(inspect.getsource(Atelier._suivre)))
+    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
+    assert "progression" in code
+    assert "self.after(" in code, "le suivi doit se replanifier"

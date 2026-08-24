@@ -1042,8 +1042,18 @@ def test_la_reparation_windows_ne_bloque_pas_l_assistant():
 
     sfc dure de cinq a quinze minutes, DISM jusqu'a trente. Attendre leur fin
     dans le processus de l'assistant gelerait la fenetre et laisserait une
-    question vocale sans reponse pendant tout ce temps. La console est donc
-    ouverte VISIBLE, et on rend la main immediatement.
+    question vocale sans reponse pendant tout ce temps.
+
+    Ce test exigeait aussi une console VISIBLE, au motif qu'une reparation
+    cachee se fait interrompre. L'exigence est INVERSEE depuis le 24/08/2026,
+    a la demande de l'utilisateur : une fenetre noire par action, sur une
+    application qui en enchaine, donne l'impression d'un bricolage. Il l'a dit
+    avant meme d'avoir fini de les essayer.
+
+    Ce qui motivait la console reste vrai, et c'est pour cela qu'elle n'a pas
+    ete simplement supprimee : la progression est rapatriee dans le panneau,
+    qui relit le journal. Le test qui le verifie est
+    test_le_panneau_suit_le_journal_au_lieu_d_attendre.
     """
     import ast
     import inspect
@@ -1062,8 +1072,9 @@ def test_la_reparation_windows_ne_bloque_pas_l_assistant():
 
     assert "-Wait" not in code, (
         "attendre la fin gelerait l'assistant pendant une demi-heure")
-    assert "WindowStyle Hidden" not in code, (
-        "cachee, la reparation se fait interrompre sans qu'on sache pourquoi")
+    assert "WindowStyle Hidden" in code, (
+        "la console noire est revenue : la progression se suit dans le "
+        "panneau, plus dans une fenetre")
     assert "-Verb RunAs" in code, "sfc et DISM exigent l'elevation"
 
     # Le fichier doit survivre a l'appel : on ne l'attend pas.

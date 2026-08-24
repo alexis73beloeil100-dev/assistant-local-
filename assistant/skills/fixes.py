@@ -437,48 +437,104 @@ DISM = "DISM /Online /Cleanup-Image /RestoreHealth"
 def _lancer_en_admin(commande: str, fenetre: str) -> tuple[bool, str]:
     """Ouvre une console administrateur VISIBLE, et n'attend pas la fin.
 
-    Visible, parce que ces deux commandes durent de cinq a trente minutes et
-    affichent leur progression. Les faire tourner cachees derriere un
-    assistant qui semble fige est le meilleur moyen qu'on les interrompe a
-    mi-chemin -- et une reparation interrompue laisse Windows moins sain
-    qu'avant de commencer.
+    CACHEE, et la progression revient DANS l'application.
 
-    Sans attendre, parce que bloquer l'assistant une demi-heure le rendrait
-    inutilisable, et qu'une commande vocale ne peut pas rester en suspens
-    aussi longtemps.
+    La premiere version ouvrait une console noire, pour que la progression
+    reste visible : une reparation cachee derriere un assistant qui semble
+    fige se fait interrompre a mi-chemin. Le raisonnement tenait, la mise en
+    oeuvre etait mauvaise. Une fenetre noire par action, sur une application
+    qui en enchaine, donne l'impression d'un bricolage -- et l'utilisateur l'a
+    dit avant meme d'avoir fini de les essayer.
 
-    Le script est ecrit dans un fichier qui SURVIT a cette fonction : on ne
-    l'attend pas, et un TemporaryDirectory l'effacerait avant que cmd ait eu
-    le temps de le lire.
+    La sortie part donc dans un fichier journal que le panneau relit. On garde
+    ce qui comptait -- la progression est visible, personne ne croit
+    l'application figee -- sans la fenetre.
+
+    Ce qui NE PEUT PAS disparaitre : l'invite UAC. sfc et DISM exigent les
+    droits administrateur, cette fenetre appartient a Windows, et une
+    application qui saurait s'en passer serait une faille, pas une
+    fonctionnalite.
+
+    Sans attendre non plus : bloquer l'assistant une demi-heure le rendrait
+    inutilisable.
     """
     import tempfile
     from pathlib import Path as _Path
 
-    script = _Path(tempfile.gettempdir()) / "assistant_reparation_windows.cmd"
+    dossier = _Path(tempfile.gettempdir())
+    # Un journal par operation : deux reparations lancees a la suite ne
+    # doivent pas melanger leurs lignes dans le meme fichier.
+    etiquette = "".join(c if c.isalnum() else "_" for c in fenetre)[:40]
+    journal = dossier / f"assistant_{etiquette}.log"
+    script = dossier / f"assistant_{etiquette}.cmd"
+
+    # Le journal ne contient QUE la sortie de la commande, et le signal de fin
+    # vit dans un fichier a part.
+    #
+    # Melanger les deux a coute une heure : sfc.exe ecrit en UTF-16, une
+    # ligne d'en-tete ecrite en UTF-8 avant lui decalait tout le reste d'un
+    # octet, et le panneau affichait du chinois. Un fichier, un encodage.
+    temoin = journal.with_suffix(".fini")
     try:
+        journal.write_bytes(b"")
+        temoin.unlink(missing_ok=True)
         script.write_text("\r\n".join([
             "@echo off",
-            f"title {fenetre}",
-            "echo Ne fermez pas cette fenetre avant la fin.",
-            "echo.",
-            commande,
-            "echo.",
-            "echo Termine. Cette fenetre peut etre fermee.",
-            "pause",
+            f'{commande} > "{journal}" 2>&1',
+            f'echo fini> "{temoin}"',
         ]), encoding="utf-8")
     except OSError as exc:
-        return False, f"Ecriture du script impossible : {exc}"
+        return False, f"Ecriture impossible : {exc}"
 
     try:
         subprocess.run(
             ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-             "-Command", f"Start-Process -FilePath '{script}' -Verb RunAs"],
+             "-Command",
+             f"Start-Process -FilePath '{script}' -Verb RunAs "
+             "-WindowStyle Hidden"],
             capture_output=True, text=True, timeout=60,
             creationflags=CREATE_NO_WINDOW,
         )
     except (subprocess.SubprocessError, OSError) as exc:
         return False, f"Elevation impossible : {type(exc).__name__}: {exc}"
-    return True, ""
+    return True, str(journal)
+
+
+def progression(journal: str) -> tuple[bool, str]:
+    """Ou en est une operation lancee en arriere-plan.
+
+    Rend (terminee, derniere ligne utile). sfc reecrit sa progression sur la
+    meme ligne avec des retours chariot : le journal contient donc une seule
+    ligne enorme, dont seul le dernier morceau interesse.
+    """
+    from pathlib import Path as _Path
+
+    chemin = _Path(journal)
+    fini = chemin.with_suffix(".fini").exists()
+    try:
+        octets = chemin.read_bytes()
+    except OSError:
+        return fini, "En attente ..."
+
+    # sfc.exe ecrit en UTF-16, un octet nul entre chaque lettre. Lu en UTF-8,
+    # son "La verification" ressortait "L a   v e r i f i c a t i o n". On
+    # reconnait l'encodage au lieu de le supposer : DISM et Defender, eux,
+    # ecrivent en 8 bits.
+    if octets.count(b"\x00") > len(octets) // 4:
+        brut = octets.decode("utf-16-le", errors="replace")
+    else:
+        brut = octets.decode("utf-8", errors="replace")
+
+    morceaux = [m.strip() for m in brut.replace("\r", "\n").split("\n")]
+    utiles = [m for m in morceaux if m]
+    if not utiles:
+        return fini, ("Termine." if fini else "En cours ...")
+
+    if fini:
+        # A la fin, le verdict tient dans les dernieres lignes, pas dans la
+        # progression : on en montre plusieurs.
+        return True, "\n".join(utiles[-8:])
+    return False, utiles[-1]
 
 
 def verifier_fichiers_systeme(ask=None) -> Result:
@@ -503,13 +559,13 @@ def verifier_fichiers_systeme(ask=None) -> Result:
     except safety.Refused as exc:
         return Result(False, str(exc))
 
-    ok, erreur = _lancer_en_admin(SFC, "Verification des fichiers systeme")
+    ok, journal = _lancer_en_admin(SFC, "Verification des fichiers systeme")
     if not ok:
-        return Result(False, erreur)
+        return Result(False, journal)
 
     return Result(True, (
-        "Verification lancee dans une fenetre administrateur. Compte 5 a 15 "
-        "minutes, et ne la ferme pas avant la fin.\n"
+        "Verification lancee. Compte 5 a 15 minutes ; la progression "
+        f"s'affiche dans le panneau Reparer Windows.\n[journal:{journal}]\n"
         "  \"aucune violation d'integrite\" : Windows est sain.\n"
         "  \"a reussi a reparer\"           : c'etait abime, c'est corrige.\n"
         "  \"n'a pas pu reparer\"           : le magasin de composants est "
@@ -545,14 +601,14 @@ def reparer_image_windows(ask=None) -> Result:
     except safety.Refused as exc:
         return Result(False, str(exc))
 
-    ok, erreur = _lancer_en_admin(DISM, "Reparation de l'image de Windows")
+    ok, journal = _lancer_en_admin(DISM, "Reparation de l'image de Windows")
     if not ok:
-        return Result(False, erreur)
+        return Result(False, journal)
 
     return Result(True, (
-        "Reparation de l'image lancee dans une fenetre administrateur. "
-        "Compte 10 a 30 minutes ; la progression reste longtemps a 20 %, "
-        "c'est normal.\n"
+        "Reparation de l'image lancee. Compte 10 a 30 minutes ; la "
+        "progression reste longtemps a 20 %, c'est normal.\n"
+        f"[journal:{journal}]\n"
         "Quand elle est finie, demande-moi la verification des fichiers "
         "systeme : c'est elle qui repare, maintenant qu'elle a une source "
         "saine."
@@ -659,15 +715,16 @@ def analyser_menaces(complet: bool = False, ask=None) -> Result:
 
     commande = (f"powershell -NoProfile -Command \"Update-MpSignature; "
                 f"Start-MpScan -ScanType {genre}\"")
-    ok, erreur = _lancer_en_admin(commande, f"Examen antivirus ({genre})")
+    ok, journal = _lancer_en_admin(commande, f"Examen antivirus ({genre})")
     if not ok:
-        return Result(False, erreur)
+        return Result(False, journal)
 
     return Result(True, (
-        f"Examen {'complet' if complet else 'rapide'} lance dans une fenetre "
-        f"administrateur, apres mise a jour des signatures. Compte {duree}.\n"
-        "Defender n'affiche pas de progression dans cette fenetre : suis-la "
-        "dans Securite Windows si tu veux la voir avancer.\n"
+        f"Examen {'complet' if complet else 'rapide'} lance, apres mise a "
+        f"jour des signatures. Compte {duree}.\n"
+        f"[journal:{journal}]\n"
+        "Defender n'annonce aucun pourcentage : la ligne de progression ne "
+        "bougera qu'a la fin.\n"
         "Quand c'est fini, demande-moi les menaces detectees."
     ))
 

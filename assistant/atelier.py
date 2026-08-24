@@ -108,13 +108,59 @@ class Atelier(tk.Frame):
         self.etat.configure(text=f"{libelle} ...", fg=t.AMBER)
 
         def fil():
-            message = travail()
-            self.window.post("appel", lambda: (
-                self.etat.configure(text=str(message), fg=t.TEXT_DIM),
-                setattr(self, "occupe", False),
-            ))
+            message = str(travail())
+            journal = self._journal_de(message)
+            self.window.post("appel", lambda: self._demarrer_suivi(
+                libelle, message, journal))
 
         threading.Thread(target=fil, daemon=True).start()
+
+    @staticmethod
+    def _journal_de(message: str) -> str:
+        """Extrait le chemin du journal glisse dans la reponse.
+
+        Le marqueur voyage dans le message plutot que dans un canal separe :
+        ainsi la meme reponse sert au panneau ET au modele de langage, sans
+        qu'il faille tenir deux chemins d'information en accord.
+        """
+        marque = "[journal:"
+        if marque not in message:
+            return ""
+        debut = message.index(marque) + len(marque)
+        fin = message.index("]", debut)
+        return message[debut:fin]
+
+    def _demarrer_suivi(self, libelle: str, message: str,
+                        journal: str) -> None:
+        # Le marqueur technique ne s'affiche pas : il sert au panneau.
+        propre = "\n".join(l for l in message.splitlines()
+                           if not l.startswith("[journal:"))
+        self.etat.configure(text=propre, fg=t.TEXT_DIM)
+        if not journal:
+            self.occupe = False
+            return
+        self._suivre(libelle, propre, journal)
+
+    def _suivre(self, libelle: str, entete: str, journal: str) -> None:
+        """Relit le journal toutes les deux secondes, jusqu'a la fin.
+
+        C'est ce qui remplace la console noire. L'utilisateur voulait que tout
+        se passe dans l'application ; il fallait donc rapatrier ce que la
+        fenetre montrait, pas seulement la supprimer -- sinon l'assistant
+        semblerait fige pendant une demi-heure, ce qui est exactement ce qui
+        fait interrompre une reparation.
+        """
+        from assistant.skills import fixes
+
+        fini, ligne = fixes.progression(journal)
+        self.etat.configure(
+            text=f"{entete}\n\n{'Termine.' if fini else 'En cours'}\n{ligne}",
+            fg=t.TEXT_DIM if fini else t.AMBER)
+        if fini:
+            self.occupe = False
+            self.recharger()
+            return
+        self.after(2000, lambda: self._suivre(libelle, entete, journal))
 
     def _sfc(self) -> None:
         from assistant.skills import fixes
