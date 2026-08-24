@@ -17,8 +17,9 @@ Ce qu'il enchaine :
     5. les tests, au complet   les deux ecartes retrouvent leur sens ici
     6. le dossier du Bureau    outils/dossier_a_envoyer.py
     7. les sauvegardes         outils/sauvegarder.py  (H:, cle USB, GitHub)
-    8. la version installee    l'installateur, en silencieux
-    9. la relance              l'assistant et le serveur OpenRGB
+    8. la Release GitHub       outils/publier_release.py
+    9. la version installee    l'installateur, en silencieux
+   10. la relance              l'assistant et le serveur OpenRGB
 
 Les tests passent DEUX fois, et ce n'est pas du zele. Deux d'entre eux
 exigent un manifeste pour la version courante, qui ne peut naitre qu'apres la
@@ -32,6 +33,10 @@ semblait libre -- sauf que le manifeste est un fichier SUIVI : le regenerer
 salit l'arbre, et publier.py refuse alors de publier. La premiere version de
 ce script verifiait l'arbre au demarrage, puis le salissait elle-meme.
 
+La Release vient APRES les sauvegardes, et pas par gout de l'ordre : elle
+etiquette un commit, et GitHub ne peut etiqueter que ce qu'il a deja recu.
+Publier avant de pousser echoue en 422, sans dire que c'est la cause.
+
 Ce qu'il ne fait PAS : commiter le code. Un message de commit se reflechit, et
 un script qui en invente un finirait par ecrire "mise a jour" soixante fois.
 Seule exception, le manifeste : c'est un releve d'empreintes produit par une
@@ -40,6 +45,7 @@ s'arrete a son tour.
 
     --sans-installer   s'arreter avant de toucher a la version installee
     --sans-tests       pour reprendre une livraison interrompue plus loin
+    --sans-release     ne rien mettre en ligne : essai local uniquement
 """
 from __future__ import annotations
 
@@ -166,9 +172,11 @@ def main() -> int:
 
     sans_installer = "--sans-installer" in sys.argv
     sans_tests = "--sans-tests" in sys.argv
-    # Neuf etapes, dont deux passages de tests : le pre-vol et la suite
+    sans_release = "--sans-release" in sys.argv
+    # Dix etapes, dont deux passages de tests : le pre-vol et la suite
     # complete. --sans-tests en retire donc deux, pas une.
-    etapes = 9 - (1 if sans_installer else 0) - (2 if sans_tests else 0)
+    etapes = (10 - (1 if sans_installer else 0) - (2 if sans_tests else 0)
+              - (1 if sans_release else 0))
     n = 0
 
     print(f"\n  LIVRAISON DE L'ASSISTANT LOCAL {__version__}")
@@ -239,6 +247,19 @@ def main() -> int:
     titre(n, etapes, "Sauvegardes")
     if not lancer(PYTHON, RACINE / "outils" / "sauvegarder.py"):
         return 1
+
+    # APRES les sauvegardes : la Release etiquette un commit, et GitHub ne
+    # peut etiqueter que ce qu'il a recu. C'est aussi la seule etape qui
+    # rende le travail visible a quelqu'un d'autre -- sans elle, le depot
+    # n'offre que des sources, et l'installateur reste sur cette machine.
+    if not sans_release:
+        n += 1
+        titre(n, etapes, "Release GitHub")
+        if not lancer(PYTHON, RACINE / "outils" / "publier_release.py"):
+            print("\n  La Release n'est pas partie. Le reste de la livraison "
+                  "a eu lieu : l'installateur existe et les sauvegardes sont "
+                  "faites.")
+            return 1
 
     if not sans_installer:
         n += 1

@@ -1847,3 +1847,73 @@ def test_une_erreur_interne_du_rgb_ne_s_annonce_pas_comme_une_panne_reseau(
         monkeypatch.setattr(rgb, "_client", liaison_rompue)
         _, erreur = rgb.peripheriques()
         assert "injoignable" in erreur.lower(), erreur
+
+
+def test_la_release_vise_un_sha_complet_pas_un_sha_court(monkeypatch):
+    """Un SHA de sept caracteres, et GitHub refuse sans dire pourquoi.
+
+    Le 24/08/2026, la premiere tentative de publication a echoue en
+    "HTTP 422: Release.target_commitish is invalid". Le commit existait, il
+    etait pousse, les droits etaient bons : seule sa forme abregee genait.
+    Le message ne nomme pas la longueur, alors on cherche du cote des droits
+    et du nom du depot.
+
+    `cible()` lit la tete du depot DISTANT : cela donne un SHA complet, et
+    garantit au passage que GitHub connait deja ce commit -- etiqueter un
+    commit non pousse echoue exactement de la meme facon.
+    """
+    from outils import publier_release
+
+    ligne = "1234567890abcdef1234567890abcdef12345678\trefs/heads/main\n"
+    monkeypatch.setattr(publier_release, "git", lambda *a: (0, ligne))
+
+    commit = publier_release.cible()
+    assert commit == "1234567890abcdef1234567890abcdef12345678"
+    assert len(commit) == 40, "un SHA court fait echouer l'API en 422"
+
+    monkeypatch.setattr(publier_release, "git", lambda *a: (128, "erreur"))
+    assert publier_release.cible() is None
+
+
+def test_une_release_en_cours_d_envoi_n_est_pas_prise_pour_une_reussite():
+    """Pendant l'envoi, une Release reussie et une Release ratee se ressemblent.
+
+    Le 24/08/2026, l'installateur de 1,1 Go montait encore quand on a
+    interroge GitHub : brouillon, aucun asset, aucun tag. C'est trait pour
+    trait l'aspect d'un echec, et c'est ainsi qu'on l'a annonce -- a tort,
+    l'envoi s'est termine deux minutes plus tard.
+
+    `conforme()` refuse donc les etats intermediaires. Il n'accepte que ce
+    qui est constate : publiee, l'installateur attache, entier, et portant
+    l'empreinte calculee par GitHub sur le fichier recu.
+    """
+    from outils import publier_release
+
+    nom = publier_release.INSTALLATEUR.name
+    sha = "a" * 64
+    complet = {"isDraft": False, "assets": [
+        {"name": nom, "state": "uploaded", "size": 1000,
+         "digest": "sha256:" + sha}]}
+
+    ok, pourquoi = publier_release.conforme(complet, 1000, sha)
+    assert ok and pourquoi == ""
+
+    # Chacun des etats suivants a l'air d'une Release, et n'en est pas une.
+    ok, pourquoi = publier_release.conforme(
+        dict(complet, isDraft=True), 1000, sha)
+    assert not ok and "brouillon" in pourquoi
+
+    ok, pourquoi = publier_release.conforme(
+        {"isDraft": False, "assets": []}, 1000, sha)
+    assert not ok and nom in pourquoi
+
+    ok, pourquoi = publier_release.conforme(
+        {"isDraft": False, "assets": [dict(complet["assets"][0], size=999)]},
+        1000, sha)
+    assert not ok and "999" in pourquoi
+
+    ok, pourquoi = publier_release.conforme(
+        {"isDraft": False,
+         "assets": [dict(complet["assets"][0], digest="sha256:" + "b" * 64)]},
+        1000, sha)
+    assert not ok and "empreinte" in pourquoi

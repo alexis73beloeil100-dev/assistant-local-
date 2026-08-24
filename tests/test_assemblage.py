@@ -898,3 +898,74 @@ def test_livrer_rejoue_la_suite_complete_avant_de_distribuer():
         assert nom in source, (
             f"{nom} n'est plus ecarte du pre-vol : un changement de version "
             "rendra la livraison impossible")
+
+
+def test_livrer_publie_la_release_apres_avoir_pousse_sur_github():
+    """Une Release etiquette un commit : GitHub doit deja l'avoir recu.
+
+    Publier avant l'etape des sauvegardes -- celle qui pousse sur GitHub --
+    echoue en 422 "target_commitish is invalid", le meme message que donne un
+    SHA court. Deux causes, un seul message : l'ordre doit etre garanti ici
+    plutot que redecouvert a chaque livraison ratee.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    source = (racine / "livrer.py").read_text(encoding="utf-8")
+
+    place_sauvegardes = source.index('titre(n, etapes, "Sauvegardes")')
+    place_release = source.index('titre(n, etapes, "Release GitHub")')
+    assert place_sauvegardes < place_release, (
+        "la Release doit venir APRES le push : GitHub ne peut etiqueter "
+        "que ce qu'il a recu")
+
+
+def test_livrer_appelle_vraiment_la_publication():
+    """Une fonction qui existe et que personne n'appelle ne fait rien.
+
+    Le defaut s'est deja produit ici : pousser sur GitHub etait ecrit dans
+    sauvegarder.py, et main() ne l'appelait pas. Le script annoncait des
+    sauvegardes completes pendant que la copie en ligne prenait du retard.
+
+    Ecrire outils/publier_release.py sans le brancher dans livrer.py
+    reproduirait exactement ce defaut, avec le meme silence.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    assert (racine / "outils" / "publier_release.py").is_file()
+
+    source = (racine / "livrer.py").read_text(encoding="utf-8")
+    assert '"publier_release.py"' in source, (
+        "livrer.py n'appelle pas l'outil de publication")
+
+    # Le compte d'etapes doit suivre, sinon l'affichage annonce "8/9" pour la
+    # derniere etape et laisse croire qu'il en manque une.
+    assert "etapes = (10" in source, (
+        "le nombre d'etapes n'a pas suivi l'ajout de la Release")
+
+
+def test_les_notes_de_version_ne_sont_pas_inventees():
+    """Un script qui redige les notes finit par ecrire "corrections diverses".
+
+    Meme raison que pour les messages de commit, que livrer.py refuse
+    d'inventer : les notes disent a quelqu'un d'exterieur ce qui a change.
+    Elles se lisent dans notes_de_version/<version>.md, et leur absence
+    arrete la publication au lieu de produire une Release vide de sens.
+    """
+    import inspect
+    from pathlib import Path
+
+    from outils import publier_release
+
+    source = inspect.getsource(publier_release.publier)
+    assert "notes_de_version" in inspect.getsource(publier_release), (
+        "les notes doivent venir d'un fichier, pas du script")
+    assert "Elles se redigent" in source, (
+        "l'absence de notes doit s'expliquer, pas echouer sechement")
+
+    racine = Path(__file__).resolve().parent.parent
+    from assistant import __version__
+    attendu = racine / "notes_de_version" / f"{__version__}.md"
+    assert attendu.is_file(), (
+        f"les notes de la version courante manquent : {attendu}")
