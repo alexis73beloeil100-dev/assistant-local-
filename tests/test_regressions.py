@@ -2364,3 +2364,128 @@ def test_la_desinstallation_est_exposee_au_modele():
     assert outil.effect is True
     assert "ne choisis pas a la place" in outil.description, (
         "le modele doit savoir qu'il ne tranche pas un nom ambigu lui-meme")
+
+
+# --- Test de debit -----------------------------------------------------------
+
+def test_la_poignee_de_main_n_est_pas_comptee_comme_de_la_gigue(monkeypatch):
+    """Une ligne saine annoncee irreguliere, sur le cout de sa propre ouverture.
+
+    Mesure le 24/08/2026 sur la machine de developpement : latence mediane
+    41 ms, gigue annoncee a 239 ms. L'assistant en concluait "typique d'un
+    Wi-Fi encombre ou lointain" -- sur une connexion qui n'avait rien.
+
+    La premiere requete porte la resolution DNS et la poignee de main TLS.
+    Elle ne mesure pas la ligne, elle mesure l'ouverture d'une connexion. Elle
+    est donc faite avant, et jetee.
+
+    Meme defaut que le "Serveur OpenRGB injoignable" du matin : annoncer une
+    cause que rien n'a verifiee, et envoyer chercher au mauvais endroit.
+    """
+    from assistant.skills import debit
+
+    class FausseReponse:
+        content = b""
+
+    appels = []
+    lent = [0.0]
+
+    class FausseSession:
+        headers = {}
+
+        def get(self, url, **kwargs):
+            appels.append(url)
+            # La premiere requete coute cher : DNS + TLS. Les suivantes non.
+            lent[0] += 0.200 if len(appels) == 1 else 0.040
+            return FausseReponse()
+
+    monkeypatch.setattr(debit.time, "perf_counter", lambda: lent[0])
+
+    ping, gigue = debit.latence(FausseSession())
+
+    assert len(appels) == debit.MESURES_LATENCE + 1, (
+        "la requete de mise en route manque : la poignee de main serait "
+        "comptee comme de la latence")
+    assert ping == pytest.approx(40)
+    assert gigue == pytest.approx(0, abs=0.001), (
+        f"gigue de {gigue:.0f} ms sur une ligne parfaitement reguliere : "
+        "la premiere requete est de nouveau comptee")
+
+
+def test_le_test_de_debit_n_envoie_que_des_octets_nuls():
+    """Ce qui sort de la machine doit etre verifiable, pas promis.
+
+    C'est la seule fonction de l'assistant qui contacte un tiers. La promesse
+    faite a l'utilisateur -- aucune donnee de la machine ne part -- ne vaut
+    que si la charge envoyee est fabriquee sur place.
+    """
+    from assistant.skills import debit
+
+    code = _sans_docstring(debit.montant)
+    assert "b'\\x00'" in code or 'b"\\x00"' in code or "b'\\\\0'" in code, code
+    for interdit in ("open(", "read(", "Path(", "environ", "gethostname"):
+        assert interdit not in code, (
+            f"{interdit} dans la fonction d'envoi : quelque chose de la "
+            "machine pourrait partir")
+
+
+def test_le_serveur_contacte_est_ecrit_en_clair():
+    """On doit pouvoir lire ou vont les octets, sans deviner.
+
+    Une adresse construite a l'execution, ou cachee derriere un service tiers,
+    empecherait l'utilisateur de verifier la seule sortie reseau du programme.
+    """
+    from assistant.skills import debit
+
+    assert debit.HOTE.startswith("https://")
+    assert "cloudflare.com" in debit.HOTE
+    assert debit.HOTE in debit.DESCENDANT and debit.HOTE in debit.MONTANT
+
+
+def test_une_ligne_coupee_le_dit_au_lieu_de_planter(monkeypatch):
+    """Sans reseau, la mesure n'a rien a annoncer -- surtout pas un zero.
+
+    Rendre "0 Mbit/s" ferait conclure a une ligne saturee alors qu'elle est
+    debranchee, et enverrait chercher du cote du debit au lieu du cable.
+    """
+    from assistant.skills import debit
+
+    monkeypatch.setattr(debit, "latence", lambda session=None: (None, None))
+    reponse = debit.tester(ask=lambda _t: True)
+
+    assert "injoignable" in reponse
+    assert "0.0 Mbit" not in reponse
+
+
+def test_le_test_de_debit_laisse_une_trace_meme_sans_question(monkeypatch):
+    """Le seul envoi vers l'exterieur ne doit pas se faire sans trace.
+
+    Il passe sans poser de question -- on le refait dix fois quand la
+    connexion rame, et une fenetre a chaque fois le rendrait inutilisable a la
+    voix. Mais il passe PAR le garde-fou, qui journalise, et l'action nomme le
+    serveur contacte.
+    """
+    from assistant import safety
+    from assistant.skills import debit
+
+    vues = []
+    monkeypatch.setattr(safety, "guard",
+                        lambda action, ask=None: vues.append(action) or True)
+    monkeypatch.setattr(debit, "latence", lambda session=None: (None, None))
+
+    debit.tester()
+
+    assert len(vues) == 1
+    assert vues[0].routine is True, "une fenetre a chaque test serait absurde"
+    assert debit.HOTE in vues[0].targets, (
+        "le journal doit dire qui a ete contacte")
+
+
+def test_le_test_de_debit_est_expose_au_modele():
+    """Ecrit mais pas branche, il est introuvable a la voix."""
+    from assistant import llm
+
+    outil = next((t for t in llm.TOOLS if t.name == "tester_le_debit"), None)
+    assert outil is not None
+    assert "rame" in outil.description, (
+        "le modele doit savoir quand le proposer")

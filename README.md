@@ -1,8 +1,14 @@
 ﻿# Assistant local
 
-Assistant vocal et textuel qui connaît cette machine. **Rien ne sort du PC** :
-le modèle de langage, la reconnaissance vocale et la synthèse tournent tous
-en local.
+Assistant vocal et textuel qui connaît cette machine. **Tout tourne en
+local** : le modèle de langage, la reconnaissance vocale et la synthèse ne
+quittent jamais le PC. Vos fichiers, vos conversations et ce que l'assistant
+apprend de la machine restent ici.
+
+Deux fonctions contactent l'extérieur, seulement quand vous les demandez, et
+n'envoient rien de personnel : le **test de débit** (des octets nuls vers le
+point de mesure public de Cloudflare) et la **réparation de l'image de
+Windows** (DISM, qui récupère des fichiers sains auprès de Windows Update).
 
 ### [⬇️ Télécharger l'installateur (Windows)](https://github.com/alexis73beloeil100-dev/assistant-local-/releases/latest)
 
@@ -536,9 +542,10 @@ transporte que les fichiers dont le contenu a changé.
 ### Pourquoi rien ne se met à jour tout seul
 
 Il n'y a **aucune vérification automatique**, et c'est délibéré. Elle
-obligerait l'application à contacter un serveur, donc à annuler la promesse
-« aucune connexion sortante après l'installation » — qui est un argument
-central du projet. Le paquet se distribue à la main, comme le premier.
+obligerait l'application à contacter un serveur **d'elle-même**, sans que
+personne l'ait demandé — c'est cela qu'on refuse, et c'est ce qui la
+distingue du test de débit ou de DISM, qui ne partent que sur une phrase
+explicite. Le paquet se distribue à la main, comme le premier.
 
 ### Le détail qui fait tenir l'ensemble
 

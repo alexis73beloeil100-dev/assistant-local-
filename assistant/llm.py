@@ -15,9 +15,10 @@ import requests
 from assistant import config
 from assistant import connaissance
 from assistant import selftest
-from assistant.skills import (apps, cleanup, content, control, desk, files,
-                              fixes, gamemode, games, hardware, inventaire,
-                              reminders, rgb, shell, system, vision)
+from assistant.skills import (apps, cleanup, content, control, debit, desk,
+                              files, fixes, gamemode, games, hardware,
+                              inventaire, reminders, rgb, shell, system,
+                              vision)
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -811,6 +812,18 @@ TOOLS: list[Tool] = [
         "taches planifiees, pilotes tiers, navigateurs.",
         _obj({}),
         lambda: inventaire.resume(),
+    ),
+    Tool(
+        "tester_le_debit",
+        "Mesure la vitesse reelle de la connexion Internet : latence, debit "
+        "descendant et montant, en contactant le point de mesure public de "
+        "Cloudflare. A proposer quand l'utilisateur dit que \"Internet rame\", "
+        "que la video saute ou que le jeu lague. Dure une dizaine de "
+        "secondes. C'est la SEULE fonction qui sort de la machine ; elle "
+        "n'envoie que des octets nuls.",
+        _obj({}),
+        lambda: debit.tester(),
+        effect=True,
     ),
     Tool(
         "chercher_logiciel_installe",
