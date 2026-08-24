@@ -15,10 +15,10 @@ import requests
 from assistant import config
 from assistant import connaissance
 from assistant import selftest
-from assistant.skills import (apps, cleanup, content, control, debit, desk,
-                              files, fixes, gamemode, games, hardware,
-                              inventaire, reminders, rgb, shell, system,
-                              vision)
+from assistant.skills import (apps, archives, cleanup, content, control,
+                              debit, desk, documents, files, fixes, gamemode,
+                              games, hardware, inventaire, reminders, rgb,
+                              shell, system, vision)
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -812,6 +812,73 @@ TOOLS: list[Tool] = [
         "taches planifiees, pilotes tiers, navigateurs.",
         _obj({}),
         lambda: inventaire.resume(),
+    ),
+    Tool(
+        "compresser",
+        "Fabrique une archive zip a partir de fichiers ou de dossiers. Refuse "
+        "d'ecraser une archive existante.",
+        _obj({"chemins": {"type": "array", "items": STR,
+                          "description": "Fichiers ou dossiers a compresser"},
+              "destination": {**STR,
+                              "description": "Chemin du zip a creer (facultatif)"}},
+             ["chemins"]),
+        lambda chemins, destination="": archives.compresser(
+            list(chemins), str(destination)),
+        effect=True,
+    ),
+    Tool(
+        "decompresser",
+        "Extrait une archive zip. Refuse toute archive dont une entree "
+        "ecrirait en dehors du dossier de destination.",
+        _obj({"archive": STR,
+              "destination": {**STR,
+                              "description": "Dossier ou extraire (facultatif)"}},
+             ["archive"]),
+        lambda archive, destination="": archives.decompresser(
+            str(archive), str(destination)),
+        effect=True,
+    ),
+    Tool(
+        "inspecter_archive",
+        "Liste ce que contient une archive zip sans rien extraire, et signale "
+        "les entrees qui sortiraient du dossier de destination.",
+        _obj({"archive": STR}, ["archive"]),
+        lambda archive: archives.inspecter(str(archive)),
+    ),
+    Tool(
+        "ecrire_document",
+        "Ecrit un document : .txt, .md, .docx (Word) ou .pdf. Le format vient "
+        "de l'extension du chemin. Previent et demande confirmation si le "
+        "fichier existe deja. A utiliser quand l'utilisateur demande un "
+        "compte rendu, une lettre, une note ou un rapport dans un fichier.",
+        _obj({"chemin": {**STR,
+                         "description": "Chemin complet, extension comprise"},
+              "texte": {**STR,
+                        "description": "Contenu ; une ligne vide separe deux "
+                                       "paragraphes"},
+              "titre": {**STR, "description": "Titre du document (facultatif)"}},
+             ["chemin", "texte"]),
+        lambda chemin, texte, titre="": documents.ecrire(
+            str(chemin), str(texte), str(titre)),
+        effect=True,
+    ),
+    Tool(
+        "etat_antivirus",
+        "Etat de la protection Windows Defender et menaces qu'il a deja "
+        "detectees. Lecture immediate, aucune analyse lancee.",
+        _obj({}),
+        lambda: fixes.menaces(),
+    ),
+    Tool(
+        "analyser_menaces",
+        "Lance un examen antivirus avec Defender, apres avoir mis a jour ses "
+        "signatures. L'examen rapide dure 5 a 20 minutes, le complet "
+        "plusieurs heures : ne demande le complet que si l'utilisateur le "
+        "demande explicitement ou si le rapide a trouve quelque chose.",
+        _obj({"complet": {"type": "boolean",
+                          "description": "Examen complet plutot que rapide"}}),
+        lambda complet=False: str(fixes.analyser_menaces(bool(complet))),
+        effect=True,
     ),
     Tool(
         "tester_le_debit",

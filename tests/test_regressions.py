@@ -2489,3 +2489,250 @@ def test_le_test_de_debit_est_expose_au_modele():
     assert outil is not None
     assert "rame" in outil.description, (
         "le modele doit savoir quand le proposer")
+
+
+# --- Archives : compresser, extraire ----------------------------------------
+
+def test_une_archive_piegee_n_ecrit_rien_hors_du_dossier(tmp_path):
+    """Le chemin d'un fichier est ECRIT DANS l'archive, et rien ne l'oblige a
+    rester chez lui.
+
+    Une entree nommee "../../../Windows/System32/quelque.dll" remonte
+    l'arborescence et ecrit ou elle veut. C'est la faille dite "Zip Slip" :
+    zipfile.extractall() la neutralise, mais ce module ecrit sa propre boucle
+    pour compter et filtrer -- et c'est exactement la que l'erreur se
+    reintroduit dans tous les projets ou elle apparait.
+
+    Le refus doit tomber AVANT la premiere ecriture : extraire a moitie une
+    archive piegee laisserait la moitie piegee sur le disque.
+    """
+    import zipfile
+
+    from assistant.skills import archives
+
+    piegee = tmp_path / "piegee.zip"
+    with zipfile.ZipFile(piegee, "w") as zip_:
+        zip_.writestr("normal.txt", "inoffensif")
+        zip_.writestr("../../EVADE.txt", "ecrit hors du dossier")
+        zip_.writestr("..\\..\\EVADE2.txt", "idem, en barres inverses")
+
+    cible = tmp_path / "cible"
+    reponse = archives.decompresser(str(piegee), str(cible),
+                                    ask=lambda _t: True)
+
+    assert "refusee" in reponse.lower()
+    assert "EVADE" in reponse
+    assert not (tmp_path.parent / "EVADE.txt").exists()
+    assert not (tmp_path / "EVADE.txt").exists()
+    assert not cible.exists(), (
+        "le dossier a ete cree : une ecriture a commence avant le refus")
+
+
+def test_l_inspection_signale_une_archive_piegee_sans_l_ouvrir(tmp_path):
+    """Regarder ne doit pas exposer. L'avertissement doit venir avant."""
+    import zipfile
+
+    from assistant.skills import archives
+
+    piegee = tmp_path / "piegee.zip"
+    with zipfile.ZipFile(piegee, "w") as zip_:
+        zip_.writestr("../dehors.txt", "x")
+
+    rapport = archives.inspecter(str(piegee))
+    assert "ATTENTION" in rapport
+    assert not (tmp_path.parent / "dehors.txt").exists()
+
+
+def test_une_archive_existante_n_est_jamais_remplacee(tmp_path):
+    """Ecraser un zip, c'est perdre ce qu'il contenait sans trace.
+
+    Le nom propose est deduit du premier chemin donne : deux compressions de
+    suite sur le meme dossier viseraient le meme fichier sans que personne
+    l'ait demande.
+    """
+    from assistant.skills import archives
+
+    source = tmp_path / "dossier"
+    source.mkdir()
+    (source / "a.txt").write_text("contenu", encoding="utf-8")
+
+    archive = tmp_path / "paquet.zip"
+    archive.write_bytes(b"archive precedente")
+
+    reponse = archives.compresser([str(source)], str(archive),
+                                  ask=lambda _t: True)
+
+    assert "existe deja" in reponse
+    assert archive.read_bytes() == b"archive precedente"
+
+
+def test_le_gain_de_compression_ne_s_annonce_pas_en_negatif(tmp_path):
+    """"-941 % de gagne" ne veut rien dire et fait douter du reste.
+
+    Constate le 24/08/2026 sur deux fichiers de douze octets : l'en-tete du
+    zip pese plus que leur contenu. La formule brute rendait un pourcentage
+    negatif a quatre chiffres.
+    """
+    from assistant.skills import archives
+
+    source = tmp_path / "dossier"
+    source.mkdir()
+    (source / "a.txt").write_text("court", encoding="utf-8")
+
+    reponse = archives.compresser([str(source)], str(tmp_path / "p.zip"),
+                                  ask=lambda _t: True)
+
+    assert "-" not in reponse.split("(")[-1], reponse
+    assert "pas de gain" in reponse
+
+
+def test_compresser_puis_extraire_rend_les_memes_fichiers(tmp_path):
+    """Le trajet complet, sur de vrais fichiers."""
+    from assistant.skills import archives
+
+    source = tmp_path / "source"
+    (source / "sous").mkdir(parents=True)
+    (source / "a.txt").write_text("premier", encoding="utf-8")
+    (source / "sous" / "b.txt").write_text("second", encoding="utf-8")
+
+    archive = tmp_path / "paquet.zip"
+    archives.compresser([str(source)], str(archive), ask=lambda _t: True)
+    assert archive.is_file()
+
+    sortie = tmp_path / "sortie"
+    archives.decompresser(str(archive), str(sortie), ask=lambda _t: True)
+
+    assert (sortie / "source" / "a.txt").read_text(encoding="utf-8") == "premier"
+    assert (sortie / "source" / "sous" / "b.txt").read_text(
+        encoding="utf-8") == "second"
+
+
+# --- Documents : ecrire ------------------------------------------------------
+
+def test_remplacer_un_document_existant_n_est_pas_un_geste_courant(tmp_path):
+    """Creer un fichier se defait ; en remplacer un, non.
+
+    L'ancien contenu n'existe plus nulle part, et l'utilisateur ne s'en
+    apercoit qu'en rouvrant le document. Le garde-fou doit donc poser la
+    question dans ce cas-la, et seulement dans ce cas-la -- demander a chaque
+    creation rendrait la dictee penible.
+    """
+    from assistant import safety
+    from assistant.skills import documents
+
+    vues = []
+
+    def espion(action, ask=None):
+        vues.append(action)
+        return True
+
+    origine = safety.guard
+    safety.guard = espion
+    try:
+        cible = tmp_path / "note.txt"
+        documents.ecrire(str(cible), "premier jet")
+        assert vues[-1].routine is True and vues[-1].reversible is True
+
+        documents.ecrire(str(cible), "second jet")
+        assert vues[-1].routine is False, (
+            "remplacer un document est passe sans question")
+        assert vues[-1].reversible is False
+        assert "perdu" in vues[-1].details
+    finally:
+        safety.guard = origine
+
+
+def test_un_format_inconnu_est_refuse_au_lieu_d_etre_devine(tmp_path):
+    """Ecrire du texte dans un .xlsx donnerait un fichier que rien n'ouvre.
+
+    Et l'erreur n'apparaitrait qu'au moment de l'ouvrir, loin de la commande
+    qui l'a produite.
+    """
+    from assistant.skills import documents
+
+    reponse = documents.ecrire(str(tmp_path / "tableau.xlsx"), "du texte",
+                               ask=lambda _t: True)
+    assert "Je ne sais pas ecrire" in reponse
+    assert not (tmp_path / "tableau.xlsx").exists()
+
+
+def test_les_chevrons_ne_font_pas_echouer_le_pdf(tmp_path):
+    """reportlab lit son texte comme du balisage.
+
+    Un compte rendu qui contient <2 ou une esperluette ferait echouer la
+    generation, sur une erreur de balise incomprehensible pour qui a
+    simplement dicte une phrase.
+    """
+    from assistant.skills import documents
+
+    cible = tmp_path / "note.pdf"
+    reponse = documents.ecrire(
+        str(cible),
+        "Charge < 50 % et RAM > 8 Go, chiffres & mesures.",
+        titre="Rapport", ask=lambda _t: True)
+
+    assert "cree" in reponse
+    assert cible.stat().st_size > 500
+
+
+def test_les_quatre_formats_de_document_s_ecrivent_vraiment(tmp_path):
+    """Un format annonce et non ecrit vaut moins qu'un format absent."""
+    from assistant.skills import documents
+
+    for extension in documents.FORMATS:
+        cible = tmp_path / f"note.{extension}"
+        documents.ecrire(str(cible), "Un paragraphe.\n\nUn second.",
+                         titre="Titre", ask=lambda _t: True)
+        assert cible.is_file(), extension
+        assert cible.stat().st_size > 0, extension
+
+
+# --- Antivirus ---------------------------------------------------------------
+
+def test_les_signatures_sont_mises_a_jour_avant_l_examen(monkeypatch):
+    """Un examen mene avec des signatures d'il y a trois semaines rassure a tort.
+
+    Il ne reconnait pas ce qui est apparu depuis, et rend un "aucune menace"
+    auquel l'utilisateur va croire. C'est pire que pas d'examen du tout.
+    """
+    from assistant.skills import fixes
+
+    lancees = []
+    monkeypatch.setattr(fixes, "_lancer_en_admin",
+                        lambda commande, fenetre: (lancees.append(commande),
+                                                   (True, ""))[1])
+
+    fixes.analyser_menaces(ask=lambda _t: True)
+
+    assert len(lancees) == 1
+    commande = lancees[0]
+    assert "Update-MpSignature" in commande
+    assert commande.index("Update-MpSignature") < commande.index("Start-MpScan")
+    assert fixes.SCAN_RAPIDE in commande
+
+
+def test_l_examen_complet_ne_part_pas_a_la_place_du_rapide(monkeypatch):
+    """Le complet dure des heures. Le confondre bloquerait la machine tout
+    l'apres-midi pour quelqu'un qui voulait une verification rapide."""
+    from assistant.skills import fixes
+
+    lancees = []
+    monkeypatch.setattr(fixes, "_lancer_en_admin",
+                        lambda commande, fenetre: (lancees.append(commande),
+                                                   (True, ""))[1])
+
+    fixes.analyser_menaces(complet=False, ask=lambda _t: True)
+    fixes.analyser_menaces(complet=True, ask=lambda _t: True)
+
+    assert fixes.SCAN_RAPIDE in lancees[0]
+    assert fixes.SCAN_COMPLET in lancees[1]
+
+
+def test_les_quatre_capacites_ajoutees_sont_exposees_au_modele():
+    """Ecrites mais pas branchees, elles sont introuvables a la voix."""
+    from assistant import llm
+
+    noms = {t.name for t in llm.TOOLS}
+    for outil in ("compresser", "decompresser", "inspecter_archive",
+                  "ecrire_document", "etat_antivirus", "analyser_menaces"):
+        assert outil in noms, outil

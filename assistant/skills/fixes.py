@@ -559,6 +559,119 @@ def reparer_image_windows(ask=None) -> Result:
     ))
 
 
+# --- Recherche de menaces ----------------------------------------------------
+#
+# Windows Defender est deja installe et deja actif sur cette machine : le
+# releve materiel lit son etat a chaque demarrage, et reparation.py signale
+# ses signatures perimees. Ce qui manquait, c'est de pouvoir LANCER un examen.
+#
+# On ne fait pas installer un antivirus tiers. Il y en a un, il fonctionne, et
+# en superposer un second est la meilleure facon de ralentir la machine et de
+# faire s'accuser mutuellement deux protections.
+
+SCAN_RAPIDE = "QuickScan"
+SCAN_COMPLET = "FullScan"
+
+
+def _menaces_connues() -> str:
+    """Ce que Defender a deja trouve, historique compris."""
+    ok, sortie = _run([
+        "powershell.exe", "-NoProfile", "-Command",
+        "Get-MpThreatDetection | Sort-Object InitialDetectionTime "
+        "-Descending | Select-Object -First 10 "
+        "ThreatID, InitialDetectionTime, Resources | Format-List",
+    ], timeout=60)
+    return sortie if ok else ""
+
+
+def menaces() -> str:
+    """Ce que Defender a detecte, et l'etat de la protection.
+
+    Lecture seule : aucune analyse n'est lancee ici. Repondre "rien" apres
+    quinze minutes d'attente n'est pas la meme chose que repondre "rien" tout
+    de suite, et les deux questions se posent separement.
+    """
+    from assistant.skills import hardware
+
+    lignes = ["PROTECTION ANTIVIRUS", ""]
+    try:
+        donnees = hardware.collect() or {}
+    except Exception as exc:  # noqa: BLE001 - un releve muet vaut mieux qu'un plantage
+        donnees = {}
+        lignes.append(f"  Etat illisible : {type(exc).__name__}")
+
+    defender = donnees.get("defender") or {}
+    if defender:
+        actif = defender.get("realtime")
+        lignes.append(f"  Protection en temps reel   "
+                      f"{'active' if actif else 'DESACTIVEE'}")
+        age = defender.get("signature_age")
+        if isinstance(age, (int, float)):
+            etat = "a jour" if age <= 7 else f"perimees ({age:.0f} jours)"
+            lignes.append(f"  Signatures                 {etat}")
+
+    trouve = _menaces_connues()
+    lignes.append("")
+    if trouve.strip():
+        lignes.append("  Menaces deja detectees par Defender :")
+        lignes.extend(f"    {l}" for l in trouve.strip().splitlines()[:20])
+    else:
+        lignes.append("  Aucune menace dans l'historique de Defender.")
+
+    lignes.append("")
+    lignes.append("  Demande-moi une analyse si tu veux qu'il cherche "
+                  "maintenant.")
+    return "\n".join(lignes)
+
+
+def analyser_menaces(complet: bool = False, ask=None) -> Result:
+    """Lance un examen antivirus avec Defender.
+
+    Les signatures sont mises a jour AVANT, et ce n'est pas du zele : un
+    examen mene avec des signatures d'il y a trois semaines ne reconnait pas
+    ce qui est apparu depuis, et rend un "aucune menace" qui rassure a tort.
+    C'est pire que pas d'examen du tout.
+
+    L'examen tourne dans une fenetre administrateur visible, sans qu'on
+    l'attende -- meme raison que pour sfc. Le rapide dure une dizaine de
+    minutes, le complet plusieurs heures : attendre l'un ou l'autre gelerait
+    l'assistant.
+    """
+    genre = SCAN_COMPLET if complet else SCAN_RAPIDE
+    duree = ("plusieurs heures" if complet else "5 a 20 minutes")
+
+    action = safety.Action(
+        kind="systeme",
+        summary=f"Lancer un examen antivirus ({'complet' if complet else 'rapide'})",
+        targets=["Windows Defender"],
+        reversible=True,
+        details=(f"Met a jour les signatures, puis examine la machine. "
+                 f"Dure {duree}, dans une fenetre administrateur separee. "
+                 "Rien n'est supprime sans que Defender le signale."),
+        # Chercher des menaces ne casse rien et ne s'annule pas non plus :
+        # c'est une lecture, longue mais inoffensive.
+        routine=True,
+    )
+    try:
+        safety.guard(action, ask=ask)
+    except safety.Refused as exc:
+        return Result(False, str(exc))
+
+    commande = (f"powershell -NoProfile -Command \"Update-MpSignature; "
+                f"Start-MpScan -ScanType {genre}\"")
+    ok, erreur = _lancer_en_admin(commande, f"Examen antivirus ({genre})")
+    if not ok:
+        return Result(False, erreur)
+
+    return Result(True, (
+        f"Examen {'complet' if complet else 'rapide'} lance dans une fenetre "
+        f"administrateur, apres mise a jour des signatures. Compte {duree}.\n"
+        "Defender n'affiche pas de progression dans cette fenetre : suis-la "
+        "dans Securite Windows si tu veux la voir avancer.\n"
+        "Quand c'est fini, demande-moi les menaces detectees."
+    ))
+
+
 # --- Catalogue des correctifs disponibles ------------------------------------
 
 def disponibles() -> str:
@@ -573,6 +686,7 @@ def disponibles() -> str:
         "  vider un cache                         part a la corbeille",
         "  verifier les fichiers systeme          sfc, 5 a 15 min, en admin",
         "  reparer l'image de Windows             DISM, 10 a 30 min, en admin",
+        "  analyser les menaces                   Defender, signatures a jour",
         "",
         "Les cinq premiers sont reversibles. Les deux reparations de Windows "
         "ne le sont pas : on ne defait pas un fichier repare.",
