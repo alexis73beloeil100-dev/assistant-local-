@@ -3641,3 +3641,13 @@ def test_l_assistant_ne_propose_pas_de_fermer_son_propre_moteur():
     for nom in ("llama-server.exe", "ollama.exe", "AssistantLocal.exe"):
         assert nom in llm.SYSTEM_PROMPT
     assert "Ne\n  propose JAMAIS de les fermer" in llm.SYSTEM_PROMPT
+
+
+def test_les_autres_ia_ne_sont_pas_ses_composants():
+    """Il presentait claude.exe, ChatGPT.exe et codex.exe comme les siens."""
+    from assistant import llm
+
+    assert "programmes DISTINCTS" in llm.SYSTEM_PROMPT
+    for nom in ("claude.exe", "ChatGPT.exe", "codex.exe"):
+        assert nom in llm.SYSTEM_PROMPT
+    assert "relance l'outil" in llm.SYSTEM_PROMPT
