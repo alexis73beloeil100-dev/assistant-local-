@@ -3632,3 +3632,12 @@ def test_le_modele_compte_ses_outils_au_lieu_d_estimer(monkeypatch):
         assert texte.startswith(f"Mode {mode.upper()} : {attendu} outils exactement.")
         assert len(texte.splitlines()) == attendu + 1
     assert "Pas de \"environ\"" in llm.SYSTEM_PROMPT
+
+
+def test_l_assistant_ne_propose_pas_de_fermer_son_propre_moteur():
+    """Il proposait de fermer llama-server.exe pour liberer de la memoire."""
+    from assistant import llm
+
+    for nom in ("llama-server.exe", "ollama.exe", "AssistantLocal.exe"):
+        assert nom in llm.SYSTEM_PROMPT
+    assert "Ne\n  propose JAMAIS de les fermer" in llm.SYSTEM_PROMPT
