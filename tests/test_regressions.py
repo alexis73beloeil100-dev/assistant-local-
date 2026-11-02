@@ -3619,3 +3619,16 @@ def test_le_panneau_projet_n_est_jamais_vide(monkeypatch):
     assert f"{panels.EXEMPLE}Choisis le projet" in texte
     cliquables = [l for l in texte.splitlines() if l.startswith(panels.EXEMPLE)]
     assert len(cliquables) >= 20
+
+
+def test_le_modele_compte_ses_outils_au_lieu_d_estimer(monkeypatch):
+    """Il annoncait "environ 80 outils" alors qu'il en avait 93."""
+    from assistant import llm
+
+    for mode in ("dev", "pc"):
+        monkeypatch.setattr(llm, "mode_actuel", lambda m=mode: m)
+        texte = llm.dispatch("mes_outils", {})
+        attendu = len(llm.outils_du_mode(mode))
+        assert texte.startswith(f"Mode {mode.upper()} : {attendu} outils exactement.")
+        assert len(texte.splitlines()) == attendu + 1
+    assert "Pas de \"environ\"" in llm.SYSTEM_PROMPT

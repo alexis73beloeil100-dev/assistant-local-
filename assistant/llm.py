@@ -30,6 +30,11 @@ Regles :
 - Pour toute question sur des fichiers, l'etat de la machine ou les jeux, tu
   DOIS appeler un outil. Tu n'inventes jamais un chemin, une taille ou un
   nom de jeu : si tu ne l'as pas lu dans un resultat d'outil, tu ne le sais pas.
+- Un CHIFFRE, un NOM, une LISTE (combien d'outils, de fichiers, d'erreurs,
+  quelle version, quel chemin) : il vient d'un resultat d'outil, jamais de ta
+  memoire ni d'une estimation. Pas de "environ" quand le nombre exact est
+  disponible : appelle l'outil qui le donne (mes_outils pour tes propres
+  outils), puis recopie-le tel quel.
 - Pour une question de CONNAISSANCE (comment faire, que veut dire, une
   fonction d'Unreal, une notion technique, un fait) : si tu es sur, reponds.
   Si tu n'es pas sur, CHERCHE au lieu de deviner : d'abord
@@ -1645,6 +1650,20 @@ def _projets_unreal() -> str:
     return "\n".join(lignes)
 
 
+def _mes_outils() -> str:
+    """La liste exacte des outils du mode en cours : rien a compter de tete."""
+    mode = mode_actuel()
+    noms = sorted(t.name for t in outils_du_mode(mode))
+    return (f"Mode {mode.upper()} : {len(noms)} outils exactement.\n"
+            + "\n".join(f"{n}. {nom}" for n, nom in enumerate(noms, 1)))
+
+
+TOOLS.append(Tool(
+    "mes_outils",
+    "La liste EXACTE de tes outils dans le mode en cours, et leur nombre. A "
+    "appeler des qu'on te demande ce que tu sais faire ou combien d'outils tu as.",
+    _obj({}), lambda: _mes_outils()))
+
 BY_NAME = {t.name: t for t in TOOLS}
 
 
@@ -1679,6 +1698,7 @@ OUTILS_DEV = frozenset({
     *OUTILS_ATELIER_CODE,
     *OUTILS_EDITEUR,
     *OUTILS_ANIMATION,
+    "mes_outils",
     # Passer un extrait de code a l'utilisateur.
     "lire_presse_papier", "copier",
 })
@@ -1859,7 +1879,10 @@ def _call(convo: list[dict], with_tools: bool = True,
         "model": config.LLM_MODEL,
         "messages": convo,
         "stream": False,
-        "options": {"temperature": 0.3, "num_ctx": config.LLM_CONTEXT},
+        # Peu de hasard : un assistant qui choisit des outils et recopie des
+        # faits n'a rien a gagner a la creativite. En mode Dev, encore moins.
+        "options": {"temperature": 0.1 if mode_actuel() == "dev" else 0.3,
+                    "num_ctx": config.LLM_CONTEXT},
     }
     if think is not None:
         payload["think"] = think
