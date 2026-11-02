@@ -438,3 +438,18 @@ def test_la_barre_dev_a_ses_panneaux_d_action():
                                     "dev_bibliotheque"}
     texte = panels._dev_jouer()
     assert f"{panels.EXEMPLE}Lance un test dans l'éditeur" in texte
+
+
+def test_ouvrir_jouer_et_lancer_ne_demandent_aucune_confirmation(moteur_installe, monkeypatch):
+    """Ouvrir l'editeur ne modifie rien : une fenetre d'accord n'a pas de sens."""
+    from assistant.skills import animation
+
+    def interdit(*a, **k):
+        raise AssertionError("fenetre de confirmation demandee")
+
+    monkeypatch.setattr(unreal.safety, "guard", interdit)
+    monkeypatch.setattr(animation, "_geste_editeur_ouvert", lambda *a, **k: None)
+    unreal.ouvrir_editeur()
+    unreal.lancer_jeu()
+    animation.jouer_dans_editeur("jouer")
+    animation.jouer_dans_editeur("arreter")
