@@ -19,7 +19,7 @@ Ce qu'il enchaine :
     7. les sauvegardes         outils/sauvegarder.py  (H:, cle USB, GitHub)
     8. la Release GitHub       outils/publier_release.py
     9. la version installee    l'installateur, en silencieux
-   10. la relance              l'assistant et le serveur OpenRGB
+   10. la relance              l'assistant
 
 Les tests passent DEUX fois, et ce n'est pas du zele. Deux d'entre eux
 exigent un manifeste pour la version courante, qui ne peut naitre qu'apres la
@@ -58,7 +58,6 @@ RACINE = Path(__file__).resolve().parent
 PYTHON = RACINE / ".venv" / "Scripts" / "python.exe"
 INSTALLATEUR = RACINE / "installateur" / "Installer_AssistantLocal.exe"
 EXE = RACINE / "dist" / "AssistantLocal" / "AssistantLocal.exe"
-TACHE_RGB = "AssistantLocal - serveur OpenRGB"
 
 # Les deux tests que le PRE-VOL ne peut pas passer, et pourquoi.
 #
@@ -150,12 +149,9 @@ def commiter_le_manifeste() -> bool:
 def relancer() -> None:
     """Remet en marche ce que la reconstruction a ferme.
 
-    Elle arrete l'assistant, Ollama, llama-server et OpenRGB pour liberer les
-    fichiers de dist/. Sans cette etape, on repart d'une session ou
-    l'eclairage ne repond plus, et on cherche la cause dans le code.
+    Elle arrete l'assistant, Ollama et llama-server pour liberer les
+    fichiers de dist/.
     """
-    subprocess.run(["schtasks.exe", "/run", "/tn", TACHE_RGB],
-                   capture_output=True)
     installe = Path.home() / "AppData" / "Local" / "AssistantLocal"
     exe = installe / "AssistantLocal.exe"
     if exe.is_file():
@@ -163,8 +159,6 @@ def relancer() -> None:
         print(f"  Assistant relance : {exe}")
     else:
         print(f"  Assistant installe introuvable ({exe}) -- rien a relancer.")
-    time.sleep(2)
-    print(f"  Serveur RGB : tache \"{TACHE_RGB}\" demandee.")
 
 
 def main() -> int:

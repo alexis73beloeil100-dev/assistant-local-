@@ -329,8 +329,7 @@ class Bandeau(tk.Frame):
 
     Un message important ecrit en jaune au milieu du reste se lit comme du
     decor : rien ne le separe de ce qui l'entoure, et l'oeil finit par le
-    sauter. C'est ce qui arrivait a l'alerte de conflit RGB -- la seule ligne
-    qui explique pourquoi les LED ne repondent pas.
+    sauter.
 
     Le bandeau lui donne un cadre : un liseré de couleur a gauche, un fond
     legerement detache, un titre court et une explication. Le fond reste

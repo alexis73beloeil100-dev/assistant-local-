@@ -15,6 +15,7 @@ from __future__ import annotations
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from assistant import safety, settings
 from assistant.util import human_size
@@ -330,11 +331,9 @@ def redemarrer_service(nom: str, ask=None) -> Result:
     # propriete qu'on cherche a garder -- et rendait l'outil inutilisable
     # dans les faits.
     #
-    # On demande donc l'elevation POUR CETTE SEULE OPERATION, comme le fait
-    # deja le RGB. Une fenetre Windows, puis on relit l'etat du service au
-    # lieu de croire un compte-rendu.
-    from assistant.skills.rgb import _executer_eleve
-
+    # On demande donc l'elevation POUR CETTE SEULE OPERATION. Une fenetre
+    # Windows, puis on relit l'etat du service au lieu de croire un
+    # compte-rendu.
     erreur = _executer_eleve([
         f"Stop-Service -Name '{nom}' -Force -ErrorAction SilentlyContinue",
         f"Start-Service -Name '{nom}' -ErrorAction SilentlyContinue",
@@ -750,3 +749,26 @@ def disponibles() -> str:
         "",
         "Tout est journalise dans data/logs/actions.jsonl, accepte comme refuse.",
     ])
+
+
+def _executer_eleve(lignes: list[str]) -> str:
+    """Execute des commandes en administrateur. Rend un message d'erreur, ou ''."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as dossier:
+        script = Path(dossier) / "eleve.ps1"
+        script.write_text("\n".join(lignes), encoding="utf-8")
+        try:
+            subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-Command",
+                 "Start-Process powershell -Verb RunAs -Wait -WindowStyle "
+                 "Hidden -ArgumentList "
+                 "'-NoProfile','-ExecutionPolicy','Bypass','-File',"
+                 f"'{script}'"],
+                capture_output=True, text=True, timeout=240,
+                creationflags=CREATE_NO_WINDOW,
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            return f"Elevation impossible : {type(exc).__name__}: {exc}"
+    return ""

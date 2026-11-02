@@ -55,42 +55,10 @@ def stop_app() -> None:
     aucun rapport apparent avec l'assistant. Le tuer est sans consequence,
     Ollama le relance a la demande suivante.
     """
-    # OpenRGB est livre DANS le bundle depuis que l'eclairage est gere : son
-    # serveur garde hidapi.dll ouverte tant qu'il tourne, et la
-    # reconstruction echoue sur un WinError 5 qui ne nomme que la DLL.
     for image in ("AssistantLocal.exe", "pythonw.exe",
-                  "llama-server.exe", "ollama.exe",
-                  "OpenRGB.exe", "openrgb.exe"):
+                  "llama-server.exe", "ollama.exe"):
         subprocess.run(["taskkill", "/IM", image, "/F"],
                        capture_output=True, text=True)
-
-    # OpenRGB tourne desormais EN ADMINISTRATEUR, lance par une tache
-    # planifiee : le taskkill ci-dessus, non eleve, echoue en silence sur lui.
-    # On arrete donc la tache, et on demande l'elevation pour le processus
-    # s'il tient encore. Sans ca, la reconstruction repartait sur une DLL
-    # verrouillee des que la tache visait la copie du bundle.
-    subprocess.run(["schtasks", "/end", "/tn", "AssistantLocal - serveur OpenRGB"],
-                   capture_output=True, text=True)
-    if _tourne_encore("OpenRGB.exe"):
-        print("  OpenRGB est elevé : autorisation demandée pour l'arrêter ...")
-        subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command",
-             "Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden "
-             "-ArgumentList '-NoProfile','-Command',"
-             "'Get-Process OpenRGB -ErrorAction SilentlyContinue | "
-             "Stop-Process -Force'"],
-            capture_output=True, text=True)
-
-
-def _tourne_encore(image: str) -> bool:
-    """Un processus de ce nom est-il encore en vie ?"""
-    try:
-        import psutil
-    except ImportError:
-        return False
-    cible = image.lower()
-    return any((p.info.get("name") or "").lower() == cible
-               for p in psutil.process_iter(["name"]))
 
 
 def wait_unlocked(path: Path, timeout: float = LOCK_TIMEOUT) -> bool:

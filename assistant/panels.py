@@ -437,28 +437,6 @@ def _preinstalle() -> str:
     return inventaire.preinstalle()
 
 
-def _connexion() -> str:
-    """Etat de la connexion, SANS lancer de test.
-
-    Un test de debit dure une dizaine de secondes et sort de la machine :
-    ouvrir un panneau ne doit pas le declencher. Le bouton est la pour ca.
-    """
-    from assistant.skills import system
-
-    taux = system.network_rates()
-    return "\n".join([
-        "CONNEXION", "",
-        f"  Trafic a l'instant   {taux['recu'] / 1024:.0f} Ko/s recus, "
-        f"{taux['envoye'] / 1024:.0f} Ko/s envoyes",
-        "",
-        "  Ce chiffre est le trafic qui passe MAINTENANT, pas la vitesse de",
-        "  la ligne. Pour la mesurer, lance le test de debit : il contacte le",
-        "  point de mesure de Cloudflare et n'envoie que des octets nuls.",
-        "",
-        "  C'est la seule fonction de l'assistant qui sort de la machine.",
-    ])
-
-
 def _mise_a_jour() -> str:
     """Version installee, SANS contacter GitHub : seul le bouton le fait."""
     from assistant import __version__
@@ -474,12 +452,6 @@ def _mise_a_jour() -> str:
         "  Un fichier telecharge n'est lance que si son empreinte est celle",
         "  annoncee par GitHub.",
     ])
-
-
-def _telephone() -> str:
-    from assistant import serveur
-
-    return serveur.etat()
 
 
 def _controle() -> str:
@@ -625,14 +597,6 @@ PANELS: list[Panel] = [
     Panel("preinstalle", "Préinstallés",
           "ce qui était là avant vous", _preinstalle,
           court="D'origine", icone="grille", categorie="logiciels"),
-    Panel("connexion", "Connexion",
-          "vitesse réelle de la ligne", _connexion,
-          interactif="connexion", live=True,
-          court="Connexion", icone="jauge", categorie="reseau"),
-    Panel("telephone", "Téléphone",
-          "presse-papier partagé et macros", _telephone,
-          interactif="telephone", live=True,
-          court="Téléphone", icone="terminal", categorie="reseau"),
     Panel("miseajour", "Vérifier les mises à jour",
           "version installée, et la dernière publiée", _mise_a_jour,
           interactif="miseajour", live=True,
@@ -645,7 +609,6 @@ CATEGORIES = [
     ("machine", "ma machine"),
     ("reparer", "reparer"),
     ("logiciels", "logiciels"),
-    ("reseau", "reseau"),
     ("assistant", "l'assistant"),
 ]
 

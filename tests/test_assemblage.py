@@ -312,40 +312,8 @@ def test_le_modele_sait_qu_il_peut_se_servir_du_panneau():
 
 # --- L'eclairage RGB, toutes marques ------------------------------------------
 
-def test_le_pilotage_rgb_ne_connait_aucune_marque():
-    """Il doit marcher sur la machine de n'importe qui.
-
-    Lire le profil de RGB Fusion aurait pilote une seule carte mere, d'une
-    seule marque. Et ca n'aurait meme pas marche : ce fichier n'a pas bouge
-    d'un octet pendant qu'on changeait de mode a l'ecran -- le reglage part
-    directement dans le controleur, il n'y a rien a intercepter.
-    """
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb)
-    # Aucun chemin ni format proprietaire ne doit servir de cible.
-    for interdit in ("Pro1.xml", "GIGABYTE\\RGBFusion", "Pattern_Type",
-                     "Area_info"):
-        assert interdit not in source, f"{interdit} : pilotage lie a une marque"
 
 
-def test_les_modes_rgb_sont_decouverts_et_non_listes_en_dur():
-    """Chaque materiel offre ses propres modes : les figer serait faux
-    partout ailleurs.
-
-    Mesure sur cette machine -- la carte mere en propose sept, la carte
-    graphique six, la souris cinq, et aucune liste ne recoupe l'autre.
-    """
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb)
-    for en_dur in ("COLOR CYCLE", "Digital Wave", "DOUBLE FLASH",
-                   "Spectrum Cycle", "Breathing"):
-        assert en_dur not in source
 
 
 def test_aucun_module_gpl_n_est_importe():
@@ -377,86 +345,14 @@ def test_aucun_module_gpl_n_est_importe():
         "repartir avec lui")
 
 
-def test_le_client_rgb_maison_lit_les_champs_que_le_pilotage_utilise():
-    """Le protocole binaire a piege QUATRE fois un client ecrit a la main.
-
-    Le pire : le nombre de LED ressortait a zero sans lever d'erreur. Or sans
-    lui, impossible d'ecrire les couleurs -- et changer le mode ne suffit pas
-    sur une carte mere. La souris et la carte graphique suivaient, la carte
-    mere restait muette. Deux peripheriques sur trois, ce qui ressemblait a un
-    probleme de materiel plutot qu'a une erreur d'analyse.
-
-    Sans materiel sous la main, on ne peut pas rejouer un echange. Ce qu'on
-    verifie ici, c'est que les champs dont rgb.py se sert existent bien et
-    qu'aucun renommage ne les a fait disparaitre en silence -- l'autre facon
-    d'obtenir un zero qui ne leve rien.
-    """
-    from assistant.skills import openrgb_protocole as protocole
-
-    for champ in ("index", "nom", "genre", "modes", "mode_actif", "nb_leds",
-                  "couleurs"):
-        assert champ in protocole.Materiel.__dataclass_fields__, (
-            f"Materiel.{champ} a disparu : rgb.py s'en sert")
-
-    for champ in ("index", "nom", "drapeaux", "vitesse", "vitesse_min",
-                  "vitesse_max", "luminosite", "luminosite_min",
-                  "luminosite_max", "mode_couleur", "couleurs_max", "brut"):
-        assert champ in protocole.Mode.__dataclass_fields__, (
-            f"Mode.{champ} a disparu : rgb.py s'en sert")
-
-    # Les valeurs relevees sur l'enumeration du SDK. Les ecrire de memoire
-    # avait mis la luminosite au bit 7 au lieu du bit 4 : rien ne plantait,
-    # un curseur apparaissait juste la ou il n'avait rien a faire.
-    assert protocole.A_VITESSE == 1
-    assert protocole.A_LUMINOSITE == 16
-    assert protocole.A_COULEUR_PAR_LED == 32
-    assert protocole.A_COULEUR_DE_MODE == 64
-    assert protocole.COULEUR_PAR_LED == 1
-    assert protocole.COULEUR_DE_MODE == 2
 
 
-def test_le_serveur_rgb_est_lance_en_administrateur():
-    """L'ecriture sur le bus SMBus l'exige, la lecture non.
-
-    C'est ce qui faisait repondre la souris et la carte graphique -- USB et
-    bus interne, sans restriction -- pendant que la carte mere restait muette.
-    """
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.demarrer_serveur)
-    assert "RunAs" in source
 
 
-def test_une_couleur_se_donne_par_son_nom_ou_en_hexadecimal():
-    from assistant.skills import rgb
-
-    assert "rouge" in rgb.COULEURS and "bleu" in rgb.COULEURS
-    import pytest as _pytest
-
-    with _pytest.raises(ValueError):
-        rgb._couleur("mauve-turquoise")
 
 
-def test_les_logiciels_concurrents_sont_signales():
-    """Deux programmes sur le meme controleur font clignoter l'eclairage au
-    hasard. Le savoir evite une heure de recherche."""
-    from assistant.skills import rgb
-
-    assert len(rgb.CONCURRENTS) >= 6, "plusieurs marques doivent etre couvertes"
-    assert isinstance(rgb.concurrents_actifs(), list)
 
 
-def test_les_services_critiques_de_windows_ne_sont_jamais_arretes():
-    """Une recherche par motif attrapait MSiSCSI et msiserver -- l'initiateur
-    iSCSI et le programme d'installation -- parce que leur nom commence comme
-    MSI. Arreter l'un ou l'autre casse la session."""
-    from assistant.skills import rgb
-
-    for critique in ("MSiSCSI", "msiserver", "RpcSs", "DcomLaunch"):
-        assert critique in rgb.JAMAIS_TOUCHER
-        assert critique not in rgb.SERVICES_CONCURRENTS
 
 
 def test_les_deux_numeros_de_version_ne_divergent_pas():

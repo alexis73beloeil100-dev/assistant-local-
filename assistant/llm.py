@@ -15,11 +15,10 @@ import requests
 from assistant import config
 from assistant import connaissance
 from assistant import selftest
-from assistant import serveur
 from assistant.skills import (apps, archives, cleanup, content, control,
-                              debit, desk, documents, files, fixes, gamemode,
-                              games, hardware, inventaire, reminders, rgb,
-                              shell, system, video, vision)
+                              desk, documents, files, fixes, gamemode, games,
+                              hardware, inventaire, reminders, shell, system,
+                              vision)
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -577,91 +576,6 @@ TOOLS: list[Tool] = [
         effect=True,
     ),
     Tool(
-        "eclairage_rgb",
-        "Liste les peripheriques RGB de cette machine et les modes que chacun "
-        "propose reellement : carte mere, carte graphique, memoire, clavier, "
-        "souris, ventilateurs, toutes marques confondues.",
-        _obj({}),
-        lambda: rgb.liste(),
-    ),
-    Tool(
-        "neutraliser_les_logiciels_rgb",
-        "Empeche DURABLEMENT les logiciels du fabricant de reprendre "
-        "l'eclairage : leur demarrage passe de automatique a manuel, et leurs "
-        "programmes de demarrage sont retires. A utiliser quand ils reviennent "
-        "apres chaque redemarrage. Reversible : l'ancien reglage est memorise.",
-        _obj({}),
-        lambda: rgb.liberer_durablement(),
-        effect=True,
-    ),
-    Tool(
-        "reprendre_le_controle_rgb",
-        "Ferme les logiciels du fabricant (RGB Fusion, Aura, iCUE, Synapse). "
-        "N'APPELLE JAMAIS CET OUTIL DE TOI-MEME. Uniquement si l'utilisateur "
-        "le demande explicitement, ou s'il dit que les LED ne bougent pas "
-        "APRES une commande que tu viens de lancer. Le seul fait qu'un de ces "
-        "logiciels tourne n'est PAS un probleme : sur cette machine ils "
-        "cohabitent, l'eclairage fonctionne pendant que RGB Fusion tourne. "
-        "Les fermer a deja eteint les LED de l'utilisateur pour rien.",
-        _obj({}),
-        lambda: rgb.liberer(),
-        effect=True,
-    ),
-    Tool(
-        "rendre_le_controle_rgb",
-        "Relance les services d'eclairage du fabricant, pour lui rendre la "
-        "main sans attendre un redemarrage.",
-        _obj({}),
-        lambda: rgb.rendre_le_controleur(),
-        effect=True,
-    ),
-    Tool(
-        "installer_demarrage_rgb",
-        "Fait demarrer le serveur OpenRGB avec la session Windows, en "
-        "administrateur, sans plus jamais afficher de fenetre d'autorisation. "
-        "A utiliser quand l'utilisateur se plaint que le RGB demande une "
-        "autorisation Windows a chaque demarrage. Une derniere autorisation "
-        "est demandee au moment de l'installation. Reversible.",
-        _obj({}),
-        lambda: rgb.installer_demarrage(),
-        effect=True,
-    ),
-    Tool(
-        "desinstaller_demarrage_rgb",
-        "Retire le demarrage automatique du serveur OpenRGB. Il redevient "
-        "lancable a la demande, avec une fenetre d'autorisation par session.",
-        _obj({}),
-        lambda: rgb.desinstaller_demarrage(),
-        effect=True,
-    ),
-    Tool(
-        "etat_demarrage_rgb",
-        "Dit si le serveur OpenRGB demarre tout seul avec Windows, ou s'il "
-        "demande encore une autorisation a chaque session.",
-        _obj({}),
-        lambda: rgb.etat_demarrage(),
-    ),
-    Tool(
-        "definir_chemin_openrgb",
-        "Enregistre ou se trouve OpenRGB quand il est portable et range "
-        "ailleurs que dans les emplacements habituels. Sert quand "
-        "l'utilisateur dit \"OpenRGB est dans tel dossier\".",
-        _obj({"chemin": STR}, ["chemin"]),
-        lambda chemin: rgb.definir_chemin(chemin),
-        effect=True,
-    ),
-    Tool(
-        "changer_eclairage_rgb",
-        "Change le mode d'eclairage RGB, par son nom tel qu'il apparait dans "
-        "eclairage_rgb (statique, respiration, arc-en-ciel...). Sans "
-        "peripherique, applique a tous ceux qui connaissent ce mode. Une "
-        "couleur est acceptee en hexadecimal, par exemple FF0000.",
-        _obj({"mode": STR, "peripherique": STR, "couleur": STR}, ["mode"]),
-        lambda mode, peripherique="", couleur="": rgb.changer_mode(
-            mode, peripherique, couleur),
-        effect=True,
-    ),
-    Tool(
         "profil_alimentation",
         "Lit ou change le profil d'alimentation de Windows : performance, "
         "equilibre, economie.",
@@ -840,60 +754,6 @@ TOOLS: list[Tool] = [
         lambda: inventaire.resume(),
     ),
     Tool(
-        "appairer_le_telephone",
-        "Allume le serveur local et affiche un QR code a scanner avec le "
-        "telephone, pour le presse-papier partage et les macros. Le serveur "
-        "est eteint par defaut et n'ecoute que sur le reseau local.",
-        _obj({}),
-        lambda: serveur.appairer(),
-        effect=True,
-    ),
-    Tool(
-        "eteindre_le_serveur",
-        "Eteint le serveur local : le telephone ne peut plus rien envoyer.",
-        _obj({}),
-        lambda: serveur.arreter(),
-        effect=True,
-    ),
-    Tool(
-        "etat_du_serveur",
-        "Dit si le serveur local est allume, ce qu'il a recu, et combien de "
-        "macros sont enregistrees.",
-        _obj({}),
-        lambda: serveur.etat(),
-    ),
-    Tool(
-        "enregistrer_macro",
-        "Enregistre une macro declenchable depuis le telephone. genre vaut "
-        "\"texte\" (taper une suite de caracteres) ou \"touches\" (une "
-        "combinaison comme ctrl+s). Le telephone ne peut QUE nommer une macro "
-        "deja enregistree ici : il n'envoie jamais de frappes lui-meme.",
-        _obj({"nom": STR,
-              "genre": {**STR, "description": "texte ou touches"},
-              "valeur": {**STR,
-                         "description": "le texte a taper, ou la combinaison"}},
-             ["nom", "genre", "valeur"]),
-        lambda nom, genre, valeur: serveur.enregistrer_macro(
-            str(nom), str(genre), str(valeur)),
-        effect=True,
-    ),
-    Tool(
-        "lister_macros",
-        "Les macros enregistrees, declenchables depuis le telephone.",
-        _obj({}),
-        lambda: "\n".join(
-            f"{n} : {m.get('genre')} -> {m.get('valeur')}"
-            for n, m in sorted(serveur.macros().items())
-        ) or "Aucune macro enregistree.",
-    ),
-    Tool(
-        "supprimer_macro",
-        "Supprime une macro enregistree.",
-        _obj({"nom": STR}, ["nom"]),
-        lambda nom: serveur.oublier_macro(str(nom)),
-        effect=True,
-    ),
-    Tool(
         "position_souris",
         "Ou se trouve le curseur en ce moment, en pixels. Sert a enregistrer "
         "une macro de clic : l'utilisateur place sa souris, demande la "
@@ -932,35 +792,6 @@ TOOLS: list[Tool] = [
         _obj({"combinaison": {**STR, "description": "ex: ctrl+s, alt+tab"}},
              ["combinaison"]),
         lambda combinaison: control.raccourci(str(combinaison)),
-        effect=True,
-    ),
-    Tool(
-        "analyser_video",
-        "Dit ce qu'une video contient vraiment (conteneur, codecs, definition) "
-        "et pourquoi Windows n'arrive pas a la lire. A utiliser des qu'un "
-        "fichier video ne s'ouvre pas, affiche un ecran noir ou un son sans "
-        "image. L'extension du nom ne prouve rien : c'est le codec qui "
-        "decide.",
-        _obj({"chemin": STR}, ["chemin"]),
-        lambda chemin: video.diagnostic(str(chemin)),
-    ),
-    Tool(
-        "lire_video",
-        "Ouvre une video avec le lecteur par defaut, apres avoir verifie "
-        "qu'elle est lisible sur cette machine. Refuse d'ouvrir si un codec "
-        "manque, et explique lequel plutot que de laisser un ecran noir.",
-        _obj({"chemin": STR}, ["chemin"]),
-        lambda chemin: video.lire(str(chemin)),
-        effect=True,
-    ),
-    Tool(
-        "installer_extension_video",
-        "Ouvre le Microsoft Store sur l'extension gratuite qui couvre un "
-        "codec manquant (hevc, vp9, av1, opus...). N'installe rien : "
-        "l'utilisateur decide sur la page du Store.",
-        _obj({"codec": {**STR, "description": "Nom du codec manquant"}},
-             ["codec"]),
-        lambda codec: video.installer_extension(str(codec)),
         effect=True,
     ),
     Tool(
@@ -1048,18 +879,6 @@ TOOLS: list[Tool] = [
         _obj({"complet": {"type": "boolean",
                           "description": "Examen complet plutot que rapide"}}),
         lambda complet=False: str(fixes.analyser_menaces(bool(complet))),
-        effect=True,
-    ),
-    Tool(
-        "tester_le_debit",
-        "Mesure la vitesse reelle de la connexion Internet : latence, debit "
-        "descendant et montant, en contactant le point de mesure public de "
-        "Cloudflare. A proposer quand l'utilisateur dit que \"Internet rame\", "
-        "que la video saute ou que le jeu lague. Dure une dizaine de "
-        "secondes. C'est la SEULE fonction qui sort de la machine ; elle "
-        "n'envoie que des octets nuls.",
-        _obj({}),
-        lambda: debit.tester(),
         effect=True,
     ),
     Tool(

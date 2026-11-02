@@ -95,29 +95,10 @@ inclus ici : ils pesent plusieurs gigaoctets et dependent de votre materiel.
 Comptez entre 2 et 6 Go de telechargement.
 
 
-L'ECLAIRAGE RGB DEMANDE UN PROGRAMME A PART
--------------------------------------------
-
-Le pilotage des LED fonctionne, mais il s'appuie sur OpenRGB, qui n'est pas
-inclus ici. Installez-le depuis :
-
-    https://openrgb.org
-
-rubrique Downloads, version Windows 64-bit. L'assistant le trouvera tout seul.
-
-Deux choses a savoir : l'eclairage d'une carte mere passe par le bus SMBus,
-qui demande les droits administrateur, et le logiciel du fabricant doit etre
-ferme -- deux programmes sur le meme controleur font clignoter les LED au
-hasard.
-
-Le reste de l'assistant fonctionne sans OpenRGB.
-
-
 CE QU'IL FAUT
 -------------
 
     Windows 10 ou 11, 64 bits
-    Un micro pour la commande vocale (facultatif)
     Une carte graphique NVIDIA rend tout nettement plus rapide, sans etre
     obligatoire
 

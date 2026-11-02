@@ -456,10 +456,9 @@ def taper(texte: str, ask=None) -> str:
 
 # Les touches qu'une combinaison peut nommer.
 #
-# Liste FERMEE, et c'est le point important : une macro declenchee depuis le
-# telephone ne doit pouvoir envoyer que ce qui figure ici. Accepter un code de
-# touche arbitraire venu du reseau reviendrait a offrir un clavier complet a
-# qui trouve le jeton du serveur.
+# Liste FERMEE, et c'est le point important : une combinaison demandee par le
+# modele ne doit pouvoir envoyer que ce qui figure ici. Accepter un code de
+# touche arbitraire reviendrait a lui offrir un clavier complet.
 TOUCHES = {
     "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10, "maj": 0x10,
     "win": 0x5B, "windows": 0x5B, "tab": 0x09, "entree": 0x0D,

@@ -118,11 +118,8 @@ def contexte() -> str:
 # on rencontre un defaut. On nomme donc le GESTE, pas le module.
 CATEGORIES = [
     ("La conversation", "il repond a cote, invente, ou ne repond pas"),
-    ("La voix", "le micro n'ecrit rien, ou la lecture a voix haute"),
     ("Les fichiers joints", "une image ou un document mal lu"),
-    ("L'eclairage RGB", "les LED ne suivent pas, ou reviennent en arriere"),
     ("Reparer Windows", "sfc, DISM, ou l'examen antivirus"),
-    ("Le telephone", "presse-papier partage, macros, appairage"),
     ("Les panneaux", "un affichage faux, vide ou illisible"),
     ("L'installation", "installer, mettre a jour, desinstaller"),
     ("Autre chose", ""),

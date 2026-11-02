@@ -930,41 +930,10 @@ def test_le_mode_jeu_ferme_sans_demander():
 
 # --- Le UAC du RGB a chaque ouverture de session ----------------------------
 
-def test_le_serveur_rgb_passe_par_la_tache_avant_l_elevation():
-    """Une tache "privileges les plus eleves" demarre OpenRGB en admin sans
-    fenetre. Si demarrer_serveur() tentait l'elevation manuelle d'abord, le
-    UAC reapparaitrait alors meme que la tache est installee."""
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.demarrer_serveur)
-    assert source.index("_tache_installee") < source.index("-Verb RunAs")
 
 
-def test_la_tache_du_serveur_rgb_interdit_les_doublons():
-    """Deux OpenRGB lances ensemble : un seul obtient le port 6742, l'autre
-    reste a disputer le controleur sans repondre a personne. C'est ce qui a
-    ete trouve sur la machine avant la correction."""
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.installer_demarrage)
-    assert "-MultipleInstances IgnoreNew" in source
-    assert "RunLevel Highest" in source
 
 
-def test_l_installation_du_demarrage_rgb_est_constatee():
-    """Un script eleve qui dit "c'est fait" ne prouve rien : le defaut avait
-    deja ete rencontre avec _arreter_eleve(). On relit la machine."""
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.installer_demarrage)
-    apres_elevation = source.split("_executer_eleve", 1)[1]
-    assert "_tache_installee()" in apres_elevation
 
 
 # --- Les dix defauts releves a l'audit du 2026-08-22 -------------------------
@@ -1110,17 +1079,6 @@ def test_un_integre_disparu_n_est_pas_propose():
     assert not apps._commande_resolvable("")
 
 
-def test_la_reconstruction_sait_arreter_un_openrgb_eleve():
-    """Depuis la tache planifiee, OpenRGB tourne en administrateur : le
-    taskkill non eleve echoue en silence et la construction repart sur une
-    hidapi.dll verrouillee."""
-    import inspect
-    from pathlib import Path
-
-    source = Path(__file__).resolve().parent.parent / "reconstruire.py"
-    texte = source.read_text(encoding="utf-8")
-    assert "schtasks" in texte
-    assert "-Verb RunAs" in texte
 
 
 def test_le_garde_fou_refuse_au_lieu_d_attendre_sans_fin(monkeypatch):
@@ -1175,55 +1133,8 @@ def test_le_reglage_de_reflexion_reste_optionnel():
     assert llm._call.__defaults__[-1] is None
 
 
-def test_demander_une_couleur_choisit_un_mode_qui_en_accepte_une():
-    """La carte mere se remet d'elle-meme en "Random", un effet pilote par son
-    propre controleur qui ignore toute couleur. "Mets les LED en bleu"
-    repondait "Eclairage regle : Random" PUIS "Random ne prend pas de
-    couleur" -- deux lignes qui se contredisent, et des ventilateurs qui
-    n'avaient pas bouge."""
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.appliquer)
-    assert "_mode_qui_accepte_une_couleur" in source
-    # Seulement si aucun mode n'a ete demande : "mets-le en arc-en-ciel" doit
-    # rester un arc-en-ciel.
-    assert "if couleur and not mode" in source
 
 
-def test_le_mode_choisi_pour_une_couleur_privilegie_direct():
-    """Direct rend exactement la couleur demandee ; Static la fige dans le
-    materiel. Les autres modes portent des noms propres a chaque fabricant."""
-    from dataclasses import dataclass
-
-    from assistant.skills import rgb
-
-    @dataclass
-    class FauxDetail:
-        nom: str
-        couleur: bool
-
-    class FauxPeripherique:
-        def __init__(self, details):
-            self.details = details
-
-    cm = FauxPeripherique([
-        FauxDetail("Random", False), FauxDetail("Static", True),
-        FauxDetail("Direct", True),
-    ])
-    assert rgb._mode_qui_accepte_une_couleur(cm) == "Direct"
-
-    sans_direct = FauxPeripherique([
-        FauxDetail("Random", False), FauxDetail("Static", True)])
-    assert rgb._mode_qui_accepte_une_couleur(sans_direct) == "Static"
-
-    exotique = FauxPeripherique([
-        FauxDetail("Random", False), FauxDetail("Vague", True)])
-    assert rgb._mode_qui_accepte_une_couleur(exotique) == "Vague"
-
-    aucun = FauxPeripherique([FauxDetail("Random", False)])
-    assert rgb._mode_qui_accepte_une_couleur(aucun) is None
 
 
 def test_searchindexer_est_epargne_par_le_mode_jeu():
@@ -1237,52 +1148,10 @@ def test_searchindexer_est_epargne_par_le_mode_jeu():
 
 # --- Le deuxieme OpenRGB, invisible et coupable ------------------------------
 
-def test_le_serveur_rgb_est_reconnu_par_son_port_pas_son_chemin():
-    """Deux fois dans la meme soiree, une seconde instance d'OpenRGB a
-    dispute le controleur au serveur : les modes changeaient tout seuls et
-    les couleurs ne tenaient pas. Vu de l'utilisateur, "OpenRGB ne marche
-    plus", sans rien pour l'expliquer.
-
-    Le serveur s'identifie par le port qu'il ecoute : c'est la seule
-    definition qui ne se trompe pas. Le comparer a un chemin echouerait des
-    qu'une copie de l'application est lancee depuis ailleurs -- ce qui est
-    precisement le cas rencontre.
-    """
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.instances_parasites)
-    assert "_pid_du_serveur()" in source
-    # Par la constante, pas par un numero en dur : le port se change a un seul
-    # endroit.
-    assert "PORT_SERVEUR" in inspect.getsource(rgb._pid_du_serveur)
 
 
-def test_reprendre_le_controle_ferme_aussi_les_openrgb_parasites():
-    """Sans ca, "reprends le controle du RGB" repondait "rien ne dispute le
-    controleur" alors qu'un second OpenRGB tournait juste a cote."""
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.liberer)
-    assert "_arreter_les_parasites()" in source
-    # Avant l'inventaire des concurrents du fabricant : c'est la cause la plus
-    # frequente, et la seule qui ne demande aucun privilege.
-    assert source.index("_arreter_les_parasites()") < source.index("conflits()")
 
 
-def test_l_etat_de_l_eclairage_nomme_le_parasite():
-    """Le symptome doit se nommer tout seul : l'utilisateur voyait des modes
-    changer sans comprendre, et accusait RGB Fusion -- qui etait arrete."""
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb.liste)
-    assert "instances_parasites()" in source
-    assert "dispute le controleur" in source
 
 
 # --- L'application qui s'evaporait sans un mot ------------------------------
@@ -1457,79 +1326,10 @@ def test_un_demarrage_vers_un_autre_exemplaire_n_est_pas_un_defaut(tmp_path,
     assert reparation._detecter_demarrage() == []
 
 
-def test_on_demande_au_logiciel_de_se_fermer_avant_de_le_tuer():
-    """Fermer RGB Fusion a ETEINT les LED des trois appareils, le 22/08.
-
-    Un Stop-Process -Force ne laisse pas le logiciel du fabricant reposer le
-    controleur : tue net, la carte mere revient a son etat par defaut,
-    c'est-a-dire eteinte. L'utilisateur a du signaler lui-meme que son
-    eclairage venait de s'arreter.
-
-    CloseMainWindow() envoie la fermeture normale -- celle du clic sur la
-    croix -- et le logiciel quitte comme il en a l'habitude. On ne force que
-    ce qui resiste.
-
-    On lit le SCRIPT REELLEMENT PRODUIT, pas le code source : une premiere
-    version cherchait les deux commandes dans la source et trouvait
-    "Stop-Process -Force" dans le commentaire qui explique pourquoi on ne s'en
-    sert qu'en dernier recours.
-    """
-    from assistant.skills import rgb
-
-    script = "\n".join(rgb._script_darret())
-
-    assert "CloseMainWindow()" in script, (
-        "les logiciels doivent etre invites a se fermer avant d'etre tues")
-    assert script.index("CloseMainWindow()") < script.index("Stop-Process -Force"), (
-        "la demande polie doit venir AVANT la force")
-    assert "Start-Sleep" in script, "il faut leur laisser le temps de quitter"
-
-    # Et les logiciels vises doivent bien y figurer, sinon le script ne ferme
-    # rien du tout et le test ci-dessus passerait sur une coquille vide.
-    assert "rgbfusion.exe" in script
 
 
-def test_un_openrgb_parasite_est_ferme_avant_d_etre_tue():
-    """Meme regle : un OpenRGB tue sans preavis peut laisser le controleur
-    dans l'etat ou il l'a trouve, c'est-a-dire n'importe lequel."""
-    import inspect
-
-    from assistant.skills import rgb
-
-    source = inspect.getsource(rgb._arreter_les_parasites)
-    assert "terminate()" in source
-    assert source.index("terminate()") < source.index("kill()")
 
 
-def test_l_assistant_ne_ferme_plus_le_logiciel_du_fabricant_de_lui_meme():
-    """Fermer RGB Fusion a ete traite comme le prealable evident de "mets les
-    LED en bleu". C'est faux, et mesure le 22/08 : l'assistant a ecrit du
-    blanc sur les trois appareils PENDANT que RGB Fusion tournait.
-
-    La note de reprise le disait deja -- "7 services neutralises, champ libre,
-    sans effet". Le fermer sans demander a coute une extinction complete des
-    LED, que l'utilisateur a du signaler lui-meme.
-    """
-    import inspect
-
-    from assistant import llm
-    from assistant.skills import rgb
-
-    # 1. Le geste redemande l'accord : ce n'est pas une routine.
-    source = inspect.getsource(rgb.liberer)
-    assert "routine=False" in source, (
-        "fermer le logiciel du fabricant doit redemander confirmation")
-
-    # 2. Le modele a l'interdiction de le decider seul.
-    outil = next(t for t in llm.TOOLS if t.name == "reprendre_le_controle_rgb")
-    assert "JAMAIS" in outil.description.upper()
-    assert "n'est pas un probleme" in outil.description.lower() \
-        or "pas un probleme" in outil.description.lower()
-
-    # 3. L'etat de l'eclairage mentionne la presence sans appeler a agir.
-    liste = inspect.getsource(rgb.liste)
-    assert "Ferme-le avant de changer un mode" not in liste, (
-        "l'affichage ne doit plus presenter une presence comme une gene")
 
 
 # --- "Ferme la calculatrice" ne fermait rien --------------------------------
@@ -1665,112 +1465,8 @@ def test_ce_qui_casse_ou_detruit_demande_toujours():
     with pytest.raises(safety.Refused):
         safety.guard(action, ask=lambda _t: False)
 
-def test_lire_un_materiel_n_utilise_que_les_champs_du_client_maison():
-    """Un seul .name oublie, et tout le RGB tombe -- sans qu'un test bronche.
-
-    En remplacant openrgb-python par le client maison, `_lire` a garde un
-    `mode.name` sur seize champs renommes. Les 219 tests sont passes au vert :
-    aucun ne fait parler `_lire` a un vrai materiel, et la fabrique de client
-    est la premiere chose qu'un test remplace par un faux.
-
-    Le defaut n'est apparu qu'en interrogeant le serveur pour de vrai, et il
-    se presentait comme une panne de reseau -- "Serveur OpenRGB injoignable :
-    AttributeError" -- ce qui envoyait chercher au mauvais endroit.
-
-    Ce test construit un materiel avec les objets du client maison et le fait
-    traduire. Il n'a besoin ni de serveur ni de materiel.
-    """
-    from assistant.skills import openrgb_protocole as protocole
-    from assistant.skills import rgb
-
-    materiel = protocole.Materiel(
-        index=3,
-        nom="Carte mere de test",
-        genre="motherboard",
-        mode_actif=1,
-        nb_leds=6,
-        modes=[
-            protocole.Mode(
-                index=0, nom="Direct", drapeaux=protocole.A_COULEUR_PAR_LED,
-                vitesse_min=None, vitesse_max=None, vitesse=None,
-                luminosite_min=None, luminosite_max=None, luminosite=None,
-                mode_couleur=protocole.COULEUR_PAR_LED),
-            protocole.Mode(
-                index=1, nom="Respiration",
-                drapeaux=protocole.A_VITESSE | protocole.A_LUMINOSITE
-                | protocole.A_COULEUR_DE_MODE,
-                vitesse_min=0, vitesse_max=5, vitesse=2,
-                luminosite_min=0, luminosite_max=100, luminosite=80,
-                mode_couleur=protocole.COULEUR_DE_MODE),
-        ],
-    )
-
-    lu = rgb._lire(materiel)
-
-    assert lu.index == 3
-    assert lu.nom == "Carte mere de test"
-    assert lu.genre == "motherboard"
-    assert lu.nb_leds == 6
-    assert lu.modes == ["Direct", "Respiration"]
-    assert lu.mode_actif == "Respiration"
-
-    direct = lu.mode("Direct")
-    assert direct.couleur and direct.par_led
-    assert direct.vitesse is None and direct.luminosite is None
-
-    respiration = lu.mode("Respiration")
-    assert respiration.couleur and not respiration.par_led
-    assert respiration.vitesse == (0, 5, 2)
-    assert respiration.luminosite == (0, 100, 80)
 
 
-def test_une_erreur_interne_du_rgb_ne_s_annonce_pas_comme_une_panne_reseau(
-        monkeypatch):
-    """Le message accusait le serveur sans que personne ait verifie.
-
-    Toutes les erreurs de lecture RGB sortaient en "Serveur OpenRGB
-    injoignable : <erreur>". Le 23/08/2026, un `mode.name` oublie dans
-    `_lire` apres le passage au client maison s'est donc annonce "Serveur
-    OpenRGB injoignable : AttributeError: 'Mode' object has no attribute
-    'name'" alors que le serveur repondait parfaitement. Le diagnostic est
-    parti vers le reseau et la tache planifiee pendant que le defaut tenait
-    dans une ligne de code.
-
-    Ici la fabrique de client leve une AttributeError -- une panne de code,
-    pas de liaison. Le message doit dire que la lecture a echoue et montrer
-    l'erreur, sans accuser le serveur. Une vraie erreur de liaison, elle,
-    doit continuer a l'accuser.
-    """
-    from assistant.skills import openrgb_protocole as protocole
-    from assistant.skills import rgb
-
-    monkeypatch.setattr(rgb, "disponible", lambda: True)
-    monkeypatch.setattr(rgb, "demarrer_serveur", lambda *a, **k: (True, ""))
-    monkeypatch.setattr(rgb, "concurrents_actifs", lambda: [])
-
-    def bug_dans_le_code():
-        raise AttributeError("'Mode' object has no attribute 'name'")
-
-    monkeypatch.setattr(rgb, "_client", bug_dans_le_code)
-
-    _, erreur = rgb.peripheriques()
-    assert "injoignable" not in erreur.lower(), erreur
-    assert "AttributeError" in erreur
-    assert "no attribute 'name'" in erreur
-
-    assert "injoignable" not in rgb.changer_mode("statique").lower()
-    assert "injoignable" not in rgb.appliquer(mode="statique").lower()
-
-    # Une vraie panne de liaison, elle, garde son diagnostic.
-    for panne in (protocole.ErreurOpenRGB("connexion refusee"),
-                  OSError("la prise a ete fermee"),
-                  TimeoutError("le serveur ne repond plus")):
-        def liaison_rompue(erreur=panne):
-            raise erreur
-
-        monkeypatch.setattr(rgb, "_client", liaison_rompue)
-        _, erreur = rgb.peripheriques()
-        assert "injoignable" in erreur.lower(), erreur
 
 
 def test_la_release_vise_un_sha_complet_pas_un_sha_court(monkeypatch):
@@ -2185,127 +1881,16 @@ def test_la_desinstallation_est_exposee_au_modele():
 
 # --- Test de debit -----------------------------------------------------------
 
-def test_la_poignee_de_main_n_est_pas_comptee_comme_de_la_gigue(monkeypatch):
-    """Une ligne saine annoncee irreguliere, sur le cout de sa propre ouverture.
-
-    Mesure le 24/08/2026 sur la machine de developpement : latence mediane
-    41 ms, gigue annoncee a 239 ms. L'assistant en concluait "typique d'un
-    Wi-Fi encombre ou lointain" -- sur une connexion qui n'avait rien.
-
-    La premiere requete porte la resolution DNS et la poignee de main TLS.
-    Elle ne mesure pas la ligne, elle mesure l'ouverture d'une connexion. Elle
-    est donc faite avant, et jetee.
-
-    Meme defaut que le "Serveur OpenRGB injoignable" du matin : annoncer une
-    cause que rien n'a verifiee, et envoyer chercher au mauvais endroit.
-    """
-    from assistant.skills import debit
-
-    class FausseReponse:
-        content = b""
-
-    appels = []
-    lent = [0.0]
-
-    class FausseSession:
-        headers = {}
-
-        def get(self, url, **kwargs):
-            appels.append(url)
-            # La premiere requete coute cher : DNS + TLS. Les suivantes non.
-            lent[0] += 0.200 if len(appels) == 1 else 0.040
-            return FausseReponse()
-
-    monkeypatch.setattr(debit.time, "perf_counter", lambda: lent[0])
-
-    ping, gigue = debit.latence(FausseSession())
-
-    assert len(appels) == debit.MESURES_LATENCE + 1, (
-        "la requete de mise en route manque : la poignee de main serait "
-        "comptee comme de la latence")
-    assert ping == pytest.approx(40)
-    assert gigue == pytest.approx(0, abs=0.001), (
-        f"gigue de {gigue:.0f} ms sur une ligne parfaitement reguliere : "
-        "la premiere requete est de nouveau comptee")
 
 
-def test_le_test_de_debit_n_envoie_que_des_octets_nuls():
-    """Ce qui sort de la machine doit etre verifiable, pas promis.
-
-    C'est la seule fonction de l'assistant qui contacte un tiers. La promesse
-    faite a l'utilisateur -- aucune donnee de la machine ne part -- ne vaut
-    que si la charge envoyee est fabriquee sur place.
-    """
-    from assistant.skills import debit
-
-    code = _sans_docstring(debit.montant)
-    assert "b'\\x00'" in code or 'b"\\x00"' in code or "b'\\\\0'" in code, code
-    for interdit in ("open(", "read(", "Path(", "environ", "gethostname"):
-        assert interdit not in code, (
-            f"{interdit} dans la fonction d'envoi : quelque chose de la "
-            "machine pourrait partir")
 
 
-def test_le_serveur_contacte_est_ecrit_en_clair():
-    """On doit pouvoir lire ou vont les octets, sans deviner.
-
-    Une adresse construite a l'execution, ou cachee derriere un service tiers,
-    empecherait l'utilisateur de verifier la seule sortie reseau du programme.
-    """
-    from assistant.skills import debit
-
-    assert debit.HOTE.startswith("https://")
-    assert "cloudflare.com" in debit.HOTE
-    assert debit.HOTE in debit.DESCENDANT and debit.HOTE in debit.MONTANT
 
 
-def test_une_ligne_coupee_le_dit_au_lieu_de_planter(monkeypatch):
-    """Sans reseau, la mesure n'a rien a annoncer -- surtout pas un zero.
-
-    Rendre "0 Mbit/s" ferait conclure a une ligne saturee alors qu'elle est
-    debranchee, et enverrait chercher du cote du debit au lieu du cable.
-    """
-    from assistant.skills import debit
-
-    monkeypatch.setattr(debit, "latence", lambda session=None: (None, None))
-    reponse = debit.tester(ask=lambda _t: True)
-
-    assert "injoignable" in reponse
-    assert "0.0 Mbit" not in reponse
 
 
-def test_le_test_de_debit_laisse_une_trace_meme_sans_question(monkeypatch):
-    """Le seul envoi vers l'exterieur ne doit pas se faire sans trace.
-
-    Il passe sans poser de question -- on le refait dix fois quand la
-    connexion rame, et une fenetre a chaque fois le rendrait inutilisable a la
-    voix. Mais il passe PAR le garde-fou, qui journalise, et l'action nomme le
-    serveur contacte.
-    """
-    from assistant import safety
-    from assistant.skills import debit
-
-    vues = []
-    monkeypatch.setattr(safety, "guard",
-                        lambda action, ask=None: vues.append(action) or True)
-    monkeypatch.setattr(debit, "latence", lambda session=None: (None, None))
-
-    debit.tester()
-
-    assert len(vues) == 1
-    assert vues[0].routine is True, "une fenetre a chaque test serait absurde"
-    assert debit.HOTE in vues[0].targets, (
-        "le journal doit dire qui a ete contacte")
 
 
-def test_le_test_de_debit_est_expose_au_modele():
-    """Ecrit mais pas branche, il est introuvable a la voix."""
-    from assistant import llm
-
-    outil = next((t for t in llm.TOOLS if t.name == "tester_le_debit"), None)
-    assert outil is not None
-    assert "rame" in outil.description, (
-        "le modele doit savoir quand le proposer")
 
 
 # --- Archives : compresser, extraire ----------------------------------------
@@ -2725,124 +2310,18 @@ def _video_fabriquee(dossier, nom, codec):
     return chemin
 
 
-def test_l_extension_du_nom_ne_decide_pas_du_format(tmp_path):
-    """Un .mkv renomme en .mp4 s'ouvre sans probleme -- et fait echouer un
-    lecteur sans la moindre explication.
-
-    C'est le cas le plus frequent derriere "ma video ne marche pas" : le
-    fichier porte une extension qui ne correspond pas a son contenu. Se fier
-    au nom, c'est repeter l'erreur du lecteur au lieu de la lever.
-    """
-    from assistant.skills import video
-
-    vraie = _video_fabriquee(tmp_path, "vraie.webm", "libvpx-vp9")
-    menteur = tmp_path / "menteur.mp4"
-    menteur.write_bytes(vraie.read_bytes())
-
-    infos = video.informations(str(menteur))
-    assert "erreur" not in infos, infos
-    assert "matroska" in infos["conteneur"] or "webm" in infos["conteneur"]
-    assert infos["video"]["codec"] == "vp9"
 
 
-def test_un_codec_absent_nomme_l_extension_qui_manque(tmp_path):
-    """Dire "codec manquant" n'aide personne : il faut dire LEQUEL et ou le prendre.
-
-    L'utilisateur voit un ecran noir. Le nom du paquet du Store est la seule
-    information qui transforme le probleme en geste.
-    """
-    from assistant.skills import video
-
-    chemin = _video_fabriquee(tmp_path, "v.webm", "libvpx-vp9")
-    infos = video.informations(str(chemin))
-
-    # Machine sans aucune extension installee.
-    manque = video._manquantes(infos, set())
-    assert manque, "vp9 n'est pas natif : il devrait manquer"
-    codec, paquet, libelle = manque[0]
-    assert codec == "vp9"
-    assert paquet == "Microsoft.VP9VideoExtensions"
-    assert libelle
-
-    # La meme machine, extension installee : plus rien ne manque.
-    assert video._manquantes(infos, {"Microsoft.VP9VideoExtensions"}) == []
 
 
-def test_un_codec_natif_ne_reclame_aucune_extension(tmp_path):
-    """H.264 se lit depuis toujours. Reclamer une extension inutile ferait
-    installer un paquet pour rien et deplacerait le diagnostic."""
-    from assistant.skills import video
-
-    chemin = _video_fabriquee(tmp_path, "v.mp4", "libx264")
-    infos = video.informations(str(chemin))
-
-    assert infos["video"]["codec"] == "h264"
-    assert video._manquantes(infos, set()) == []
 
 
-def test_un_fichier_abime_n_est_pas_pris_pour_un_format_exotique(tmp_path):
-    """ffmpeg lit 414 conteneurs : s'il echoue, ce n'est pas le format.
-
-    Envoyer quelqu'un chercher un codec pour un telechargement interrompu le
-    ferait installer des paquets sans jamais regler son probleme.
-    """
-    from assistant.skills import video
-
-    casse = tmp_path / "casse.mp4"
-    casse.write_bytes(b"\x00\x01\x02 ceci n'est pas une video" * 20)
-
-    rapport = video.diagnostic(str(casse))
-    assert "incomplet ou abime" in rapport
-    assert "Store" not in rapport
 
 
-def test_on_n_ouvre_pas_une_video_qu_on_sait_illisible(tmp_path, monkeypatch):
-    """Un lecteur lance sur un codec absent affiche un ecran noir muet.
-
-    L'utilisateur en conclut que sa video est morte, et n'a aucune raison de
-    lire l'explication arrivee apres.
-    """
-    from assistant.skills import video
-
-    chemin = _video_fabriquee(tmp_path, "v.webm", "libvpx-vp9")
-    monkeypatch.setattr(video, "_extensions_installees", lambda: set())
-
-    ouvertures = []
-    monkeypatch.setattr(video.subprocess, "Popen",
-                        lambda *a, **k: ouvertures.append(a))
-
-    reponse = video.lire(str(chemin))
-
-    assert ouvertures == [], "le lecteur a ete lance malgre le codec manquant"
-    assert "VP9" in reponse
-    assert "ecran noir" in reponse
 
 
-def test_installer_une_extension_ouvre_le_store_sans_rien_installer(monkeypatch):
-    """Poser un logiciel sans que l'utilisateur voie ce qu'il accepte n'est
-    pas a nous. Le Store affiche l'editeur, la taille et les autorisations."""
-    from assistant.skills import video
-
-    monkeypatch.setattr(video, "_extensions_installees", lambda: set())
-    lances = []
-    monkeypatch.setattr(video.subprocess, "Popen",
-                        lambda *a, **k: lances.append(a[0]))
-
-    reponse = video.installer_extension("hevc")
-
-    assert lances, "le Store n'a pas ete ouvert"
-    assert "ms-windows-store://" in " ".join(lances[0])
-    assert "c'est toi qui lances" in reponse
-
-    assert "Aucune extension" in video.installer_extension("codec-invente")
 
 
-def test_les_outils_video_sont_exposes_au_modele():
-    from assistant import llm
-
-    noms = {t.name for t in llm.TOOLS}
-    for outil in ("analyser_video", "lire_video", "installer_extension_video"):
-        assert outil in noms, outil
 
 
 def test_le_modele_n_annonce_plus_qu_il_oublie_tout(monkeypatch):
@@ -2983,53 +2462,10 @@ def test_un_fichier_joint_illisible_ne_disparait_pas_en_silence():
 
 # --- Serveur local : le telephone parle au PC --------------------------------
 
-def test_le_serveur_est_eteint_tant_que_personne_ne_l_allume():
-    """La porte la plus dangereuse du projet ne doit jamais s'ouvrir seule.
-
-    Un serveur qui demarrerait avec l'application ecouterait sur le reseau de
-    la maison a chaque session, sans que personne l'ait demande ni ne s'en
-    souvienne.
-    """
-    from assistant import serveur
-
-    assert serveur.allume() is False
-    assert "ETEINT" in serveur.etat()
 
 
-def test_le_telephone_ne_peut_pas_decrire_une_action(monkeypatch):
-    """Accepter une suite de touches venue du reseau, c'est offrir un clavier.
-
-    Toute la surete du serveur tient a cette regle : le telephone NOMME une
-    macro deja enregistree sur le PC, il ne la decrit jamais. Un genre
-    arbitraire -- une commande shell, un chemin d'executable -- rendrait le
-    jeton equivalent a un acces administrateur a distance.
-    """
-    from assistant import serveur
-
-    enregistrees = {}
-    monkeypatch.setattr(serveur.settings, "get",
-                        lambda cle, defaut=None: enregistrees
-                        if cle == "macros" else defaut)
-    monkeypatch.setattr(serveur.settings, "set",
-                        lambda cle, valeur: enregistrees.update(valeur)
-                        if cle == "macros" else None)
-
-    for genre in ("commande", "shell", "powershell", "exec", "python", ""):
-        reponse = serveur.enregistrer_macro("piege", genre, "quelque chose")
-        assert "Genre inconnu" in reponse, genre
-    assert enregistrees == {}
-
-    assert "enregistree" in serveur.enregistrer_macro("ok", "touches", "ctrl+s")
 
 
-def test_une_macro_inconnue_ne_declenche_rien(monkeypatch):
-    """Le nom vient du reseau : il n'est pas digne de confiance."""
-    from assistant import serveur
-
-    monkeypatch.setattr(serveur, "macros", lambda: {})
-    ok, message = serveur.jouer_macro("../../evasion")
-    assert ok is False
-    assert "Aucune macro" in message
 
 
 def test_un_raccourci_n_envoie_que_des_touches_nommees():
@@ -3048,73 +2484,12 @@ def test_un_raccourci_n_envoie_que_des_touches_nommees():
     assert "0x5B" not in control.TOUCHES
 
 
-def test_le_jeton_est_compare_en_temps_constant():
-    """Comparer avec == fuit la longueur du prefixe correct.
-
-    Un attaquant sur le meme reseau mesure le temps de reponse et reconstruit
-    le jeton caractere par caractere. compare_digest ne varie pas selon
-    l'endroit ou la difference se trouve.
-    """
-    import ast
-    import inspect
-    import textwrap
-
-    from assistant import serveur
-
-    arbre = ast.parse(textwrap.dedent(
-        inspect.getsource(serveur._Poignee._autorise)))
-    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
-
-    assert "compare_digest" in code
-    assert "== jeton()" not in code and "== self" not in code
 
 
-def test_le_serveur_n_ecoute_pas_sur_toutes_les_interfaces():
-    """0.0.0.0 ecouterait aussi sur un VPN ou un partage de connexion.
-
-    Se lier a l'adresse locale et a elle seule limite la porte au reseau que
-    l'utilisateur a en tete quand il allume le serveur.
-    """
-    import ast
-    import inspect
-    import textwrap
-
-    from assistant import serveur
-
-    arbre = ast.parse(textwrap.dedent(inspect.getsource(serveur.demarrer)))
-    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
-
-    assert "0.0.0.0" not in code
-    assert "adresse_locale()" in code
 
 
-def test_le_jeton_ne_reste_pas_dans_l_adresse_du_telephone():
-    """Un jeton dans la barre d'adresse survit dans l'historique.
-
-    Il repartirait aussi dans tout partage de lien, et dans les captures
-    d'ecran. La page le range puis l'efface de l'adresse des le chargement.
-    """
-    from assistant import serveur
-
-    page = serveur.PAGE_MOBILE
-    assert "localStorage.setItem('jeton'" in page
-    assert "history.replaceState" in page
-    # Le jeton part en en-tete, jamais dans l'adresse des appels suivants.
-    assert "'X-Jeton': J()" in page
 
 
-def test_les_outils_du_serveur_sont_exposes_au_modele():
-    from assistant import llm
-
-    noms = {t.name for t in llm.TOOLS}
-    for outil in ("appairer_le_telephone", "eteindre_le_serveur",
-                  "etat_du_serveur", "enregistrer_macro", "lister_macros",
-                  "supprimer_macro", "raccourci_clavier"):
-        assert outil in noms, outil
-
-    # Allumer une porte reseau est un effet, pas une lecture.
-    for outil in ("appairer_le_telephone", "eteindre_le_serveur"):
-        assert next(t for t in llm.TOOLS if t.name == outil).effect is True
 
 # --- Rubriques et nouveaux panneaux -----------------------------------------
 
@@ -3153,33 +2528,10 @@ def test_les_nouvelles_fonctions_ont_un_endroit_ou_cliquer():
     from assistant import panels
 
     cles = {p.key for p in panels.PANELS}
-    for attendu in ("atelier", "preinstalle", "connexion", "telephone"):
+    for attendu in ("atelier", "preinstalle", "miseajour"):
         assert attendu in cles, f"le panneau {attendu} manque"
 
 
-def test_ouvrir_un_panneau_reseau_ne_declenche_aucune_sortie():
-    """Cliquer sur une icone ne doit contacter personne.
-
-    Le panneau Connexion affiche le trafic instantane, lu sur la carte
-    reseau. Lancer le test de debit a l'ouverture ferait sortir des donnees
-    parce qu'on a clique en cherchant autre chose -- et ferait attendre dix
-    secondes devant un panneau qu'on voulait juste consulter.
-    """
-    import ast
-    import inspect
-    import textwrap
-
-    from assistant import panels
-
-    arbre = ast.parse(textwrap.dedent(inspect.getsource(panels._connexion)))
-    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
-    assert "debit.tester" not in code
-    assert "network_rates" in code
-
-    # Et le panneau Telephone n'allume pas le serveur en s'affichant.
-    arbre = ast.parse(textwrap.dedent(inspect.getsource(panels._telephone)))
-    code = "\n".join(ast.unparse(n) for n in arbre.body[0].body[1:])
-    assert "demarrer" not in code and "appairer" not in code
 
 
 def test_le_texte_d_un_panneau_interactif_dit_la_meme_chose_que_ses_boutons():
@@ -3367,53 +2719,8 @@ def test_un_refus_n_envoie_aucun_clic(monkeypatch):
     assert envoyes == []
 
 
-def test_une_macro_de_clic_se_lit_sans_ambiguite(monkeypatch):
-    """Le telephone appuie sur un bouton dont le contenu a ete decide ici.
-
-    La valeur enregistree doit se relire exactement : coordonnees, bouton,
-    double. Une lecture approximative cliquerait ailleurs, ou avec le mauvais
-    bouton -- sur une action irreversible.
-    """
-    from assistant import serveur
-    from assistant.skills import control
-
-    appels = []
-    monkeypatch.setattr(control, "cliquer",
-                        lambda x, y, bouton="gauche", double=False, ask=None:
-                        appels.append((x, y, bouton, double)) or "ok")
-    monkeypatch.setattr(serveur, "macros", lambda: {
-        "simple": {"genre": "clic", "valeur": "1200,400"},
-        "droit": {"genre": "clic", "valeur": "10,20 droit"},
-        "double": {"genre": "clic", "valeur": "30 40 gauche double"},
-        "casse": {"genre": "clic", "valeur": "sans coordonnees"},
-    })
-
-    assert serveur.jouer_macro("simple")[0]
-    assert appels[-1] == (1200, 400, "gauche", False)
-    assert serveur.jouer_macro("droit")[0]
-    assert appels[-1] == (10, 20, "droit", False)
-    assert serveur.jouer_macro("double")[0]
-    assert appels[-1] == (30, 40, "gauche", True)
-
-    ok, message = serveur.jouer_macro("casse")
-    assert ok is False and "coordonnees" in message
-    assert len(appels) == 3, "une macro illisible a quand meme clique"
 
 
-def test_le_genre_clic_ne_rouvre_pas_la_porte_aux_commandes(monkeypatch):
-    """Ajouter un genre ne doit pas elargir ce que le telephone peut demander."""
-    from assistant import serveur
-
-    enregistrees = {}
-    monkeypatch.setattr(serveur.settings, "recharger",
-                        lambda: {"macros": enregistrees})
-    monkeypatch.setattr(serveur.settings, "set",
-                        lambda cle, valeur: enregistrees.update(valeur))
-
-    assert serveur.GENRES == ("texte", "touches", "clic")
-    for genre in ("commande", "shell", "exec", "python", "souris"):
-        assert "Genre inconnu" in serveur.enregistrer_macro("x", genre, "y")
-    assert enregistrees == {}
 
 
 def test_une_zone_trop_petite_ne_part_pas_a_l_ocr():
@@ -3593,7 +2900,7 @@ def test_les_libelles_de_la_barre_laterale_sont_ecrits_en_francais():
     assert "Su" not in courts, "abreviation illisible"
     assert "Sante" not in courts and "Santé" in courts
     assert "Suivi" in courts
-    assert "Téléphone" in courts
+    assert "Mise à jour" in courts
 
     for panneau in panels.PANELS:
         assert len(panneau.court or panneau.label) <= 11, (

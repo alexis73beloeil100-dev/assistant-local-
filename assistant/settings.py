@@ -46,10 +46,9 @@ def recharger() -> dict:
     """Relit le fichier, en ignorant ce qui est deja en memoire.
 
     Le cache suffit tant qu'un seul processus ecrit et lit. Il ne suffit plus
-    des qu'un autre modifie le fichier : le 24/08/2026, une macro enregistree
-    depuis un script est restee invisible au serveur local, qui gardait la
-    liste chargee a son demarrage. Rien n'echouait -- le telephone affichait
-    simplement une liste vide, et on cherchait la cause du cote du reseau.
+    des qu'un autre modifie le fichier : un reglage ecrit depuis un script
+    restait invisible a l'application, qui gardait la liste chargee a son
+    demarrage, sans que rien n'echoue.
 
     A appeler quand la fraicheur compte davantage que le cout d'une lecture :
     ce fichier fait quelques centaines d'octets.

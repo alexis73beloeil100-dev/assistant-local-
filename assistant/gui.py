@@ -492,14 +492,6 @@ class AssistantWindow(tk.Tk):
                 from assistant.atelier import Atelier
 
                 widget = Atelier(self.panel_widget_host, self)
-            elif panel.interactif == "connexion":
-                from assistant.reseau_panneaux import Connexion
-
-                widget = Connexion(self.panel_widget_host, self)
-            elif panel.interactif == "telephone":
-                from assistant.reseau_panneaux import Telephone
-
-                widget = Telephone(self.panel_widget_host, self)
             elif panel.interactif == "miseajour":
                 from assistant.reseau_panneaux import MiseAJour
 
@@ -964,9 +956,7 @@ class AssistantWindow(tk.Tk):
     #
     # Un message important ecrit en rouge au milieu du reste se lit comme du
     # decor : rien ne le separe de ce qui l'entoure, et l'oeil finit par le
-    # sauter. C'est ce qui arrivait a l'avertissement de fermeture anormale et
-    # a l'alerte de conflit RGB -- la seule ligne qui explique pourquoi les
-    # LED ne repondent pas.
+    # sauter. C'est ce qui arrivait a l'avertissement de fermeture anormale.
     BANDEAUX = {"error": "erreur", "warn": "alerte"}
 
     def add(self, texte: str, role: str = "assistant") -> None:
