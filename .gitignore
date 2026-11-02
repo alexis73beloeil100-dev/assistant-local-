@@ -40,3 +40,6 @@ REPRISE.md
 # OpenRGB ne fait plus partie de l'application : ni dans le depot, ni dans le
 # paquet. Le dossier ne sert plus que si on y pose une copie portable.
 outils/OpenRGB/
+
+# Cle maitre du mode Dev : elle ne quitte jamais le PC du proprietaire.
+*cle_maitre*

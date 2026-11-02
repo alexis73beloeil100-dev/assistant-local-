@@ -1038,18 +1038,30 @@ CONSIGNE_MODE = {
 }
 
 
+class ModeVerrouille(Exception):
+    """Le mode Dev demande une cle d'acces valable."""
+
+
 def mode_actuel() -> str:
-    from assistant import settings
+    from assistant import licence, settings
 
     mode = settings.get("mode_outils", MODE_PAR_DEFAUT)
-    return mode if mode in MODES else MODE_PAR_DEFAUT
+    if mode not in MODES:
+        return MODE_PAR_DEFAUT
+    # Verifie a chaque fois, pas seulement au clic : un reglage edite a la
+    # main, ou une cle expiree depuis, ne doit pas laisser le mode Dev ouvert.
+    if mode == "dev" and not licence.dev_autorise():
+        return MODE_PAR_DEFAUT
+    return mode
 
 
 def changer_mode(mode: str) -> None:
-    from assistant import settings
+    from assistant import licence, settings
 
     if mode not in MODES:
         raise ValueError(f"mode inconnu : {mode}")
+    if mode == "dev" and not licence.dev_autorise():
+        raise ModeVerrouille(licence.examiner(licence.cle_enregistree())[1])
     settings.set("mode_outils", mode)
 
 

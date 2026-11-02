@@ -362,10 +362,22 @@ class AssistantWindow(tk.Tk):
         lien.bind("<Button-1>", lambda _e: self.open_installer())
 
     def changer_mode(self, mode: str) -> None:
-        llm.changer_mode(mode)
+        try:
+            llm.changer_mode(mode)
+        except llm.ModeVerrouille:
+            self.fenetre_cle_dev()
+            return
         self._montrer_mode()
         nom = "Dev" if mode == "dev" else "PC"
         self.post("status", (f"Mode {nom}", t.GREEN))
+
+    def fenetre_cle_dev(self) -> None:
+        from assistant import fenetre_cle
+
+        def ouvrir_dev() -> None:
+            self.changer_mode("dev")
+
+        fenetre_cle.ouvrir(self, ouvrir_dev)
 
     def choisir_projet(self) -> None:
         from tkinter import filedialog
