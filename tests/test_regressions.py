@@ -3703,3 +3703,20 @@ def test_le_nombre_d_outils_vient_de_l_application_pas_du_modele(monkeypatch):
 def test_le_bouton_installer_reste_visible_quand_la_place_manque():
     code = open("assistant/installer.py", encoding="utf-8").read()
     assert code.index("bas.pack(side=\"bottom\"") < code.index("self.liste.pack(")
+
+
+def test_le_total_des_deux_tas_n_est_pas_additionne(monkeypatch):
+    """Capture : « Total melange les 2 tas combien » -> 194, au lieu de 165."""
+    from assistant import llm
+
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "dev")
+    monkeypatch.setattr(llm, "_call", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("le modele ne doit pas etre consulte")))
+    texte, _ = llm.chat([
+        {"role": "user", "content": "combien d'outils"},
+        {"role": "assistant", "content": "105 outils exactement."},
+        {"role": "user", "content": "Total melange les 2 tas combien"}])
+    assert f"l'application en a {len(llm.TOOLS)}, et pas 194" in texte
+    consigne = llm.avec_consigne_de_mode([{"role": "system", "content": "x"},
+                                          {"role": "user", "content": "y"}])[1]["content"]
+    assert f"en a {len(llm.TOOLS)}, et pas 194" in consigne

@@ -1663,18 +1663,22 @@ def _projets_unreal() -> str:
     return "\n".join(lignes)
 
 
+def _chiffres_outils(mode: str) -> str:
+    autre = "pc" if mode == "dev" else "dev"
+    ici = {t.name for t in outils_du_mode(mode)}
+    la = {t.name for t in outils_du_mode(autre)}
+    return (f"en mode {mode.upper()} (le mode actif), j'ai {len(ici)} outils. En mode "
+            f"{autre.upper()} : {len(la)}. Au total, l'application en a {len(ici | la)}, "
+            f"et pas {len(ici) + len(la)} : {len(ici & la)} servent dans les deux modes "
+            "et ne comptent qu'une fois.")
+
+
 def _mes_outils() -> str:
     """La liste exacte des outils du mode en cours : rien a compter de tete."""
     mode = mode_actuel()
     noms = sorted(t.name for t in outils_du_mode(mode))
-    autre = "pc" if mode == "dev" else "dev"
-    communs = set(noms) & {t.name for t in outils_du_mode(autre)}
-    return (f"REPONSE A RECOPIER TELLE QUELLE : en mode {mode.upper()} (le mode "
-            f"actif), j'ai {len(noms)} outils. En mode {autre.upper()} : "
-            f"{len(outils_du_mode(autre))}. Au total, l'application en a "
-            f"{len(TOOLS)}, et pas {len(noms) + len(outils_du_mode(autre))} : "
-            f"{len(communs)} servent dans les deux modes et ne comptent qu'une "
-            f"fois.\n\nOutils du mode {mode.upper()} :\n"
+    return ("REPONSE A RECOPIER TELLE QUELLE : " + _chiffres_outils(mode)
+            + f"\n\nOutils du mode {mode.upper()} :\n"
             + "\n".join(f"{n}. {nom}" for n, nom in enumerate(noms, 1)))
 
 
@@ -1917,6 +1921,9 @@ _QUESTION_OUTILS = re.compile(
     r"combien\b[^?.!]{0,60}\boutils?\b|\bnombre\s+d'?\s*outils?\b", re.IGNORECASE)
 
 
+_QUESTION_TOTAL = re.compile(r"\b(total|tas|deux modes|les 2|additionn)", re.IGNORECASE)
+
+
 def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
          dry_run: bool = False) -> tuple[str, list[dict]]:
     """Un tour de conversation, outils compris.
@@ -1936,7 +1943,10 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
     # recopier, il l'a deja fausse (89 annonce en mode Dev, qui en a 105).
     dernier = next((m.get("content", "") for m in reversed(messages)
                     if m.get("role") == "user"), "")
-    if isinstance(dernier, str) and _QUESTION_OUTILS.search(dernier):
+    recents = " ".join(str(m.get("content", "")) for m in messages[-4:-1])
+    if isinstance(dernier, str) and (
+            _QUESTION_OUTILS.search(dernier)
+            or (_QUESTION_TOTAL.search(dernier) and "outils" in recents.lower())):
         texte = _mes_outils().split("\n", 1)[0].split(" : ", 1)[1]
         texte = texte[0].upper() + texte[1:]
         return texte, list(messages) + [{"role": "assistant", "content": texte}]
@@ -2165,7 +2175,7 @@ def avec_consigne_de_mode(messages: list[dict]) -> list[dict]:
     if not propre:
         return propre
     mode = mode_actuel()
-    texte = CONSIGNE_MODE[mode]
+    texte = CONSIGNE_MODE[mode] + "\n\nTes outils, chiffres exacts : " + _chiffres_outils(mode)
     if mode == "dev":
         from assistant.skills import code
 
