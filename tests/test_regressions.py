@@ -3489,3 +3489,50 @@ def test_le_filet_est_pose_avant_tout_le_reste():
 
 
 
+
+
+# --- Modes Dev et PC ---------------------------------------------------------
+
+def test_chaque_outil_du_mode_dev_existe():
+    """Un nom mal orthographie disparaitrait du mode Dev sans rien dire."""
+    from assistant import llm
+
+    assert llm.OUTILS_DEV <= set(llm.BY_NAME)
+
+
+def test_le_mode_dev_n_envoie_que_ses_outils(monkeypatch):
+    from assistant import llm
+
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "dev")
+    noms = {o.name for o in llm.outils_du_mode()}
+    assert noms == set(llm.OUTILS_DEV)
+    assert "regler_volume" not in noms
+
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "pc")
+    assert len(llm.outils_du_mode()) == len(llm.TOOLS)
+
+
+def test_un_outil_du_mode_pc_nomme_de_memoire_en_mode_dev_ne_part_pas(monkeypatch):
+    from assistant import llm
+
+    lances = []
+    outil = llm.BY_NAME["regler_volume"]
+    monkeypatch.setattr(outil, "run", lambda **_k: lances.append(1) or "fait")
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "dev")
+
+    reponse = llm.dispatch("regler_volume", {})
+    assert not lances
+    assert "mode PC" in reponse
+
+
+def test_le_modele_sait_dans_quel_mode_il_est_sans_empiler(monkeypatch):
+    from assistant import llm
+
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "dev")
+    convo = [{"role": "system", "content": "regles"},
+             {"role": "user", "content": "q"}]
+    une = llm.avec_consigne_de_mode(convo)
+    deux = llm.avec_consigne_de_mode(une)
+    consignes = [m for m in deux if str(m.get("content", "")).startswith(
+        llm.MODE_MARQUEUR)]
+    assert len(consignes) == 1 and "Dev" in consignes[0]["content"]

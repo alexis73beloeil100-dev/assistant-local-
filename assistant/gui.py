@@ -331,10 +331,41 @@ class AssistantWindow(tk.Tk):
                  bg=t.SURFACE, fg=t.TEXT_FAINT, font=t.FONT_UI_TINY,
                  anchor="w").pack(fill="x", padx=t.PAD, pady=(2, 0))
 
+        # Dev / PC : ce que le modele a sous la main. En Dev, il ne voit que
+        # les outils du developpement -- plus rapide, et moins d'occasions de
+        # se tromper d'outil.
+        tk.Label(bottom, text="Mode", bg=t.SURFACE, fg=t.TEXT_FAINT,
+                 font=t.FONT_UI_TINY, anchor="w").pack(fill="x", padx=t.PAD,
+                                                       pady=(t.PAD, 2))
+        modes = tk.Frame(bottom, bg=t.SURFACE)
+        modes.pack(fill="x", padx=t.PAD)
+        self.boutons_mode = {}
+        for mode, libelle in (("pc", "PC"), ("dev", "Dev")):
+            bouton = RoundButton(modes, libelle,
+                                 lambda m=mode: self.changer_mode(m),
+                                 width=64, height=28, font=t.FONT_UI_TINY)
+            bouton.pack(side="left", padx=(0, 6))
+            self.boutons_mode[mode] = bouton
+        self._montrer_mode()
+
         lien = tk.Label(bottom, text="Composants", bg=t.SURFACE, fg=t.ACCENT,
                         font=t.FONT_UI_TINY, cursor="hand2", anchor="w")
         lien.pack(fill="x", padx=t.PAD, pady=(4, 0))
         lien.bind("<Button-1>", lambda _e: self.open_installer())
+
+    def changer_mode(self, mode: str) -> None:
+        llm.changer_mode(mode)
+        self._montrer_mode()
+        nom = "Dev" if mode == "dev" else "PC"
+        self.post("status", (f"Mode {nom}", t.GREEN))
+
+    def _montrer_mode(self) -> None:
+        actuel = llm.mode_actuel()
+        for mode, bouton in self.boutons_mode.items():
+            if mode == actuel:
+                bouton.set_couleurs(t.ACCENT, "#0b1220", "#79b4ff")
+            else:
+                bouton.set_couleurs(t.SURFACE_2, t.TEXT_DIM, t.BORDER)
 
     # --- vue panneau ------------------------------------------------------
 

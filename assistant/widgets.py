@@ -85,6 +85,14 @@ class RoundButton(tk.Canvas):
     def set_text(self, text: str) -> None:
         self.itemconfigure(self._label, text=text)
 
+    def set_couleurs(self, bg, fg, hover_bg=None) -> None:
+        """Change l'apparence, pour un bouton qui marque un etat actif."""
+        self._bg, self._fg = bg, fg
+        self._hover_bg = hover_bg or t.SURFACE_2
+        self.itemconfigure(self._shape, fill=bg,
+                           outline=t.ACCENT if bg == t.ACCENT else t.BORDER)
+        self.itemconfigure(self._label, fill=fg)
+
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
         self.itemconfigure(self._shape, fill=self._bg if enabled else t.SURFACE)

@@ -929,6 +929,67 @@ TOOLS: list[Tool] = [
 BY_NAME = {t.name: t for t in TOOLS}
 
 
+# --- Modes Dev et PC ---------------------------------------------------------
+#
+# Chaque outil decrit coute de la lecture au modele, a chaque question, et
+# chaque outil de plus est une occasion de se tromper d'outil. En mode Dev,
+# le modele ne voit que ce qui sert au developpement ; les outils du reste
+# du PC ne lui sont meme pas envoyes. Le mode se choisit par un bouton : un
+# choix automatique se tromperait parfois, et en silence.
+MODES = ("pc", "dev")
+MODE_PAR_DEFAUT = "pc"
+
+OUTILS_DEV = frozenset({
+    # Lire et retrouver le code, les assets, les journaux.
+    "chercher_fichier", "poids_dossier", "fichiers_recents",
+    "ouvrir_dans_explorateur", "etat_index", "lire_fichier",
+    "chercher_dans_fichiers", "apercu_dossier",
+    # Une erreur de l'editeur, montree en capture.
+    "lire_image", "lire_ecran", "lire_zone_ecran",
+    # Compiler, lancer les outils du moteur.
+    "executer_commande",
+    # Savoir si le PC suit pendant une compilation ou dans l'editeur.
+    "configuration_machine", "etat_machine", "diagnostiquer_lenteur",
+    # Ouvrir ou fermer l'editeur, l'IDE ; tuer un editeur fige.
+    "ouvrir_application", "fermer_application", "lister_applications",
+    "arreter_processus",
+    # Passer un extrait de code a l'utilisateur.
+    "lire_presse_papier", "copier",
+})
+
+CONSIGNE_MODE = {
+    "pc": "Mode actuel : PC. Tu as les outils de la machine Windows.",
+    "dev": ("Mode actuel : Dev. Tu n'as que les outils utiles au "
+            "developpement : fichiers et code, captures d'ecran, commandes, "
+            "applications, etat du PC. Si une demande concerne le reste de la "
+            "machine (son, jeux, nettoyage, reparations...), dis a "
+            "l'utilisateur de passer en mode PC avec le bouton Dev / PC, en "
+            "bas a gauche de la fenetre."),
+}
+
+
+def mode_actuel() -> str:
+    from assistant import settings
+
+    mode = settings.get("mode_outils", MODE_PAR_DEFAUT)
+    return mode if mode in MODES else MODE_PAR_DEFAUT
+
+
+def changer_mode(mode: str) -> None:
+    from assistant import settings
+
+    if mode not in MODES:
+        raise ValueError(f"mode inconnu : {mode}")
+    settings.set("mode_outils", mode)
+
+
+def outils_du_mode(mode: str | None = None) -> list[Tool]:
+    mode = mode or mode_actuel()
+    if mode == "dev":
+        return [t for t in TOOLS if t.name in OUTILS_DEV]
+    return list(TOOLS)
+
+
 def dispatch(name: str, args: dict, dry_run: bool = False) -> str:
     """Execute un outil. Une erreur d'outil revient au modele comme du texte.
 
@@ -939,6 +1000,10 @@ def dispatch(name: str, args: dict, dry_run: bool = False) -> str:
     tool = BY_NAME.get(name)
     if not tool:
         return f"Outil inconnu : {name}"
+    if tool not in outils_du_mode():
+        # Le modele ne l'a pas vu, mais il a pu le nommer de memoire.
+        return (f"{name} est un outil du mode PC, indisponible en mode Dev. "
+                "Dis a l'utilisateur de basculer avec le bouton Dev / PC.")
     if dry_run and tool.effect:
         return f"[simulation] {name} aurait ete execute avec {args}."
     try:
@@ -1015,7 +1080,7 @@ def _call(convo: list[dict], with_tools: bool = True,
     if think is not None:
         payload["think"] = think
     if with_tools:
-        payload["tools"] = [t.schema() for t in TOOLS]
+        payload["tools"] = [t.schema() for t in outils_du_mode()]
     r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=payload, timeout=300)
     r.raise_for_status()
     return r.json()["message"]
@@ -1037,6 +1102,7 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
     # l'interface : la ligne de commande passe aussi par
     # cette fonction, et doit en beneficier autant.
     convo = avec_carte_machine(list(messages))
+    convo = avec_consigne_de_mode(convo)
 
     for _ in range(max_rounds):
         message = _call(convo, with_tools=True)
@@ -1227,6 +1293,22 @@ def message_carte_machine() -> dict:
             "est une invention."
         ),
     }
+
+
+MODE_MARQUEUR = "Mode actuel :"
+
+
+def avec_consigne_de_mode(messages: list[dict]) -> list[dict]:
+    """Dit au modele dans quel mode il travaille, sans empiler les consignes."""
+    propre = [
+        m for m in messages
+        if not (m.get("role") == "system"
+                and str(m.get("content", "")).startswith(MODE_MARQUEUR))
+    ]
+    if not propre:
+        return propre
+    consigne = {"role": "system", "content": CONSIGNE_MODE[mode_actuel()]}
+    return [propre[0], consigne] + propre[1:]
 
 
 def avec_carte_machine(messages: list[dict]) -> list[dict]:
