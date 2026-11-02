@@ -1,8 +1,8 @@
 """Composants installables, et ce que la machine peut reellement supporter.
 
 L'executable seul sait deja lire les fichiers, diagnostiquer le materiel et
-lancer les jeux. Tout le reste -- comprendre le langage naturel, ecouter au
-micro -- demande des modeles qui pesent des giga-octets et qu'on ne peut pas
+lancer les jeux. Tout le reste -- comprendre le langage naturel, lire une
+image -- demande des modeles qui pesent des giga-octets et qu'on ne peut pas
 embarquer dans le programme.
 
 Chaque composant sait donc se detecter, s'installer, et dire s'il convient a
@@ -77,17 +77,11 @@ LLM_CHOICES = [
     ("qwen3.5:1.7b", "Qwen 3.5 1.7B - machines modestes",     1.4, 2.5),
 ]
 
-# Marge laissee a la transcription vocale. Volontairement faible : quand la
-# VRAM manque, Whisper bascule tout seul sur le processeur (voir stt.load).
+# Marge laissee a l'affichage et aux autres programmes sur la carte graphique.
 # Reserver 2 Go faisait rejeter le 4B sur une carte de 8 Go, ou il tient
 # pourtant sans probleme.
 VRAM_RESERVE = 1.2
 
-WHISPER_CHOICES = [
-    ("medium", "Whisper medium - meilleure precision",  1.5, 4.0),
-    ("small",  "Whisper small - rapide",                0.5, 2.0),
-    ("base",   "Whisper base - machines modestes",      0.15, 1.0),
-]
 
 
 # Le modele vise en priorite, quelle que soit la machine, des qu'elle peut le
@@ -140,8 +134,7 @@ def model_options() -> list[dict]:
 def fitting_models(reserve_gb: float = VRAM_RESERVE) -> list[tuple[str, str, float, float]]:
     """Modeles qui tiennent sur cette machine, du plus capable au plus leger.
 
-    La reserve laisse de la place a la transcription vocale, qui occupe le
-    GPU en meme temps que le modele de langage.
+    La reserve laisse de la place a l'affichage et aux autres programmes.
     """
     vram = vram_gb()
     if vram <= 0:
@@ -182,21 +175,6 @@ def recommend_llm() -> tuple[str, str]:
         f"{vram:.0f} Go de VRAM : le 4B demande 6,1 Go, il ne tient pas. "
         f"{libelle.split(' - ')[0]} est le mieux adapte ici."
     )
-
-
-def recommend_whisper() -> tuple[str, str]:
-    vram = vram_gb()
-    if vram >= 6:
-        return "medium", (
-            f"{vram:.0f} Go de VRAM : la transcription tourne sur le GPU, "
-            "le modele le plus precis ne coute presque rien."
-        )
-    if cpu_threads() >= 8:
-        return "small", (
-            f"{cpu_threads()} threads processeur : la transcription tournera "
-            "sur le CPU, le modele moyen serait trop lent."
-        )
-    return "base", "Machine modeste : le plus petit modele de transcription."
 
 
 # --- Composants -------------------------------------------------------------
@@ -293,56 +271,6 @@ def _install_model(name: str):
     return run
 
 
-# --- Whisper
-
-def _whisper_installed(size: str) -> bool:
-    cache = Path.home() / ".cache" / "huggingface" / "hub"
-    return (cache / f"models--Systran--faster-whisper-{size}").is_dir()
-
-
-def _install_whisper(size: str):
-    def run(progress) -> tuple[bool, str]:
-        progress(f"Telechargement du modele de transcription {size} ...")
-        try:
-            from faster_whisper import WhisperModel
-
-            # Le simple chargement declenche le telechargement et le cache.
-            model = WhisperModel(size, device="cpu", compute_type="int8")
-            del model
-        except Exception as exc:  # noqa: BLE001
-            return False, f"Echec : {type(exc).__name__}: {exc}"
-        return True, f"Whisper {size} installe"
-
-    return run
-
-
-# --- Mot-cle
-
-def _wake_installed() -> bool:
-    try:
-        import openwakeword
-
-        from assistant.voice.wake import WAKE_MODEL
-
-        base = Path(openwakeword.__file__).parent / "resources" / "models"
-        return any(base.glob(f"{WAKE_MODEL}*"))
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def _install_wake(progress) -> tuple[bool, str]:
-    progress("Telechargement du detecteur de mot-cle ...")
-    try:
-        import openwakeword
-
-        from assistant.voice.wake import WAKE_MODEL
-
-        openwakeword.utils.download_models([WAKE_MODEL])
-    except Exception as exc:  # noqa: BLE001
-        return False, f"Echec : {type(exc).__name__}: {exc}"
-    return True, "Mot-cle installe"
-
-
 # --- Raccourci et demarrage
 
 def _shortcut_installed() -> bool:
@@ -407,8 +335,6 @@ def catalogue() -> list[Component]:
     """Les composants proposes, adaptes a cette machine."""
     modele, _raison_llm = recommend_llm()
     taille_modele = next((t for i, _l, t, _v in LLM_CHOICES if i == modele), 3.4)
-    whisper, _raison_whisper = recommend_whisper()
-    taille_whisper = next((t for i, _l, t, _v in WHISPER_CHOICES if i == whisper), 1.5)
 
     return [
         Component(
@@ -429,15 +355,6 @@ def catalogue() -> list[Component]:
             size_gb=taille_modele,
             detect=lambda m=modele: _model_installed(m),
             install=_install_model(modele),
-        ),
-        Component(
-            key="whisper",
-            label=f"Reconnaissance vocale (Whisper {whisper})",
-            description="Transcrit ce que tu dis au micro. Necessaire pour le "
-                        "bouton Parler et le mot-cle.",
-            size_gb=taille_whisper,
-            detect=lambda w=whisper: _whisper_installed(w),
-            install=_install_whisper(whisper),
         ),
         Component(
             key="vision",
@@ -462,15 +379,6 @@ def catalogue() -> list[Component]:
             default=False,
             note="Facultatif. Sans lui, seul le TEXTE des images est lu, et "
                  "il se deforme parfois.",
-        ),
-        Component(
-            key="motcle",
-            label="Mot-cle \"alexa\"",
-            description="Permet de declencher l'assistant a la voix, sans "
-                        "toucher au clavier.",
-            size_gb=0.01,
-            detect=_wake_installed,
-            install=_install_wake,
         ),
         Component(
             key="raccourci",

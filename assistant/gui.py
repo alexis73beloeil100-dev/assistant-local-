@@ -26,12 +26,11 @@ import tkinter as tk
 from pathlib import Path
 
 from assistant import (apprentissage, config, connaissance, llm, panels,
-                       settings, theme as t)
+                       theme as t)
 from assistant.index import db, scanner, watcher
 from assistant.skills import games, hardware
-from assistant.voice import stt, tts, wake
-from assistant.widgets import (Bandeau, Message, NavCell, PulseRing,
-                               RoundButton, ScrollArea, StatusDot)
+from assistant.widgets import (Bandeau, Message, NavCell, RoundButton,
+                               ScrollArea, StatusDot)
 
 TITLE = "Assistant local"
 SUBTITLE = "tout reste sur cette machine"
@@ -136,21 +135,9 @@ class AssistantWindow(tk.Tk):
         # Rappels (genre, texte) pour chaque message affiche : la mini-fenetre
         # y lit la reponse a la question qu'elle a posee.
         self.abonnes_reponse: list = []
-        self.speak = tk.BooleanVar(value=False)
-        self.mic_device: int | None = None
         self.current = CHAT_KEY
         self._messages: list[Message] = []
         self._nav: dict[str, tk.Frame] = {}
-        self.recorder: stt.Recorder | None = None
-        # L'etat de l'ecoute survit a la fermeture.
-        #
-        # Il repartait decoche a chaque demarrage, et le choix n'etait ecrit
-        # nulle part : au reveil du PC, l'assistant paraissait mort alors
-        # qu'il attendait simplement qu'on recoche une case. Le mot-cle
-        # n'etait entendu par personne.
-        self.ecoute = tk.BooleanVar(
-            value=bool(settings.get("ecoute_au_demarrage", False)))
-        self.boucle_vocale: wake.VoiceLoop | None = None
         # Dernier panneau consulte, joint aux questions suivantes. Ce n'est pas
         # self.current : pour taper une question il faut revenir sur la
         # conversation, donc le panneau est deja "ferme" au moment de l'envoi.
@@ -290,7 +277,7 @@ class AssistantWindow(tk.Tk):
         interieur = liste.inner
 
         self._entete_rail(interieur, "parler")
-        self._cellule(interieur, CHAT_KEY, "Parler", "parole",
+        self._cellule(interieur, CHAT_KEY, "Discuter", "parole",
                       colonne=None)
 
         # Une grille par rubrique, plutot qu'un seul mur d'icones.
@@ -329,71 +316,25 @@ class AssistantWindow(tk.Tk):
         self._nav[key] = case
 
     def _build_sidebar_bottom(self, side) -> None:
-        """L'anneau d'ecoute, et le strict minimum autour.
-
-        Le bloc precedent empilait un selecteur de micro, un vu-metre, une
-        ligne d'aide, deux liens et deux cases : plus de deux cents pixels de
-        reglages sous un menu deja trop long. Tout est regroupe autour d'un
-        seul objet, qu'on regarde au lieu de le lire.
-        """
+        """Les reglages de la conversation, sous le menu."""
         bottom = tk.Frame(side, bg=t.SURFACE)
         bottom.pack(side="bottom", fill="x", pady=(0, t.PAD_L))
 
         tk.Frame(bottom, bg=t.BORDER, height=1).pack(fill="x", pady=(0, t.PAD))
 
-        # L'anneau EST l'interrupteur : un clic dessus bascule l'ecoute. Une
-        # case a cocher a cote d'un objet de cette taille serait le seul
-        # element qu'on ne penserait pas a toucher.
-        self.anneau = PulseRing(bottom, taille=104)
-        self.anneau.pack(pady=(0, 2))
-        self.anneau.configure(cursor="hand2")
-        self.anneau.bind("<Button-1>", lambda _e: self._basculer_depuis_anneau())
+        # Dicter : la dictee de Windows (Win+H) ecrit dans la zone de texte
+        # comme dans n'importe quelle application. La voix de l'assistant --
+        # reconnaissance et lecture a voix haute -- a ete retiree le
+        # 02/11/2026 : elle ne reconnaissait qu'une phrase sur six, la lecture
+        # ne marchait pas, et Win+H fait mieux sans rien embarquer.
+        tk.Label(bottom, text="Dicter : Win+H dans la zone de texte",
+                 bg=t.SURFACE, fg=t.TEXT_FAINT, font=t.FONT_UI_TINY,
+                 anchor="w").pack(fill="x", padx=t.PAD, pady=(2, 0))
 
-        self.ecoute_etat = tk.Label(bottom, text=f'"{wake.WAKE_PHRASE}" — coupe',
-                                    bg=t.SURFACE, fg=t.TEXT_FAINT,
-                                    font=t.FONT_UI_TINY)
-        self.ecoute_etat.pack(pady=(0, t.PAD))
-
-        tk.Checkbutton(
-            bottom, text=" Répondre à voix haute", variable=self.speak,
-            bg=t.SURFACE, fg=t.TEXT_DIM, font=t.FONT_UI_TINY,
-            selectcolor=t.SURFACE_2, activebackground=t.SURFACE,
-            activeforeground=t.TEXT, highlightthickness=0, bd=0,
-            anchor="w", cursor="hand2",
-        ).pack(fill="x", padx=t.PAD)
-
-        self.mics = stt.microphones()
-        noms = [nom[:22] for _i, nom in self.mics] or ["aucun micro"]
-        self.mic_choice = tk.StringVar(value=noms[0])
-        picker = tk.OptionMenu(bottom, self.mic_choice, *noms,
-                               command=self._on_mic_change)
-        picker.configure(bg=t.SURFACE, fg=t.TEXT_FAINT, font=t.FONT_UI_TINY,
-                         activebackground=t.BORDER, activeforeground=t.TEXT,
-                         highlightthickness=0, bd=0, anchor="w",
-                         relief="flat", cursor="hand2")
-        picker["menu"].configure(bg=t.SURFACE_2, fg=t.TEXT,
-                                 font=t.FONT_UI_TINY,
-                                 activebackground=t.ACCENT_SOFT)
-        picker.pack(fill="x", padx=t.PAD)
-
-        self.mic_hint = tk.Label(bottom, text="", bg=t.SURFACE,
-                                 fg=t.TEXT_FAINT, font=t.FONT_UI_TINY,
-                                 anchor="w")
-        self.mic_hint.pack(fill="x", padx=t.PAD)
-
-        liens = tk.Frame(bottom, bg=t.SURFACE)
-        liens.pack(fill="x", padx=t.PAD, pady=(4, 0))
-        for texte, action in (("Tester", self.test_micro),
-                              ("Composants", self.open_installer)):
-            lien = tk.Label(liens, text=texte, bg=t.SURFACE, fg=t.ACCENT,
-                            font=t.FONT_UI_TINY, cursor="hand2")
-            lien.pack(side="left", padx=(0, t.PAD))
-            lien.bind("<Button-1>", lambda _e, a=action: a())
-
-    def _basculer_depuis_anneau(self) -> None:
-        """L'anneau sert d'interrupteur : il inverse l'etat puis applique."""
-        self.ecoute.set(not self.ecoute.get())
-        self._basculer_ecoute()
+        lien = tk.Label(bottom, text="Composants", bg=t.SURFACE, fg=t.ACCENT,
+                        font=t.FONT_UI_TINY, cursor="hand2", anchor="w")
+        lien.pack(fill="x", padx=t.PAD, pady=(4, 0))
+        lien.bind("<Button-1>", lambda _e: self.open_installer())
 
     # --- vue panneau ------------------------------------------------------
 
@@ -654,9 +595,6 @@ class AssistantWindow(tk.Tk):
                                        hover_bg=t.BORDER)
         self.joindre_btn.pack(side="left", padx=(t.PAD, 0))
 
-        self.mic_btn = RoundButton(bar, "Parler", self.listen_once, width=96,
-                                   bg=t.SURFACE_2, hover_bg=t.BORDER)
-        self.mic_btn.pack(side="left", padx=(t.PAD, 0))
         self.send_btn = RoundButton(bar, "Envoyer", self.send, width=96,
                                     bg=t.ACCENT, fg="#0b1220",
                                     hover_bg="#79b4ff")
@@ -867,22 +805,6 @@ class AssistantWindow(tk.Tk):
                     cle, texte = payload
                     if self.current == cle:
                         self._render_panel(texte)
-                elif kind == "level":
-                    niveau, seuil = payload
-                    # L'anneau attend une fraction de 0 a 1. On rapporte au
-                    # seuil plutot qu'a une echelle absolue : la parole vit
-                    # dans le bas de la plage du micro, et une echelle
-                    # lineaire la rendrait invisible.
-                    plein = max(seuil * 3, 1e-4)
-                    self.anneau.set_niveau(min(niveau / plein, 1.0))
-                    self.anneau.set_couleur(
-                        t.GREEN if niveau > seuil else t.ACCENT)
-                elif kind == "ecouteinfo":
-                    texte, couleur = payload
-                    self.ecoute_etat.configure(text=texte, fg=couleur)
-                elif kind == "micinfo":
-                    texte, couleur = payload
-                    self.mic_hint.configure(text=texte, fg=couleur)
                 elif kind == "alerte":
                     self.add(payload, "user")
                     self.chat_view.pack_forget()
@@ -893,12 +815,6 @@ class AssistantWindow(tk.Tk):
                         self.focus_force()
                     except tk.TclError:
                         pass
-                    threading.Thread(target=tts.say, args=(payload,),
-                                     daemon=True).start()
-                elif kind == "speak":
-                    if self.speak.get():
-                        threading.Thread(target=tts.say, args=(payload,),
-                                         daemon=True).start()
                 else:
                     self.add(payload, kind)
         except queue.Empty:
@@ -908,7 +824,6 @@ class AssistantWindow(tk.Tk):
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
         self.send_btn.set_enabled(not busy)
-        self.mic_btn.set_enabled(not busy)
 
     # =====================================================================
     # Demarrage
@@ -1009,22 +924,6 @@ class AssistantWindow(tk.Tk):
 
         threading.Thread(target=work, daemon=True).start()
         self._brancher_alertes()
-        self._reprendre_l_ecoute()
-
-    def _reprendre_l_ecoute(self) -> None:
-        """Rearme le mot-cle si l'utilisateur avait laisse l'ecoute active.
-
-        La case retrouvait son etat coche, mais rien ne relancait la boucle :
-        l'anneau affichait "actif" et le micro n'etait pas ouvert. Il faut
-        appeler _basculer_ecoute() pour de vrai.
-
-        Avec un delai : le chargement du modele de mot-cle prend plusieurs
-        secondes et bloquerait l'affichage de la fenetre. Mieux vaut une
-        fenetre qui s'ouvre tout de suite et une ecoute qui arrive apres.
-        """
-        if not self.ecoute.get():
-            return
-        self.after(2500, self._basculer_ecoute)
 
     def _brancher_alertes(self) -> None:
         """Affiche et annonce les minuteurs et surveillances qui se declenchent.
@@ -1131,7 +1030,6 @@ class AssistantWindow(tk.Tk):
                     on_tool=lambda n, _a: self.post("tool", f"    {n}"),
                 )
                 self.post("assistant", reponse)
-                self.post("speak", reponse)
             except Exception as exc:  # noqa: BLE001
                 self.post("error", str(exc))
             # Elagage sur la taille reelle, plus sur un nombre de messages
@@ -1141,222 +1039,6 @@ class AssistantWindow(tk.Tk):
             self.post("busy", False)
 
         threading.Thread(target=work, daemon=True).start()
-
-    # =====================================================================
-    # Micro
-    # =====================================================================
-
-    def _on_mic_change(self, choix: str) -> None:
-        for index, nom in self.mics:
-            if nom[:22] == choix:
-                self.mic_device = index
-                break
-        self.mic_hint.configure(text="")
-        self.anneau.set_niveau(0.0)
-
-    def test_micro(self) -> None:
-        if self.busy:
-            return
-        self.mic_hint.configure(text="mesure ...", fg=t.TEXT_FAINT)
-
-        def work():
-            resultat = stt.probe(self.mic_device)
-            if not resultat["ok"]:
-                self.post("micinfo", (resultat["erreur"][:34], t.RED))
-            elif resultat["crete"] < 1e-5:
-                self.post("micinfo", ("muet - choisis un autre micro", t.RED))
-            else:
-                self.post("micinfo", (
-                    f"bruit {resultat['bruit_de_fond']:.4f}  "
-                    f"seuil {resultat['seuil_calcule']:.4f}", t.GREEN))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def listen_once(self) -> None:
-        """Demarre ou arrete la dictee.
-
-        Deux clics, pas de devinette : la detection automatique de fin de
-        phrase se declenchait sur un simple pic de bruit ambiant et coupait
-        l'enregistrement avant que l'utilisateur ait fini de parler.
-        """
-        if self.recorder is not None and self.recorder.running:
-            self._finish_dictation()
-            return
-        if self.busy:
-            return
-
-        # L'ecoute permanente tient deja le micro : ouvrir un second flux
-        # echouait sur "micro deja en cours d'utilisation", et le bouton
-        # semblait ne rien faire. On lui demande d'enregistrer a sa place ;
-        # elle coupe seule a la fin de la phrase.
-        boucle = getattr(self, "boucle_vocale", None)
-        if boucle is not None:
-            self.show(CHAT_KEY)
-            boucle.trigger_now()
-            self.post("status", ("Parle, je coupe a la fin de ta phrase",
-                                 t.ACCENT))
-            return
-
-        self.show(CHAT_KEY)
-        self.recorder = stt.Recorder(device=self.mic_device)
-        demarre = self.recorder.start(
-            on_level=lambda niveau, seuil: self.post("level", (niveau, seuil))
-        )
-        if not demarre:
-            self.post("error", "Le micro est deja en cours d'utilisation.")
-            return
-
-        self.anneau.set_actif(True)
-        self.mic_btn.set_text("Terminer")
-        self.send_btn.set_enabled(False)
-        self.post("status", ("Parle, puis clique Terminer", t.ACCENT))
-
-    def _finish_dictation(self) -> None:
-        enregistreur = self.recorder
-        self.recorder = None
-        if enregistreur is None:
-            return
-
-        self.mic_btn.set_text("Parler")
-        self.mic_btn.set_enabled(False)
-        self.post("status", ("Transcription", t.AMBER))
-
-        def work():
-            audio = enregistreur.stop()
-            self.anneau.set_niveau(0.0)
-            # La dictee a allume l'anneau ; l'ecoute permanente, elle, le
-            # garde allume tant que la case est active.
-            if not self.ecoute.get():
-                self.post("appel", lambda: self.anneau.set_actif(False))
-
-            if enregistreur.error:
-                self.post("error", f"Micro : {enregistreur.error}")
-            elif audio.size == 0:
-                self.post("info",
-                          "Le micro n'a rien capte du tout. Choisis-en un "
-                          "autre dans la liste a gauche.")
-            else:
-                import numpy as _np
-
-                duree = audio.size / stt.SAMPLE_RATE
-                crete = float(_np.max(_np.abs(audio)))
-                try:
-                    texte = stt.transcribe(audio)
-                except Exception as exc:  # noqa: BLE001
-                    texte = ""
-                    self.post("error", f"Transcription impossible : {exc}")
-
-                if texte:
-                    self.post("appel", lambda: self.ask(texte))
-                else:
-                    self.post("info",
-                              f"Rien compris dans {duree:.1f} s d'audio "
-                              f"(niveau maximal {crete:.3f}). "
-                              "Parle plus fort ou plus pres du micro ; sous "
-                              "0.01, monte le volume d'entree dans les "
-                              "parametres son de Windows.")
-
-            self.post("busy", False)
-            self.post("appel", lambda: self.mic_btn.set_enabled(True))
-            self.post("status", ("Pret", t.GREEN))
-
-        threading.Thread(target=work, daemon=True).start()
-
-    # =====================================================================
-    # Ecoute permanente
-    # =====================================================================
-
-    def _basculer_ecoute(self) -> None:
-        """Active ou coupe le mot-cle et le raccourci global.
-
-        Le choix est MEMORISE : l'assistant repart dans l'etat ou tu l'as
-        laisse. Le mot-cle tient le micro ouvert en continu -- il ne transcrit
-        et n'envoie rien tant que "alexa" n'est pas prononce, mais le micro
-        est bien ouvert. C'est pour ca que ca reste un reglage, et qu'on le
-        respecte au lieu de l'imposer dans un sens ou dans l'autre.
-        """
-        settings.set("ecoute_au_demarrage", bool(self.ecoute.get()))
-
-        if not self.ecoute.get():
-            if self.boucle_vocale is not None:
-                self.boucle_vocale.stop()
-                self.boucle_vocale = None
-            self.anneau.set_actif(False)
-            self.ecoute_etat.configure(text=f'"{wake.WAKE_PHRASE}" — coupe',
-                                       fg=t.TEXT_FAINT)
-            self.post("status", ("Pret", t.GREEN))
-            return
-
-        self.anneau.set_actif(True)
-        self.ecoute_etat.configure(text="chargement du mot-cle ...",
-                                   fg=t.TEXT_FAINT)
-
-        def demarrer():
-            boucle = wake.VoiceLoop(device=self.mic_device)
-            # A conserver AVANT de lancer la boucle : sans cette ligne, l'objet
-            # restait local et decocher la case ne pouvait rien arreter.
-            self.boucle_vocale = boucle
-
-            try:
-                boucle.start_hotkey()
-            except Exception as exc:  # noqa: BLE001
-                self.post("ecouteinfo", (f"raccourci indisponible : {exc}"[:34],
-                                         t.AMBER))
-
-            def sur_commande(texte: str) -> None:
-                self.post("appel", lambda: self.ask(texte))
-
-            def sur_declenchement(trigger) -> None:
-                detail = f" ({trigger.score})" if trigger.score else ""
-                self.post("status", (f"{trigger.source}{detail} : parle",
-                                     t.ACCENT))
-                threading.Thread(target=tts.say, args=("Je t'ecoute.",),
-                                 daemon=True).start()
-
-            def sur_etat(message: str) -> None:
-                self.post("ecouteinfo", (message[:34], t.TEXT_FAINT))
-                # Un echec de la commande vocale ne doit pas rester dans la
-                # petite ligne d'etat : on croyait qu'il n'avait rien fait.
-                if message in ("Rien entendu.", "Transcription vide."):
-                    self.post("info", f"{message} Parle plus pres du micro, "
-                                      "ou verifie le micro choisi a gauche.")
-
-            def sur_score(score: float) -> None:
-                # Un temoin permanent : l'utilisateur voit sa voix faire
-                # respirer l'anneau, et sait donc que le micro et le detecteur
-                # marchent, meme quand le mot-cle n'est pas reconnu.
-                atteint = score >= boucle.threshold
-                couleur = t.GREEN if atteint else t.TEXT_FAINT
-                self.post("ecouteinfo",
-                          (f'"{wake.WAKE_PHRASE}" — {score:.2f} '
-                           f'/ {boucle.threshold:.2f}', couleur))
-                self.post("appel", lambda: (
-                    self.anneau.set_niveau(min(score / boucle.threshold, 1.0)),
-                    self.anneau.set_couleur(t.GREEN if atteint else t.ACCENT),
-                ))
-
-            try:
-                self.post("ecouteinfo",
-                          (f'"{wake.WAKE_PHRASE}" ou Ctrl+Alt+Espace', t.GREEN))
-                threading.Thread(
-                    target=tts.say,
-                    args=(f"Ecoute permanente activee. Dis {wake.WAKE_PHRASE}.",),
-                    daemon=True).start()
-                boucle.run(sur_commande, on_trigger=sur_declenchement,
-                           on_status=sur_etat, on_score=sur_score)
-            except Exception as exc:  # noqa: BLE001
-                # Le message complet, pas seulement le type : une erreur de
-                # micro et une erreur de modele ne se corrigent pas pareil.
-                self.post("ecouteinfo", (f"arret : {exc}"[:34], t.RED))
-                self.post("status", (f"Ecoute impossible : {exc}"[:70], t.RED))
-                self.post("appel", lambda: self.ecoute.set(False))
-
-            # La boucle s'est arretee, pour une raison ou une autre : l'anneau
-            # ne doit pas continuer a tourner comme si on ecoutait encore.
-            self.post("appel", lambda: self.anneau.set_actif(False))
-            self.boucle_vocale = None
-
-        threading.Thread(target=demarrer, name="ecoute", daemon=True).start()
 
     # =====================================================================
     # Confirmation des actions

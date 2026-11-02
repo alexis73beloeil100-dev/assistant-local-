@@ -80,8 +80,8 @@ def _accueil() -> str:
         "DEUX FACONS DE S'EN SERVIR",
         "",
         "  1. Les menus a gauche, pour consulter. Un clic, affichage immediat.",
-        "  2. La conversation, pour demander. Tape, ou clique le bouton Parler",
-        "     puis reclique sur Terminer quand tu as fini de parler.",
+        "  2. La conversation, pour demander. Tape ta question, ou dicte-la",
+        "     avec la dictee de Windows : Win+H dans la zone de texte.",
         "",
         "",
         "ESSAIE — clique une ligne, elle part comme si tu l'avais tapee",
@@ -125,11 +125,9 @@ def _accueil() -> str:
         "",
         "SI QUELQUE CHOSE NE MARCHE PAS",
         "",
-        "  Ouvre le menu \"Autotest\" : il verifie onze points et dit, pour",
-        "  chacun, ce qui manque et quoi faire.",
+        "  Ouvre le menu \"Autotest\" : il verifie chaque partie et dit, pour",
+        "  chacune, ce qui manque et quoi faire.",
         "",
-        "  Le micro n'ecrit rien ? Clique \"Tester le micro\" en bas a gauche.",
-        "  S'il affiche \"muet\", choisis-en un autre dans la liste au-dessus.",
     ]
     return "\n".join(lignes)
 

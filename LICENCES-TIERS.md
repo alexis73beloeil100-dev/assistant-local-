@@ -86,43 +86,25 @@ passer en GPL. Ce n'est pas le cas.
 
 ---
 
-## Bibliothèques NVIDIA — licence propriétaire
-
-`nvidia-cublas-cu12` et `nvidia-cudnn-cu12` pèsent 1 986 Mo, soit 74 % du
-dossier livré. Elles sont sous licence propriétaire NVIDIA, qui **autorise la
-redistribution** avec une application, sans modification et avec l'avis de
-droit d'auteur conservé — ce que fait l'installateur.
-
----
-
 ## Le reste — permissif
 
 | Composant | Version | Licence |
 |---|---|---|
-| faster-whisper | 1.2.1 | MIT |
-| ctranslate2 | 4.8.1 | MIT |
 | onnxruntime | 1.29.0 | MIT |
 | comtypes | 1.4.16 | MIT |
 | mss | 10.2.0 | MIT |
-| sounddevice | 0.5.6 | MIT |
 | opencv-python | 5.0.0.93 | Apache 2.0 |
-| openWakeWord | 0.6.0 | Apache 2.0 |
 | rapidocr-onnxruntime | 1.4.4 | Apache 2.0 |
 | watchdog | 6.0.0 | Apache 2.0 |
-| huggingface-hub | 1.28.0 | Apache 2.0 |
 | requests | 2.34.2 | Apache 2.0 |
 | numpy | 2.5.2 | BSD-3-Clause et autres |
-| scipy | 1.18.0 | BSD |
-| scikit-learn | 1.9.0 | BSD-3-Clause |
 | psutil | 7.2.2 | BSD-3-Clause |
 | send2trash | 2.1.0 | BSD-3-Clause |
 | reportlab | 5.0.1 | BSD |
 | av | 18.1.0 | BSD-3-Clause |
-| pyttsx3 | 2.99 | MPL-2.0 |
 
-MPL-2.0 (pyttsx3) est un copyleft **par fichier** : tant que la bibliothèque
-n'est pas modifiée, il n'y a rien à faire de plus. Si un jour un correctif y
-est apporté, ce fichier-là doit être publié.
+pyttsx3 (MPL-2.0), faster-whisper, openWakeWord et les bibliothèques NVIDIA
+ne sont plus livrés depuis le retrait de la voix, le 02/11/2026.
 
 ---
 

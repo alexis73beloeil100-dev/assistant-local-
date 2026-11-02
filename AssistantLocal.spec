@@ -45,7 +45,7 @@ if _os.path.isdir('outils'):
         for _fichier in _emporter:
             datas.append((_os.path.join(_racine, _fichier), _racine))
 binaries = []
-hiddenimports = ['pyttsx3.drivers', 'pyttsx3.drivers.sapi5', 'pynput.keyboard._win32', 'pynput.mouse._win32']
+hiddenimports = ['pynput.keyboard._win32', 'pynput.mouse._win32']
 hiddenimports += collect_submodules('assistant')
 
 # RapidOCR embarque ses modeles ONNX comme fichiers de donnees. Sans cette
@@ -53,21 +53,9 @@ hiddenimports += collect_submodules('assistant')
 # lecture d'image sur un FileNotFoundError.
 tmp_ret = collect_all('rapidocr_onnxruntime')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('faster_whisper')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('ctranslate2')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('onnxruntime')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('openwakeword')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('sounddevice')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pyttsx3')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('comtypes')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('nvidia')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 # pywin32, pour trois choses qui echouent silencieusement sans lui :
@@ -99,7 +87,13 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['openrgb'],
+    # La voix (reconnaissance et lecture) a ete retiree le 02/11/2026. Ses
+    # bibliotheques peuvent rester dans un .venv ancien : on les exclut pour
+    # qu'elles ne repartent pas dans l'installateur. Les bibliotheques CUDA
+    # surtout : elles pesaient 74 % du dossier livre.
+    excludes=['openrgb', 'faster_whisper', 'ctranslate2', 'openwakeword',
+              'sounddevice', 'pyttsx3', 'nvidia', 'sklearn', 'scipy',
+              'tokenizers', 'huggingface_hub'],
     noarchive=False,
     optimize=0,
 )

@@ -14,30 +14,8 @@ import pytest
 
 # --- Le micro qui n'ecrivait jamais -----------------------------------------
 
-def test_le_seuil_de_parole_ne_depasse_jamais_le_plafond():
-    """Le micro semblait marcher et ne transcrivait rien.
-
-    Un bruit de fond eleve produisait un seuil que la voix ne franchissait
-    jamais : l'enregistrement repartait vide. Le plafond est ce qui garantit
-    qu'un micro bruyant reste utilisable.
-    """
-    from assistant.voice import stt
-
-    for bruit in (0.0, 0.003, 0.02, 0.05, 0.5, 10.0):
-        seuil = stt.speech_threshold(bruit)
-        assert stt.MIN_THRESHOLD <= seuil <= stt.MAX_THRESHOLD
-
-    # Cas mesure sur la machine de developpement.
-    assert stt.speech_threshold(0.0033) == pytest.approx(0.00726, abs=1e-4)
-    # Un bruit de fond eleve doit rester plafonne.
-    assert stt.speech_threshold(0.019) == stt.MAX_THRESHOLD
 
 
-def test_le_plafond_reste_atteignable_par_une_voix():
-    """Le plafond avait ete fixe a 0.05, hors de portee d'un micro faible."""
-    from assistant.voice import stt
-
-    assert stt.MAX_THRESHOLD <= 0.025
 
 
 # --- Le contexte bride ------------------------------------------------------
@@ -338,151 +316,20 @@ def test_les_chemins_windows_sont_normalises():
 
 # --- La voix et le mot-cle ---------------------------------------------------
 
-def test_le_moteur_vocal_n_est_plus_pyttsx3():
-    """pyttsx3 ne parlait qu'une fois.
-
-    Mesure : premier enonce 3,8 s avec du son, enonces suivants 0,1 s et le
-    silence -- sa boucle interne est consommee par le premier runAndWait().
-    On parle donc a SAPI directement.
-    """
-    import inspect
-
-    from assistant.voice import tts
-
-    source = inspect.getsource(tts)
-    assert "SAPI.SpVoice" in source
-
-    # On regarde les IMPORTS, pas le source entier : le docstring du module
-    # explique justement pourquoi pyttsx3 a ete abandonne, et chercher le mot
-    # partout faisait echouer le test sur sa propre explication.
-    imports = [ligne for ligne in source.splitlines()
-               if ligne.strip().startswith(("import ", "from "))]
-    assert not any("pyttsx3" in ligne for ligne in imports)
 
 
-def test_la_voix_est_cherchee_dans_les_deux_magasins_windows():
-    """SAPI n'enumere pas tout.
-
-    Sur la machine de reference, SAPI ne voyait qu'Hortense alors que Paul,
-    voix masculine francaise, etait deja installe -- range dans le magasin
-    OneCore, que SAPI n'ouvre pas de lui-meme.
-    """
-    from assistant.voice import tts
-
-    assert "Speech_OneCore" in tts.ONECORE
 
 
-def test_une_voix_francaise_masculine_est_preferee(monkeypatch):
-    from assistant.voice import tts
-
-    class Jeton:
-        def __init__(self, nom, langue, genre):
-            self._n, self._l, self._g = nom, langue, genre
-
-        def GetDescription(self):
-            return self._n
-
-        def GetAttribute(self, cle):
-            return {"Language": self._l, "Gender": self._g}[cle]
-
-    class Voix:
-        Voice = None
-
-    disponibles = [
-        ("Microsoft Zira - English (United States)", Jeton("z", "409", "Female")),
-        ("Microsoft Hortense - French (France)", Jeton("h", "40C", "Female")),
-        ("Microsoft Paul - French (France)", Jeton("p", "40C", "Male")),
-    ]
-    disponibles = [(nom, jeton) for nom, jeton in disponibles]
-    monkeypatch.setattr(tts, "_jetons", lambda _v: disponibles)
-    monkeypatch.setattr(tts.settings, "get", lambda _k, d=None: d)
-
-    assert tts._choisir(Voix()) == "Microsoft Paul - French (France)"
 
 
-def test_a_defaut_de_voix_masculine_on_prend_une_voix_francaise(monkeypatch):
-    from assistant.voice import tts
-
-    class Jeton:
-        def GetDescription(self):
-            return "Microsoft Hortense - French (France)"
-
-        def GetAttribute(self, _cle):
-            return "40C"
-
-    class Voix:
-        Voice = None
-
-    monkeypatch.setattr(
-        tts, "_jetons",
-        lambda _v: [("Microsoft Hortense - French (France)", Jeton())])
-    monkeypatch.setattr(tts.settings, "get", lambda _k, d=None: d)
-
-    assert "Hortense" in tts._choisir(Voix())
 
 
-def test_le_seuil_du_mot_cle_laisse_passer_un_accent_francais():
-    """Les modeles openWakeWord sont tous entraines sur de l'anglais.
-
-    Mesure du 21/08 sur une vraie voix francaise : le mot-cle prononce monte a
-    0,692, le silence a une mediane de 0,0000 et un 95e centile de 0,0001. A
-    0,5 le declenchement reste incertain ; a 0,3 il passe, en restant des
-    milliers de fois au-dessus du bruit.
-    """
-    from assistant.voice import wake
-
-    assert wake.WAKE_THRESHOLD <= 0.35, "un francophone n'atteindra pas ce seuil"
-    assert wake.WAKE_THRESHOLD >= 0.1, "seuil trop bas : declenchements pour rien"
 
 
-def test_le_mot_cle_est_celui_qui_marche_sur_une_voix_francaise():
-    """"hey jarvis" ne reconnaissait pas la voix de l'utilisateur.
-
-    Les deux detecteurs ont tourne en parallele sur le meme flux, meme micro,
-    meme voix : "hey jarvis" plafonne a 0,097 sans jamais franchir le seuil,
-    "alexa" monte a 0,692 et tient quatre blocs au-dessus. Ce n'etait ni le
-    micro, ni le seuil, ni la regle de confirmation : le modele ne reconnait
-    pas cette prononciation.
-
-    Le mot-cle doit rester l'un des six modeles pre-entraines fournis : tout
-    autre nom demanderait d'entrainer un reseau (torch, tensorflow, des heures).
-    """
-    from assistant.voice import wake
-
-    assert wake.WAKE_MODEL == "alexa"
-    assert wake.WAKE_PHRASE, "l'interface a besoin d'un libelle a afficher"
 
 
-def test_un_seul_bloc_au_dessus_du_seuil_declenche_le_mot_cle():
-    """Exiger deux blocs consecutifs rendait le mot-cle indeclenchable.
-
-    Mesure du 21/08 sur une vraie voix : 0.2242 puis 0.3525 puis 0.0577, en
-    blocs de 80 ms. Le score ne tient qu'un bloc, donc deux blocs consecutifs
-    au-dessus du seuil ne se produisent jamais -- le mot-cle etait reconnu
-    (0.3525 > 0.3) et ne declenchait rien.
-
-    C'est sans danger : sur les memes 45 secondes, la mediane du silence est
-    0.0000 et le maximum ambiant 0.0226, treize fois sous le seuil.
-    """
-    from assistant.voice import wake
-
-    assert wake.BLOCS_CONFIRMATION == 1
 
 
-def test_la_boucle_vocale_est_conservee_pour_pouvoir_l_arreter():
-    """Sans cela, decocher "Ecoute permanente" n'arretait rien.
-
-    L'objet restait dans une variable locale et l'attribut valait toujours
-    None : le micro continuait d'etre ecoute apres avoir decoche.
-    """
-    import inspect
-
-    from assistant import gui
-
-    # La classe s'appelle AssistantWindow. Ecrit gui.App, ce test levait une
-    # AttributeError et ne verifiait donc rien du tout.
-    source = inspect.getsource(gui.AssistantWindow._basculer_ecoute)
-    assert "self.boucle_vocale = boucle" in source
 
 
 # --- La connaissance de la machine -------------------------------------------
@@ -1514,49 +1361,10 @@ def test_les_deux_lanceurs_arment_le_journal_de_vie():
         assert "vie.arret(" in texte, nom
 
 
-def test_l_ecoute_retrouve_l_etat_ou_on_l_a_laissee():
-    """La case repartait decochee a chaque demarrage et le choix n'etait ecrit
-    nulle part. Au reveil du PC, l'assistant paraissait mort : il attendait
-    qu'on recoche une case, et "alexa" n'etait entendu par personne."""
-    import inspect
-
-    from assistant import gui
-
-    source = inspect.getsource(gui.AssistantWindow.__init__)
-    assert 'settings.get("ecoute_au_demarrage"' in source
-
-    bascule = inspect.getsource(gui.AssistantWindow._basculer_ecoute)
-    assert 'settings.set("ecoute_au_demarrage"' in bascule
-    # L'enregistrement doit preceder le retour anticipe du cas "decoche",
-    # sinon couper l'ecoute ne serait jamais memorise.
-    assert bascule.index('settings.set') < bascule.index('if not self.ecoute.get()')
 
 
-def test_cocher_la_case_ne_suffit_pas_a_ouvrir_le_micro():
-    """Relire le reglage remettait la case dans le bon etat, mais rien ne
-    relancait la boucle : l'anneau affichait "actif" et le micro restait
-    ferme. Il faut appeler _basculer_ecoute() pour de vrai."""
-    import inspect
-
-    from assistant import gui
-
-    source = inspect.getsource(gui.AssistantWindow._reprendre_l_ecoute)
-    assert "_basculer_ecoute" in source
-    assert "self.ecoute.get()" in source
 
 
-def test_le_mot_cle_ne_declenche_qu_une_commande_a_la_fois():
-    """Une fois la phrase dite, rien ne doit reveiller l'assistant tant que
-    "alexa" n'a pas ete redit. Sans la remise a zero du detecteur, l'audio de
-    la commande elle-meme le redeclenchait en boucle."""
-    import inspect
-
-    from assistant.voice import wake
-
-    source = inspect.getsource(wake.VoiceLoop.run)
-    assert "_oww.reset()" in source
-    assert "WAKE_COOLDOWN" in source
-    assert wake.WAKE_COOLDOWN > 0
 
 
 def test_une_session_encore_vivante_n_est_pas_declaree_morte(tmp_path, monkeypatch):
@@ -4372,25 +4180,5 @@ def test_le_filet_est_pose_avant_tout_le_reste():
     assert corps.index("sans_console.installer()") < corps.index("vie.demarrer")
 
 
-def test_la_voix_transcrite_passe_par_la_file_et_pas_par_after():
-    """after() appele depuis un fil de travail peut echouer en silence.
-
-    La phrase dictee etait transcrite, puis remise a la fenetre par
-    self.after(0, ...) depuis le fil de l'ecoute : elle pouvait se perdre, et
-    l'utilisateur voyait le micro s'activer sans qu'aucun mot n'apparaisse.
-    """
-    from pathlib import Path
-
-    source = (Path(__file__).resolve().parent.parent / "assistant"
-              / "gui.py").read_text(encoding="utf-8")
-    assert "self.after(0," not in source
 
 
-def test_parler_pendant_l_ecoute_permanente_ne_rouvre_pas_le_micro():
-    """Le second flux echouait sur "micro deja en cours d'utilisation"."""
-    import inspect
-
-    from assistant import gui
-
-    source = inspect.getsource(gui.AssistantWindow.listen_once)
-    assert source.index("trigger_now") < source.index("stt.Recorder")

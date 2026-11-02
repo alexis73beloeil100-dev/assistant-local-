@@ -16,11 +16,9 @@ from importlib import metadata
 # Ce qui part reellement dans l'installateur. Les outils de developpement
 # (pytest, flake8) n'y sont pas : ils ne sont pas redistribues.
 EMBARQUE = [
-    "faster-whisper", "ctranslate2", "onnxruntime", "comtypes", "mss",
-    "sounddevice", "opencv-python", "openwakeword", "rapidocr-onnxruntime",
-    "watchdog", "huggingface-hub", "requests", "numpy", "scipy",
-    "scikit-learn", "psutil", "send2trash", "reportlab", "av", "pyttsx3",
-    "pycaw", "nvidia-cublas-cu12", "nvidia-cudnn-cu12",
+    "onnxruntime", "comtypes", "mss", "opencv-python",
+    "rapidocr-onnxruntime", "watchdog", "requests", "numpy", "psutil",
+    "send2trash", "reportlab", "av", "pycaw",
 ]
 
 # Celles qui imposent quelque chose a la redistribution. Le programme les

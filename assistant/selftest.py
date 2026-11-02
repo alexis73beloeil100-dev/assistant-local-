@@ -120,47 +120,6 @@ def check_modele():
     return OK, config.LLM_MODEL, ""
 
 
-def check_transcription():
-    try:
-        from assistant.voice import stt
-
-        _modele, appareil = stt.load()
-    except Exception as exc:  # noqa: BLE001
-        return ABSENT, f"{type(exc).__name__}: {str(exc)[:90]}", (
-            "Ecran Composants : installe la reconnaissance vocale."
-        )
-    if appareil.startswith("cpu"):
-        return PARTIEL, f"{appareil} (le GPU n'a pas pu etre utilise)", (
-            "Fonctionne, mais plus lentement. Sur carte NVIDIA, verifie les "
-            "pilotes et les bibliotheques CUDA."
-        )
-    return OK, appareil, ""
-
-
-def check_micro():
-    try:
-        from assistant.voice import stt
-
-        micros = stt.microphones()
-    except Exception as exc:  # noqa: BLE001
-        return ECHEC, f"{type(exc).__name__}: {exc}", ""
-    if not micros:
-        return ABSENT, "aucun micro detecte", (
-            "Le bouton Parler et le mot-cle ne fonctionneront pas."
-        )
-    sonde = stt.probe(None, 1.0)
-    if not sonde.get("ok"):
-        return PARTIEL, f"{len(micros)} micro(s), sonde en echec", (
-            "Choisis un autre micro dans la barre laterale."
-        )
-    if sonde.get("crete", 0) < 1e-5:
-        return PARTIEL, f"{len(micros)} micro(s), celui par defaut est muet", (
-            "Choisis un autre micro dans la barre laterale."
-        )
-    return OK, (f"{len(micros)} micro(s), bruit de fond "
-                f"{sonde.get('bruit_de_fond')}"), ""
-
-
 def check_lecture_image():
     try:
         from assistant.skills import vision
@@ -183,22 +142,6 @@ def check_lecture_image():
         "Ecran Composants : le modele de vision permet de comprendre la "
         "disposition d'une capture, pas seulement son texte."
     )
-
-
-def check_synthese_vocale():
-    try:
-        from assistant.voice import tts
-
-        voix = tts.voices()
-    except Exception as exc:  # noqa: BLE001
-        return ABSENT, f"{type(exc).__name__}: {str(exc)[:80]}", ""
-    francaises = [v for v in voix if "french" in v.lower() or "fr" in v.lower()]
-    if not francaises:
-        return PARTIEL, f"{len(voix)} voix, aucune en francais", (
-            "Parametres Windows > Heure et langue > Voix : ajoute une voix "
-            "francaise."
-        )
-    return OK, francaises[0], ""
 
 
 def check_applications():
@@ -332,10 +275,7 @@ VERIFICATIONS = [
     ("Releve materiel", check_releve_materiel, True),
     ("Moteur d'IA", check_moteur, False),
     ("Modele de langage", check_modele, False),
-    ("Transcription vocale", check_transcription, False),
-    ("Micro", check_micro, False),
     ("Lecture d'images", check_lecture_image, False),
-    ("Synthese vocale", check_synthese_vocale, False),
     ("Detection des jeux", check_jeux, False),
     # Essentiels : ces deux-la echouent SILENCIEUSEMENT une fois packages, et
     # c'est precisement ce qu'un autotest doit attraper.

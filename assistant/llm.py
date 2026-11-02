@@ -482,8 +482,8 @@ TOOLS: list[Tool] = [
     Tool(
         "autotest",
         "Verifie que chaque partie de l'assistant fonctionne sur cette "
-        "machine : releve materiel, moteur d'IA, modele, micro, transcription, "
-        "lecture d'images, voix. Utile quand quelque chose ne marche pas sans "
+        "machine : releve materiel, moteur d'IA, modele, lecture d'images. "
+        "Utile quand quelque chose ne marche pas sans "
         "qu'on sache quoi.",
         _obj({}),
         lambda: selftest.report(),
@@ -1215,8 +1215,8 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
     deja tous les resultats sous les yeux, il ne lui reste qu'a les formuler.
     """
     # La carte de la machine est jointe a chaque tour, ici et pas dans
-    # l'interface : la ligne de commande et la boucle vocale passent aussi par
-    # cette fonction, et doivent en beneficier autant.
+    # l'interface : la ligne de commande passe aussi par
+    # cette fonction, et doit en beneficier autant.
     convo = avec_carte_machine(list(messages))
 
     for _ in range(max_rounds):

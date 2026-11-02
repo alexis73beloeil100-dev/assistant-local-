@@ -11,7 +11,6 @@ aussi la-bas, et se poursuit la-bas d'un clic.
 
 L'oeil de l'orbe dit ce qu'il fait :
     cyan    pret
-    vert    il ecoute
     ambre   il reflechit
 """
 from __future__ import annotations
@@ -26,7 +25,7 @@ RACCOURCI_LISIBLE = "Win+Maj+A"
 LARGEUR = 380
 HAUT_ECRAN = 36          # distance au bord haut de l'ecran, en pixels
 ORBE = 104               # diametre de l'orbe
-BARRE_L, BARRE_H = 104, 38
+BARRE_L, BARRE_H = 52, 38
 
 # Couleur rendue transparente par Windows : tout ce qui la porte disparait,
 # et la fenetre prend la forme de ce qu'on y dessine. Elle ne doit servir a
@@ -39,7 +38,7 @@ ECRAN = "#08161C"
 BARRE = "#0A0F14"
 BARRE_BORD = "#24323C"
 
-YEUX = {"pret": t.ACCENT, "ecoute": t.GREEN, "reflexion": t.AMBER}
+YEUX = {"pret": t.ACCENT, "reflexion": t.AMBER}
 
 
 class MiniFenetre(tk.Toplevel):
@@ -50,7 +49,6 @@ class MiniFenetre(tk.Toplevel):
         self.fenetre = fenetre
         self.etat = "pret"
         self.attend_reponse = False
-        self.ecoute = False
 
         self.withdraw()
         self.overrideredirect(True)
@@ -99,7 +97,6 @@ class MiniFenetre(tk.Toplevel):
         self.bind("<Escape>", lambda _e: self.cacher())
         self.toile.tag_bind("crayon", "<Button-1>",
                             lambda _e: self.montrer_saisie())
-        self.toile.tag_bind("onde", "<Button-1>", lambda _e: self.parler())
         self.toile.tag_bind("orbe", "<ButtonPress-1>", self._prendre)
         self.toile.tag_bind("orbe", "<B1-Motion>", self._glisser)
 
@@ -130,29 +127,16 @@ class MiniFenetre(tk.Toplevel):
                          smooth=True, fill=YEUX[self.etat], outline="",
                          tags=("orbe", "oeil"))
 
-        # La barre : crayon a gauche, onde a droite.
+        # La barre : le crayon, qui rend la main a la zone de texte.
         by = y0 + ORBE + 22
         c.create_polygon(_arrondi(cx - BARRE_L // 2, by, cx + BARRE_L // 2,
                                   by + BARRE_H, BARRE_H // 2),
-                         smooth=True, fill=BARRE, outline=BARRE_BORD)
-        c.create_line(cx, by + 9, cx, by + BARRE_H - 9, fill="#3A4852")
-
-        gx = cx - 26
-        c.create_rectangle(gx - 22, by, gx + 22, by + BARRE_H,
-                           fill=BARRE, outline="", tags="crayon")
-        c.create_line(gx - 7, by + 26, gx + 6, by + 12, fill=t.TEXT,
+                         smooth=True, fill=BARRE, outline=BARRE_BORD,
+                         tags="crayon")
+        c.create_line(cx - 7, by + 26, cx + 6, by + 12, fill=t.TEXT,
                       width=3, capstyle="round", tags="crayon")
-        c.create_line(gx - 9, by + 28, gx - 6, by + 25, fill=t.TEXT,
+        c.create_line(cx - 9, by + 28, cx - 6, by + 25, fill=t.TEXT,
                       width=2, capstyle="round", tags="crayon")
-
-        dx = cx + 26
-        couleur_onde = t.GREEN if self.ecoute else t.TEXT
-        c.create_rectangle(dx - 22, by, dx + 22, by + BARRE_H,
-                           fill=BARRE, outline="", tags="onde")
-        for i, h in enumerate((5, 10, 7, 12, 6)):
-            x = dx - 10 + i * 5
-            c.create_line(x, by + 19 - h, x, by + 19 + h, fill=couleur_onde,
-                          width=2, capstyle="round", tags="onde")
 
     def _changer_etat(self, etat: str) -> None:
         self.etat = etat
@@ -207,51 +191,18 @@ class MiniFenetre(tk.Toplevel):
         self._changer_etat("reflexion")
         self._bulle(f"« {question} »\n\nJe réfléchis…", t.TEXT_DIM)
 
-    def parler(self) -> None:
-        """Premier clic : il ecoute. Second clic : il transcrit et repond.
-
-        Si l'ecoute permanente tourne, elle tient le micro : un seul clic
-        suffit, elle enregistre et coupe seule a la fin de la phrase.
-        """
-        if self.fenetre.busy and not self.ecoute:
-            return
-        if getattr(self.fenetre, "boucle_vocale", None) is not None:
-            self.fenetre.listen_once()
-            self.attend_reponse = True
-            self._changer_etat("ecoute")
-            self._bulle("Je t'écoute, je coupe tout seul quand tu as fini.",
-                        t.TEXT_DIM)
-            return
-
-        self.ecoute = not self.ecoute
-        self.fenetre.listen_once()
-        if self.ecoute:
-            self._changer_etat("ecoute")
-            self._bulle("Je t'écoute. Clique encore sur l'onde quand tu as "
-                        "fini.", t.TEXT_DIM)
-        else:
-            self.attend_reponse = True
-            self._changer_etat("reflexion")
-            self._bulle("Transcription…", t.TEXT_DIM)
-        self._dessiner()
-
     def _sur_message(self, genre: str, texte: str) -> None:
         """Appele par la grande fenetre pour chaque message affiche."""
-        # Une erreur de micro arrive pendant l'ecoute, avant toute question :
-        # la taire laissait l'orbe vert sans que rien ne s'enregistre.
-        if not (self.attend_reponse or self.ecoute):
+        if not self.attend_reponse:
             return
         if genre == "user":
-            # La question dictee, une fois transcrite.
             self._changer_etat("reflexion")
             self._bulle(f"« {texte} »\n\nJe réfléchis…", t.TEXT_DIM)
             return
         if genre not in ("assistant", "error", "info"):
             return
         self.attend_reponse = False
-        self.ecoute = False
         self._changer_etat("pret")
-        self._dessiner()
         self._bulle(texte, t.RED if genre == "error" else t.TEXT)
 
     def _bulle(self, texte: str, couleur) -> None:
