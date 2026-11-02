@@ -65,6 +65,29 @@ def ouvrir(fenetre, apres_validation) -> None:
     RoundButton(cadre, "Valider", valider, width=118, bg=t.ACCENT,
                 fg="#06222A", hover_bg="#7BE3F2").pack(anchor="e", pady=(4, 0))
 
+    statut, restant = licence.etat_essai()
+    titre("essai gratuit")
+    if statut == "jamais":
+        ligne(f"Pas encore de clé ? Essaie le mode Dev gratuitement pendant "
+              f"{licence.ESSAI_JOURS} jours. Une seule fois par PC.")
+        etat = ligne("")
+
+        def essayer() -> None:
+            ok, raison = licence.commencer_essai()
+            etat.configure(text=raison[0].upper() + raison[1:],
+                           fg=t.GREEN if ok else t.RED)
+            if ok:
+                dialogue.after(900, lambda: (dialogue.destroy(),
+                                             apres_validation()))
+
+        RoundButton(cadre, f"Essayer {licence.ESSAI_JOURS} jours", essayer,
+                    width=150).pack(anchor="e", pady=(4, 0))
+    elif statut == "actif":
+        ligne(f"Essai en cours : {restant} jour(s) restant(s).", t.GREEN)
+    else:
+        ligne("L'essai gratuit de ce PC est terminé. Il faut une clé "
+              "d'accès pour continuer.", t.AMBER)
+
     graine = licence.graine_maitre()
 
     if not licence.CLE_PUBLIQUE and graine is None:

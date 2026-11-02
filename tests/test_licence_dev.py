@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -133,3 +133,71 @@ def test_la_cle_maitre_ne_s_ecrase_jamais(tmp_path, monkeypatch):
     with pytest.raises(FileExistsError):
         licence.creer_cle_maitre()
     assert licence.graine_maitre() == graine
+
+
+# --- Essai gratuit -------------------------------------------------------------
+
+@pytest.fixture
+def traces(monkeypatch, tmp_path):
+    """Les trois endroits de l'essai, dans un dossier jetable."""
+    registre = {"e": ""}
+    monkeypatch.setattr(licence, "_lire_registre", lambda: registre["e"])
+    monkeypatch.setattr(licence, "_ecrire_registre",
+                        lambda v: registre.__setitem__("e", v))
+    fichiers = [tmp_path / "appdata" / "essai.dat", tmp_path / "commun" / "essai.dat"]
+    monkeypatch.setattr(licence, "_fichiers_essai", lambda: fichiers)
+    monkeypatch.setattr(licence, "identifiant_pc", lambda: "pc-test")
+    return registre, fichiers
+
+
+def test_l_essai_dure_trente_jours_puis_se_ferme(traces):
+    debut = date(2026, 11, 2)
+    assert licence.etat_essai(debut) == ("jamais", 30)
+    assert licence.commencer_essai(debut)[0]
+    assert licence.etat_essai(debut + timedelta(days=29)) == ("actif", 1)
+    assert licence.etat_essai(debut + timedelta(days=30)) == ("fini", 0)
+    ok, raison = licence.commencer_essai(debut + timedelta(days=31))
+    assert not ok and "termine" in raison
+
+
+def test_reinstaller_ou_effacer_deux_traces_sur_trois_ne_remet_pas_a_zero(traces):
+    registre, fichiers = traces
+    debut = date(2026, 11, 2)
+    licence.commencer_essai(debut)
+    # Desinstaller-reinstaller ne touche a aucune trace ; on en efface deux.
+    registre["e"] = ""
+    fichiers[0].unlink()
+    assert licence.etat_essai(debut + timedelta(days=40)) == ("fini", 0)
+    # Et la trace effacee est reecrite a la verification suivante.
+    licence.etat_essai(debut + timedelta(days=41))
+    assert registre["e"] and fichiers[0].is_file()
+
+
+def test_modifier_la_date_a_la_main_ferme_l_essai(traces):
+    registre, fichiers = traces
+    licence.commencer_essai(date(2026, 11, 2))
+    for f in fichiers:
+        f.write_text(f.read_text().replace("2026-11-02", "2027-11-02", 1))
+    registre["e"] = registre["e"].replace("2026-11-02", "2027-11-02", 1)
+    assert licence.etat_essai(date(2026, 11, 10)) == ("fini", 0)
+
+
+def test_reculer_l_horloge_ne_rend_pas_de_jours(traces):
+    debut = date(2026, 11, 2)
+    licence.commencer_essai(debut)
+    licence.etat_essai(debut + timedelta(days=20))
+    assert licence.etat_essai(debut + timedelta(days=2)) == ("fini", 0)
+
+
+def test_les_traces_d_un_autre_pc_ne_comptent_pas(traces, monkeypatch):
+    debut = date(2026, 11, 2)
+    licence.commencer_essai(debut)
+    monkeypatch.setattr(licence, "identifiant_pc", lambda: "autre-pc")
+    assert licence.etat_essai(debut + timedelta(days=60))[0] == "jamais"
+
+
+def test_l_essai_actif_ouvre_le_mode_dev_sans_cle(traces, monkeypatch):
+    monkeypatch.setattr(licence, "cle_enregistree", lambda: "")
+    assert not licence.dev_autorise()
+    licence.commencer_essai()
+    assert licence.dev_autorise()

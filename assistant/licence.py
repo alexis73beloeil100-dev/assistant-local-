@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 import secrets
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 # La cle PUBLIQUE du proprietaire, en hexadecimal. Vide tant que la cle
@@ -216,6 +217,133 @@ def examiner(cle: str, publique_hex: str | None = None,
     return True, f"clé de {qui}" + (f", valable jusqu'au {fin}" if fin else ", sans fin")
 
 
+# --- Essai gratuit -----------------------------------------------------------------
+#
+# 30 jours de mode Dev, une seule fois par PC. La date de debut est rangee a
+# trois endroits HORS du dossier de l'application -- registre, donnees de
+# l'utilisateur, donnees communes -- et chaque ligne est liee au PC et
+# scellee : desinstaller, reinstaller, effacer un des trois ou modifier une
+# date ne remet pas le compteur a zero. Un endroit efface est reecrit a la
+# verification suivante a partir des autres.
+#
+# Sans serveur, ce n'est pas incassable : effacer les trois a la fois suffit.
+# Le jour ou il y aura des comptes, le serveur retiendra quel materiel a
+# deja eu son essai.
+
+ESSAI_JOURS = 30
+_SCEAU = b"assistant-local/essai/v1"
+_CLE_REGISTRE = r"Software\AssistantLocal"
+
+
+def _sceller(texte: str) -> str:
+    return hmac.new(_SCEAU, texte.encode(), hashlib.sha256).hexdigest()[:20]
+
+
+def _fichiers_essai() -> list[Path]:
+    from assistant import config
+
+    communs = Path(os.environ.get("ProgramData", r"C:\ProgramData"))
+    return [config.DATA_DIR / "essai.dat",
+            communs / "AssistantLocal" / "essai.dat"]
+
+
+def _lire_registre() -> str:
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _CLE_REGISTRE) as cle:
+            return str(winreg.QueryValueEx(cle, "e")[0])
+    except (ImportError, OSError):
+        return ""
+
+
+def _ecrire_registre(valeur: str) -> None:
+    try:
+        import winreg
+
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _CLE_REGISTRE) as cle:
+            winreg.SetValueEx(cle, "e", 0, winreg.REG_SZ, valeur)
+    except (ImportError, OSError):
+        pass
+
+
+def _lectures_essai() -> list[str]:
+    lignes = [_lire_registre()]
+    for f in _fichiers_essai():
+        try:
+            lignes.append(f.read_text(encoding="utf-8").strip())
+        except OSError:
+            lignes.append("")
+    return [l for l in lignes if l]
+
+
+def _ecrire_partout(ligne: str) -> None:
+    _ecrire_registre(ligne)
+    for f in _fichiers_essai():
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(ligne, encoding="utf-8")
+        except OSError:
+            continue
+
+
+def _ligne_essai(pc: str, debut: date, vu: date) -> str:
+    texte = f"{pc}|{debut.isoformat()}|{vu.isoformat()}"
+    return f"{texte}|{_sceller(texte)}"
+
+
+def etat_essai(aujourd_hui: date | None = None, pc: str | None = None
+               ) -> tuple[str, int]:
+    """("jamais" | "actif" | "fini", jours restants).
+
+    Met aussi a jour les traces : la date la plus recente vue (contre une
+    horloge remise en arriere), et les endroits effaces.
+    """
+    aujourd_hui = aujourd_hui or date.today()
+    pc = identifiant_pc() if pc is None else pc
+    debuts, vus, altere = [], [], False
+    for ligne in _lectures_essai():
+        morceaux = ligne.split("|")
+        if len(morceaux) != 4:
+            altere = True
+            continue
+        ident, debut, vu, sceau = morceaux
+        if not hmac.compare_digest(sceau, _sceller("|".join(morceaux[:3]))):
+            altere = True
+            continue
+        if ident != pc:
+            continue
+        try:
+            debuts.append(date.fromisoformat(debut))
+            vus.append(date.fromisoformat(vu))
+        except ValueError:
+            altere = True
+    if altere:
+        # Une trace modifiee a la main : l'essai est considere comme pris.
+        return "fini", 0
+    if not debuts:
+        return "jamais", ESSAI_JOURS
+
+    debut, vu = min(debuts), max(vus)
+    if aujourd_hui < vu - timedelta(days=1):
+        return "fini", 0  # horloge remise en arriere
+    _ecrire_partout(_ligne_essai(pc, debut, max(vu, aujourd_hui)))
+    restant = ESSAI_JOURS - (aujourd_hui - debut).days
+    return ("actif", restant) if restant > 0 else ("fini", 0)
+
+
+def commencer_essai(aujourd_hui: date | None = None) -> tuple[bool, str]:
+    aujourd_hui = aujourd_hui or date.today()
+    statut, restant = etat_essai(aujourd_hui)
+    if statut == "actif":
+        return True, f"essai en cours : {restant} jour(s) restant(s)."
+    if statut == "fini":
+        return False, "l'essai gratuit de ce PC est termine."
+    pc = identifiant_pc()
+    _ecrire_partout(_ligne_essai(pc, aujourd_hui, aujourd_hui))
+    return True, f"essai gratuit commence : {ESSAI_JOURS} jours."
+
+
 def cle_enregistree() -> str:
     from assistant import settings
 
@@ -223,7 +351,9 @@ def cle_enregistree() -> str:
 
 
 def dev_autorise() -> bool:
-    return examiner(cle_enregistree())[0]
+    if examiner(cle_enregistree())[0]:
+        return True
+    return etat_essai()[0] == "actif"
 
 
 def enregistrer_cle(cle: str) -> tuple[bool, str]:

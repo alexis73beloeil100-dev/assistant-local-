@@ -150,7 +150,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
 ; d'IA et les modeles ne sont pas embarques (ils pesent plusieurs Go et
 ; dependent du materiel de la machine).
 Filename: "{app}\{#MonExe}"; Parameters: "--installer"; \
-    Description: "Choisir et telecharger les composants (moteur IA, voix)"; \
+    Description: "Choisir et telecharger les composants (moteur IA, modeles)"; \
     Flags: postinstall skipifsilent
 Filename: "{app}\{#MonExe}"; \
     Description: "Ouvrir l'assistant apres l'installation"; \
