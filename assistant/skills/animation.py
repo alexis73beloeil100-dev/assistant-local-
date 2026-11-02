@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+from pathlib import Path
 
 from assistant import safety
 
@@ -124,16 +125,7 @@ def sauts_de_pose(poses: list[dict[str, tuple[float, float, float]]],
 
 def _module_epic():
     """remote_execution.py, charge depuis le moteur du projet."""
-    from assistant.skills import unreal
-
-    projet = unreal.projet_actuel()
-    if projet is None:
-        raise Indisponible("Aucun projet Unreal choisi.")
-    try:
-        donnees = unreal.lire_uproject(projet)
-        moteur = unreal.dossier_moteur(projet, str(donnees.get("EngineAssociation", "")))
-    except unreal.Echec as exc:
-        raise Indisponible(str(exc))
+    _projet, moteur = _projet_et_moteur()
     candidats = [
         moteur / "Engine/Plugins/Experimental/PythonScriptPlugin/Content/Python/remote_execution.py",
         moteur / "Engine/Plugins/Scripting/PythonScriptPlugin/Content/Python/remote_execution.py",
@@ -150,8 +142,65 @@ def _module_epic():
     return module
 
 
+def _projet_et_moteur():
+    from assistant.skills import unreal
+
+    projet = unreal.projet_actuel()
+    if projet is None:
+        raise Indisponible("Aucun projet Unreal choisi.")
+    try:
+        donnees = unreal.lire_uproject(projet)
+        moteur = unreal.dossier_moteur(projet, str(donnees.get("EngineAssociation", "")))
+    except unreal.Echec as exc:
+        raise Indisponible(str(exc))
+    return projet, moteur
+
+
+DUREE_ARRIERE_PLAN = 600
+
+
+def executer_en_arriere_plan(code_python: str) -> str:
+    """Lance Unreal sans fenetre, execute le script, et se referme.
+
+    Plus lent (le moteur demarre : 30 s a une minute), mais il n'y a pas
+    besoin d'ouvrir l'editeur : c'est ce qui permet de lire un Blueprint ou
+    une animation l'editeur ferme.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    projet, moteur = _projet_et_moteur()
+    exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor-Cmd.exe"
+    if not exe.is_file():
+        raise Indisponible(f"UnrealEditor-Cmd.exe introuvable : {exe}")
+    with tempfile.TemporaryDirectory() as dossier:
+        script = Path(dossier) / "geste.py"
+        script.write_text(code_python, encoding="utf-8")
+        try:
+            r = subprocess.run(
+                [str(exe), str(projet), "-run=pythonscript", f"-script={script}",
+                 "-unattended", "-nop4", "-nosplash", "-nullrhi", "-stdout",
+                 "-FullStdOutLogOutput"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=DUREE_ARRIERE_PLAN,
+                creationflags=0x08000000 if os.name == "nt" else 0)
+        except subprocess.TimeoutExpired:
+            raise Indisponible("Unreal en arriere-plan n'a pas fini en 10 minutes.")
+        except OSError as exc:
+            raise Indisponible(f"Unreal en arriere-plan impossible a lancer : {exc}")
+    sortie = r.stdout + "\n" + r.stderr
+    if MARQUEUR not in sortie:
+        erreurs = [l for l in sortie.splitlines()
+                   if "LogPython: Error" in l or "Traceback" in l or "Error:" in l]
+        raise Indisponible("Unreal en arriere-plan n'a rien rendu.\n"
+                           + "\n".join(erreurs[-20:] or sortie.splitlines()[-20:]))
+    return sortie
+
+
 def executer_python(code_python: str, delai: float = 5.0) -> str:
-    """Execute du Python dans l'editeur ouvert et rend ce qu'il affiche."""
+    """Execute du Python dans l'editeur ouvert, sinon dans Unreal en
+    arriere-plan, et rend ce qu'il affiche."""
     import time
 
     re_mod = _module_epic()
@@ -162,10 +211,15 @@ def executer_python(code_python: str, delai: float = 5.0) -> str:
         while not session.remote_nodes and time.time() - debut < delai:
             time.sleep(0.2)
         if not session.remote_nodes:
-            raise Indisponible(
-                "L'editeur ne repond pas en Python : ouvre le projet dans "
-                "l'editeur. Si c'est deja fait, active le Python de l'editeur "
-                "(outil activer_python_editeur), puis redemarre l'editeur.")
+            session.stop()
+            try:
+                return executer_en_arriere_plan(code_python)
+            except Indisponible as exc:
+                raise Indisponible(
+                    "L'editeur n'est pas ouvert (ou son Python n'est pas "
+                    "active), et Unreal en arriere-plan a echoue : "
+                    f"{exc}\nActive le Python de l'editeur (outil "
+                    "activer_python_editeur), puis reessaie.")
         session.open_command_connection(session.remote_nodes[0]["node_id"])
         resultat = session.run_command(code_python, unattended=True,
                                        exec_mode=re_mod.MODE_EXEC_FILE,
@@ -247,8 +301,10 @@ def _geste(script: str, **valeurs) -> dict | list | str:
     code = _ENTETE + "".join(f"{k} = {json.dumps(v)}\n" for k, v in valeurs.items()) + script
     sortie = executer_python(code)
     for ligne in sortie.splitlines():
-        if ligne.startswith(MARQUEUR):
-            return json.loads(ligne[len(MARQUEUR):])
+        # En arriere-plan, la ligne arrive prefixee par le journal
+        # ("LogPython: ...") : on cherche le marqueur dans la ligne.
+        if MARQUEUR in ligne:
+            return json.loads(ligne[ligne.index(MARQUEUR) + len(MARQUEUR):])
     raise Indisponible(sortie)
 
 

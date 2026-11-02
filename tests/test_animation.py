@@ -139,3 +139,40 @@ def test_les_outils_d_animation_sont_en_mode_dev(monkeypatch):
     monkeypatch.setattr(anim, "compatibilite", lambda a, m: f"{a}|{m}")
     assert llm.dispatch("anim_compatibilite",
                         {"animation": "/Game/A", "maillage": "/Game/M"}) == "/Game/A|/Game/M"
+
+
+def test_editeur_ferme_unreal_part_en_arriere_plan_sans_fenetre(tmp_path, monkeypatch):
+    """L'editeur ne repond pas : on lance UnrealEditor-Cmd avec le script."""
+    class Muet(FauxModuleEpic):
+        class RemoteExecution(FauxModuleEpic.RemoteExecution):
+            def __init__(self):
+                self.remote_nodes = []
+
+    projet = tmp_path / "Tireur" / "Tireur.uproject"
+    moteur = tmp_path / "UE_5.5"
+    exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor-Cmd.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    monkeypatch.setattr(anim, "_module_epic", lambda: Muet)
+    monkeypatch.setattr(anim, "_projet_et_moteur", lambda: (projet, moteur))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    lances = []
+
+    class Fini:
+        returncode = 0
+        stderr = ""
+        stdout = ("LogInit: Display: Engine is initialized.\n"
+                  "LogPython: " + anim.MARQUEUR
+                  + json.dumps({"os": ["pelvis", "foot_l"], "parents": {}}) + "\n")
+
+    def lancer(cmd, **kw):
+        lances.append(cmd)
+        script = [a for a in cmd if a.startswith("-script=")][0][len("-script="):]
+        assert "_rendre" in open(script, encoding="utf-8").read()
+        return Fini()
+
+    monkeypatch.setattr("subprocess.run", lancer)
+    texte = anim.squelette("/Game/SKM_Manny")
+    assert lances[0][:3] == [str(exe), str(projet), "-run=pythonscript"]
+    assert "-unattended" in lances[0] and "-nullrhi" in lances[0]
+    assert "2 os" in texte and "pied gauche" in texte
