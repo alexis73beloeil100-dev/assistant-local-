@@ -39,7 +39,13 @@ def ouvrir(fenetre, apres_validation) -> None:
         etiquette.pack(fill="x")
         return etiquette
 
-    def champ(largeur: int = 64) -> tk.Entry:
+    def champ(largeur: int = 64, etiquette: str = "") -> tk.Entry:
+        # Une case sans etiquette ne dit pas ce qu'on doit y mettre : le
+        # 02/11/2026, cinq cases vides se lisaient comme une enigme.
+        if etiquette:
+            tk.Label(cadre, text=etiquette, bg=t.BG, fg=t.TEXT_FAINT,
+                     font=t.FONT_UI_TINY, anchor="w").pack(fill="x",
+                                                           pady=(4, 0))
         entree = tk.Entry(cadre, bg=t.SURFACE_2, fg=t.TEXT, width=largeur,
                           insertbackground=t.ACCENT, relief="flat",
                           font=t.FONT_MONO)
@@ -52,7 +58,7 @@ def ouvrir(fenetre, apres_validation) -> None:
     pc = licence.identifiant_pc() or "indisponible"
     ligne(f"Identifiant de ce PC : {pc}", t.TEXT_FAINT)
 
-    saisie = champ()
+    saisie = champ(etiquette="Ta clé d'accès (commence par ALDEV-)")
     verdict = ligne("")
 
     def valider() -> None:
@@ -96,7 +102,7 @@ def ouvrir(fenetre, apres_validation) -> None:
               "écrite dans tes Documents, jamais sur GitHub. Envoie ensuite "
               "la clé PUBLIQUE affichée : elle sera inscrite dans "
               "l'application.")
-        resultat = champ()
+        resultat = champ(etiquette="Clé publique (à envoyer)")
 
         def creer() -> None:
             try:
@@ -125,9 +131,11 @@ def ouvrir(fenetre, apres_validation) -> None:
         ligne("Ta clé maître est sur ce PC. Nom, identifiant du PC (vide = "
               "tout PC), date de fin AAAA-MM-JJ (vide = sans fin) :",
               t.TEXT_FAINT)
-        nom, pc_cible, fin = champ(30), champ(30), champ(30)
+        nom = champ(30, "Nom de la personne")
+        pc_cible = champ(30, "Identifiant du PC (vide = tout PC)")
+        fin = champ(30, "Date de fin AAAA-MM-JJ (vide = sans fin)")
         pc_cible.insert(0, licence.identifiant_pc())
-        sortie = champ()
+        sortie = champ(etiquette="Clé d'accès fabriquée (copiée automatiquement)")
 
         def delivrer() -> None:
             try:
