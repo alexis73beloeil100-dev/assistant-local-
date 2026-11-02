@@ -19,6 +19,7 @@ from assistant.skills import (apps, archives, cleanup, content, control,
                               desk, documents, files, fixes, gamemode, games,
                               hardware, inventaire, reminders, shell, system,
                               unreal, vision)
+from assistant.skills import code, web
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -981,6 +982,129 @@ TOOLS += [
 ]
 
 
+LISTE_STR = {"type": "array", "items": STR}
+LISTE_INT = {"type": "array", "items": INT}
+
+TOOLS += [
+    Tool(
+        "arborescence_projet",
+        "Montre l'arborescence du projet Unreal (sans Binaries, Intermediate, "
+        "Saved...). 'dossier' est relatif au projet, vide = racine.",
+        _obj({"dossier": STR, "profondeur": INT}),
+        lambda dossier="", profondeur=3: code.arborescence(str(dossier), int(profondeur)),
+    ),
+    Tool(
+        "lire_code",
+        "Lit un fichier du projet avec ses numeros de ligne, par tranches de "
+        "400 lignes. A faire AVANT toute modification.",
+        _obj({"chemin": {**STR, "description": "Relatif au projet, ex. Source/Jeu/Arme.cpp"},
+              "debut": INT, "fin": INT}, ["chemin"]),
+        lambda chemin, debut=1, fin=0: code.lire_code(str(chemin), int(debut), int(fin)),
+    ),
+    Tool(
+        "chercher_dans_le_code",
+        "Cherche un mot, une classe ou une fonction dans tout le code du "
+        "projet (.h, .cpp, .cs, .ini...). Rend fichier:ligne: texte.",
+        _obj({"motif": STR, "regex": {"type": "boolean"}, "dossier": STR}, ["motif"]),
+        lambda motif, regex=False, dossier="": code.chercher_code(
+            str(motif), bool(regex), str(dossier)),
+    ),
+    Tool(
+        "modifier_fichier",
+        "Remplace un passage EXACT d'un fichier du projet par un nouveau "
+        "texte. 'ancien' doit etre recopie tel quel depuis lire_code, sans "
+        "les numeros de ligne, et etre unique (sinon ajoute du contexte, ou "
+        "tout=true). La difference est montree a l'utilisateur, qui accepte.",
+        _obj({"chemin": STR, "ancien": STR, "nouveau": STR,
+              "tout": {"type": "boolean"}}, ["chemin", "ancien", "nouveau"]),
+        lambda chemin, ancien, nouveau, tout=False: code.modifier_fichier(
+            str(chemin), str(ancien), str(nouveau), bool(tout)),
+        effect=True,
+    ),
+    Tool(
+        "creer_fichier",
+        "Cree un nouveau fichier dans le projet (.h, .cpp, .ini...). Refuse "
+        "si le fichier existe deja.",
+        _obj({"chemin": STR, "contenu": STR}, ["chemin", "contenu"]),
+        lambda chemin, contenu: code.creer_fichier(str(chemin), str(contenu)),
+        effect=True,
+    ),
+    Tool(
+        "historique_modifications",
+        "Liste les dernieres modifications de code faites par l'assistant, "
+        "avec leur numero pour les annuler.",
+        _obj({"nombre": INT}),
+        lambda nombre=15: code.historique(int(nombre)),
+    ),
+    Tool(
+        "annuler_modification",
+        "Annule une modification de code (son numero, 0 = la derniere) : le "
+        "fichier revient exactement comme avant.",
+        _obj({"numero": INT}),
+        lambda numero=0: code.annuler(int(numero)),
+        effect=True,
+    ),
+    Tool(
+        "plan",
+        "Ecrit le plan d'un travail en plusieurs etapes ('etapes'), ou coche "
+        "les etapes finies ('faites', numeros a partir de 1). A utiliser des "
+        "qu'une demande demande plus de deux modifications.",
+        _obj({"etapes": LISTE_STR, "faites": LISTE_INT}),
+        lambda etapes=None, faites=None: code.plan(etapes, faites),
+    ),
+    Tool(
+        "memoire_projet",
+        "Lit les notes du projet (ASSISTANT.md), ou y ajoute une note "
+        "('ajout') : conventions, choix faits, ce qui reste a faire. Elles "
+        "sont relues a chaque session.",
+        _obj({"ajout": STR}),
+        lambda ajout="": code.memoire_projet(str(ajout)),
+    ),
+    Tool(
+        "git_etat",
+        "Etat Git du projet : branche, fichiers modifies, resume des changements.",
+        _obj({}),
+        lambda: code.git_etat(),
+    ),
+    Tool(
+        "git_difference",
+        "Les changements non enregistres du projet (git diff), pour un "
+        "fichier ou tout le projet.",
+        _obj({"chemin": STR}),
+        lambda chemin="": code.git_difference(str(chemin)),
+    ),
+    Tool(
+        "git_enregistrer",
+        "Enregistre tous les changements du projet dans Git (commit), avec "
+        "un message, apres accord de l'utilisateur.",
+        _obj({"message": STR}, ["message"]),
+        lambda message: code.git_enregistrer(str(message)),
+        effect=True,
+    ),
+    Tool(
+        "chercher_documentation",
+        "Cherche sur le forum officiel d'Unreal et sur Stack Overflow : une "
+        "erreur, une fonction de l'API, une methode. Rend titres et liens.",
+        _obj({"requete": {**STR, "description": "En anglais, plus de resultats"}},
+             ["requete"]),
+        lambda requete: web.chercher(str(requete)),
+    ),
+    Tool(
+        "lire_page",
+        "Lit le texte d'une page web (documentation, sujet de forum).",
+        _obj({"url": STR}, ["url"]),
+        lambda url: web.lire_page(str(url)),
+    ),
+]
+
+OUTILS_ATELIER_CODE = frozenset({
+    "arborescence_projet", "lire_code", "chercher_dans_le_code",
+    "modifier_fichier", "creer_fichier", "historique_modifications",
+    "annuler_modification", "plan", "memoire_projet", "git_etat",
+    "git_difference", "git_enregistrer", "chercher_documentation", "lire_page",
+})
+
+
 def _projets_unreal() -> str:
     actuel = unreal.projet_actuel()
     recents = unreal.projets_recents()
@@ -1023,18 +1147,32 @@ OUTILS_DEV = frozenset({
     # L'atelier Unreal.
     "projets_unreal", "choisir_projet_unreal", "projet_unreal",
     "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
+    # L'atelier de code.
+    *OUTILS_ATELIER_CODE,
     # Passer un extrait de code a l'utilisateur.
     "lire_presse_papier", "copier",
 })
 
 CONSIGNE_MODE = {
     "pc": "Mode actuel : PC. Tu as les outils de la machine Windows.",
-    "dev": ("Mode actuel : Dev. Tu n'as que les outils utiles au "
-            "developpement : fichiers et code, captures d'ecran, commandes, "
-            "applications, etat du PC. Si une demande concerne le reste de la "
-            "machine (son, jeux, nettoyage, reparations...), dis a "
-            "l'utilisateur de passer en mode PC avec le bouton Dev / PC, en "
-            "bas a gauche de la fenetre."),
+    "dev": ("Mode actuel : Dev. Tu es un assistant de developpement Unreal "
+            "Engine 5 (C++ et Blueprint). Methode :\n"
+            "- Une demande en plusieurs etapes : ecris d'abord un plan (outil "
+            "plan), coche chaque etape finie.\n"
+            "- Avant de modifier un fichier, lis-le (lire_code) ; cherche "
+            "les usages (chercher_dans_le_code) avant de renommer ou supprimer.\n"
+            "- Modifie par petits passages exacts (modifier_fichier), jamais "
+            "un fichier entier de memoire.\n"
+            "- Apres une modification de C++, compile (compiler_unreal) ; "
+            "si ca echoue, lis l'erreur, corrige, recompile.\n"
+            "- Une API dont tu n'es pas sur : chercher_documentation.\n"
+            "- Un choix durable (convention, architecture) : note-le avec "
+            "memoire_projet.\n"
+            "- Termine en disant ce qui a change et quoi tester dans "
+            "l'editeur.\n"
+            "Si une demande concerne le reste de la machine (son, jeux, "
+            "nettoyage, reparations...), dis a l'utilisateur de passer en "
+            "mode PC avec le bouton Dev / PC."),
 }
 
 
@@ -1069,7 +1207,7 @@ def changer_mode(mode: str) -> None:
 OUTILS_DEV_SEULEMENT = frozenset({
     "projets_unreal", "choisir_projet_unreal", "projet_unreal",
     "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
-})
+}) | OUTILS_ATELIER_CODE
 
 
 def outils_du_mode(mode: str | None = None) -> list[Tool]:
@@ -1194,6 +1332,11 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
     # cette fonction, et doit en beneficier autant.
     convo = avec_carte_machine(list(messages))
     convo = avec_consigne_de_mode(convo)
+    if mode_actuel() == "dev":
+        # Coder demande de lire, ecrire, compiler, corriger : quatre tours ne
+        # suffisent pas a une seule modification.
+        max_rounds = max(max_rounds, TOURS_DEV)
+    deja_vus: dict[str, int] = {}
 
     for _ in range(max_rounds):
         message = _call(convo, with_tools=True)
@@ -1222,6 +1365,17 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
                     args = {}
             if on_tool:
                 on_tool(name, args)
+            # Le meme appel, a l'identique, pour la troisieme fois : le
+            # modele tourne en rond. On le lui dit au lieu de l'executer.
+            signature = name + json.dumps(args, sort_keys=True, default=str)
+            deja_vus[signature] = deja_vus.get(signature, 0) + 1
+            if deja_vus[signature] >= 3:
+                result = ("Tu as deja fait cet appel deux fois avec les memes "
+                          "arguments : tu tournes en rond. Arrete, explique a "
+                          "l'utilisateur ou tu bloques et demande-lui comment "
+                          "continuer.")
+                convo.append({"role": "tool", "name": name, "content": result})
+                continue
             result = dispatch(name, args, dry_run=dry_run)
 
             # Ce qu'un outil vient de decouvrir reste disponible pour la suite
@@ -1387,6 +1541,7 @@ def message_carte_machine() -> dict:
 
 
 MODE_MARQUEUR = "Mode actuel :"
+TOURS_DEV = 30
 
 
 def avec_consigne_de_mode(messages: list[dict]) -> list[dict]:
@@ -1398,7 +1553,16 @@ def avec_consigne_de_mode(messages: list[dict]) -> list[dict]:
     ]
     if not propre:
         return propre
-    consigne = {"role": "system", "content": CONSIGNE_MODE[mode_actuel()]}
+    mode = mode_actuel()
+    texte = CONSIGNE_MODE[mode]
+    if mode == "dev":
+        from assistant.skills import code
+
+        notes = code.memoire_pour_le_modele()
+        if notes:
+            texte += ("\n\nNotes du projet (ASSISTANT.md, ecrites lors des "
+                      "sessions precedentes) :\n" + notes)
+    consigne = {"role": "system", "content": texte}
     return [propre[0], consigne] + propre[1:]
 
 

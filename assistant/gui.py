@@ -1305,10 +1305,39 @@ class AssistantWindow(tk.Tk):
 
         corps = tk.Frame(cadre, bg=t.SURFACE)
         corps.pack(fill="both", expand=True)
-        tk.Label(corps, text=texte, bg=t.SURFACE, fg=t.TEXT,
-                 font=t.FONT_MONO, justify="left", anchor="w",
-                 wraplength=560).pack(fill="both", expand=True,
-                                      padx=t.PAD_L, pady=t.PAD_L)
+        # Un Text plutot qu'un Label : une modification de code se montre
+        # comme une difference, lignes retirees en rouge et ajoutees en vert,
+        # et une longue difference defile au lieu de pousser les boutons
+        # hors de l'ecran.
+        lignes = texte.splitlines()
+        zone = tk.Text(corps, bg=t.SURFACE, fg=t.TEXT, font=t.FONT_MONO,
+                       wrap="word", relief="flat", bd=0, highlightthickness=0,
+                       width=88, height=min(max(len(lignes), 3), 26),
+                       padx=t.PAD_L, pady=t.PAD_L)
+        zone.tag_configure("plus", foreground=t.GREEN)
+        zone.tag_configure("moins", foreground=t.RED)
+        zone.tag_configure("bloc", foreground=t.ACCENT_DEEP)
+        # Tabulations de quatre caracteres, comme dans un editeur de code.
+        from tkinter import font as tkfont
+
+        zone.configure(tabs=(tkfont.Font(font=t.FONT_MONO).measure("    "),))
+        for ligne in lignes:
+            # Seules les lignes de la difference commencent en colonne 0 par
+            # + ou - ; les cibles de l'action, elles, sont en retrait.
+            style = ()
+            if ligne.startswith("+") and not ligne.startswith("+++"):
+                style = "plus"
+            elif ligne.startswith("-") and not ligne.startswith("---"):
+                style = "moins"
+            elif ligne.startswith("@@"):
+                style = "bloc"
+            zone.insert("end", ligne + "\n", style)
+        zone.configure(state="disabled")
+        if len(lignes) > 26:
+            barre = tk.Scrollbar(corps, command=zone.yview)
+            zone.configure(yscrollcommand=barre.set)
+            barre.pack(side="right", fill="y")
+        zone.pack(fill="both", expand=True)
 
         tk.Label(cadre, text="Rien ne sera fait sans ton accord. "
                              "Cette decision est journalisee.",
