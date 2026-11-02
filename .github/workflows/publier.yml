@@ -5,7 +5,9 @@ name: Publier une version
 #
 #   - poussee sur une branche claude/** : construction et MESURE seulement
 #     (taille du paquet), rien n'est publie ;
-#   - etiquette vX.Y.Z : construction et publication de la Release.
+#   - etiquette vX.Y.Z, OU commit dont le message contient [publier] :
+#     construction et publication de la Release. Dans le second cas, c'est
+#     GitHub qui pose l'etiquette sur le commit construit.
 
 on:
   push:
@@ -125,14 +127,17 @@ jobs:
           path: manifestes/${{ steps.versions.outputs.vers }}.json
 
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[publier]')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           vers="${{ steps.versions.outputs.vers }}"
-          test "${GITHUB_REF_NAME}" = "v$vers" || { echo "etiquette $GITHUB_REF_NAME, code en $vers"; exit 1; }
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            test "${GITHUB_REF_NAME}" = "v$vers" || { echo "etiquette $GITHUB_REF_NAME, code en $vers"; exit 1; }
+          fi
           gh release create "v$vers" \
+            --target "${GITHUB_SHA}" \
             --title "Assistant local $vers" \
             --notes-file "notes_de_version/$vers.md" \
             "installateur/MiseAJour_AssistantLocal_${{ steps.versions.outputs.depuis }}_vers_$vers.exe" \
