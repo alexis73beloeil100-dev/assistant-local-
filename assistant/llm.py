@@ -7,6 +7,7 @@ rend le resultat. C'est ce qui rend le comportement previsible et auditable.
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -1666,7 +1667,11 @@ def _mes_outils() -> str:
     """La liste exacte des outils du mode en cours : rien a compter de tete."""
     mode = mode_actuel()
     noms = sorted(t.name for t in outils_du_mode(mode))
-    return (f"Mode {mode.upper()} : {len(noms)} outils exactement.\n"
+    autre = "pc" if mode == "dev" else "dev"
+    return (f"REPONSE A RECOPIER TELLE QUELLE : en mode {mode.upper()} (le mode "
+            f"actif), j'ai {len(noms)} outils. En mode {autre.upper()} : "
+            f"{len(outils_du_mode(autre))}. Au total, l'application en a "
+            f"{len(TOOLS)}.\n\nOutils du mode {mode.upper()} :\n"
             + "\n".join(f"{n}. {nom}" for n, nom in enumerate(noms, 1)))
 
 
@@ -1905,6 +1910,10 @@ def _call(convo: list[dict], with_tools: bool = True,
     return r.json()["message"]
 
 
+_QUESTION_OUTILS = re.compile(
+    r"combien\b[^?.!]{0,60}\boutils?\b|\bnombre\s+d'?\s*outils?\b", re.IGNORECASE)
+
+
 def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
          dry_run: bool = False) -> tuple[str, list[dict]]:
     """Un tour de conversation, outils compris.
@@ -1920,6 +1929,15 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
     # La carte de la machine est jointe a chaque tour, ici et pas dans
     # l'interface : la ligne de commande passe aussi par
     # cette fonction, et doit en beneficier autant.
+    # Un chiffre que l'application connait : on ne laisse pas le modele le
+    # recopier, il l'a deja fausse (89 annonce en mode Dev, qui en a 105).
+    dernier = next((m.get("content", "") for m in reversed(messages)
+                    if m.get("role") == "user"), "")
+    if isinstance(dernier, str) and _QUESTION_OUTILS.search(dernier):
+        texte = _mes_outils().split("\n", 1)[0].split(" : ", 1)[1]
+        texte = texte[0].upper() + texte[1:]
+        return texte, list(messages) + [{"role": "assistant", "content": texte}]
+
     convo = avec_carte_machine(list(messages))
     convo = avec_consigne_de_mode(convo)
     if mode_actuel() == "dev":

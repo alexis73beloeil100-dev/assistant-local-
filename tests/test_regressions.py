@@ -3685,3 +3685,21 @@ def test_le_son_de_demarrage_accompagne_la_video():
     assert abs(duree - 10.03) < 0.1, "le son dure autant que la video"
     assert "demarrage.wav" in open("AssistantLocal.spec", encoding="utf-8").read()
     assert demarrage.jouer_son(None) is False
+
+
+def test_le_nombre_d_outils_vient_de_l_application_pas_du_modele(monkeypatch):
+    from assistant import llm
+
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "dev")
+    monkeypatch.setattr(llm, "_call", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("le modele ne doit pas etre consulte")))
+    texte, _ = llm.chat([{"role": "user", "content":
+                          "Je veux juste savoir combien il y a reellement d'outils"}])
+    assert texte.startswith(f"En mode DEV (le mode actif), j'ai {len(llm.outils_du_mode('dev'))} outils")
+    assert f"Au total, l'application en a {len(llm.TOOLS)}" in texte
+    assert not llm._QUESTION_OUTILS.search("ouvre la boite a outils de Windows")
+
+
+def test_le_bouton_installer_reste_visible_quand_la_place_manque():
+    code = open("assistant/installer.py", encoding="utf-8").read()
+    assert code.index("bas.pack(side=\"bottom\"") < code.index("self.liste.pack(")

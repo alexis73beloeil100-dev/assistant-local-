@@ -82,15 +82,14 @@ class Installer(tk.Tk):
         self.autre_modele.pack(side="left", padx=(8, 0))
         self.autre_modele.bind("<KeyRelease>", lambda _e: self._on_model_change())
 
-        tk.Label(self, text="COMPOSANTS", bg=t.BG, fg=t.TEXT_FAINT,
-                 font=t.FONT_UI_TINY, anchor="w").pack(
-            fill="x", padx=t.PAD_XL, pady=(t.PAD, 4))
-
-        self.liste = ScrollArea(self, bg=t.BG)
-        self.liste.pack(fill="both", expand=True, padx=t.PAD_L)
+        # Le bas est place AVANT la liste : avec pack, le dernier venu est
+        # celui qu'on ecrase quand la place manque, et c'etait le bouton.
+        self.etat = tk.Label(self, text="", bg=t.BG, fg=t.TEXT_DIM,
+                             font=t.FONT_UI_SMALL, anchor="w")
+        self.etat.pack(side="bottom", fill="x", padx=t.PAD_XL, pady=(0, t.PAD_L))
 
         bas = tk.Frame(self, bg=t.SURFACE)
-        bas.pack(fill="x")
+        bas.pack(side="bottom", fill="x")
 
         self.total = tk.Label(bas, text="", bg=t.SURFACE, fg=t.TEXT,
                               font=t.FONT_UI, anchor="w")
@@ -100,9 +99,12 @@ class Installer(tk.Tk):
                                   bg=t.ACCENT, fg="#0b1220", hover_bg="#79b4ff")
         self.bouton.pack(side="right", padx=t.PAD_XL, pady=t.PAD_L)
 
-        self.etat = tk.Label(self, text="", bg=t.BG, fg=t.TEXT_DIM,
-                             font=t.FONT_UI_SMALL, anchor="w")
-        self.etat.pack(fill="x", padx=t.PAD_XL, pady=(0, t.PAD_L))
+        tk.Label(self, text="COMPOSANTS", bg=t.BG, fg=t.TEXT_FAINT,
+                 font=t.FONT_UI_TINY, anchor="w").pack(
+            fill="x", padx=t.PAD_XL, pady=(t.PAD, 4))
+
+        self.liste = ScrollArea(self, bg=t.BG)
+        self.liste.pack(fill="both", expand=True, padx=t.PAD_L)
 
     def _add_row(self, component: comp.Component, present: bool) -> None:
         cadre = tk.Frame(self.liste.inner, bg=t.SURFACE)
