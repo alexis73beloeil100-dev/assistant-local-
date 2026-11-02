@@ -343,3 +343,31 @@ def test_les_assets_lourds_sont_tries_et_signales(tmp_path, reglages):
     lignes = texte.splitlines()
     assert "/Game/Textures/T_Sol_8K" in lignes[1] and "<- lourd" in lignes[1]
     assert "/Game/Maps/Niveau1" in lignes[2] and "lourd" not in lignes[2]
+
+
+def test_toutes_les_classes_unreal_sont_comptees_pas_seulement_les_exportees(tmp_path):
+    uproject = faux_projet(tmp_path, "IronFall")
+    (uproject.parent / "Source" / "IronFall" / "Types.h").write_text(
+        "#pragma once\n"
+        "UCLASS(Blueprintable)\nclass AEnnemi : public ACharacter\n{\n};\n"
+        "UCLASS()\nclass IRONFALL_API UEnvQueryContext_Danger : public UEnvQueryContext {};\n"
+        "USTRUCT(BlueprintType)\nstruct FInfosArme\n{\n};\n"
+        "UENUM(BlueprintType)\nenum class EEtatIA : uint8 { Calme, Alerte };\n"
+        "UINTERFACE()\nclass UInteractif : public UInterface {};\n",
+        encoding="utf-8")
+    projet = unreal.analyser(uproject)
+    assert set(projet.classes) >= {"AEnnemi", "UEnvQueryContext_Danger", "UInteractif"}
+    assert projet.structures == ["FInfosArme"]
+    assert projet.enumerations == ["EEtatIA"]
+
+
+def test_l_activite_recente_donne_les_derniers_fichiers_touches(tmp_path):
+    import os as _os
+
+    uproject = faux_projet(tmp_path)
+    ancien = uproject.parent / "Source" / "Tireur" / "Arme.cpp"
+    _os.utime(ancien, (1_600_000_000, 1_600_000_000))
+    texte = unreal.activite_recente(uproject.parent)
+    lignes = texte.splitlines()
+    assert lignes[0].startswith("Activite recente")
+    assert "Arme.h" in lignes[1] and "Arme.cpp" in lignes[-1]

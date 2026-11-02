@@ -221,7 +221,12 @@ def dossier_moteur(projet: Path, association: str) -> Path:
 
 # --- Resume du projet ----------------------------------------------------------
 
-_CLASSE = re.compile(r"^\s*class\s+\w+_API\s+(\w+)", re.M)
+# Les types reflechis par Unreal : UCLASS, USTRUCT, UENUM, UINTERFACE. On ne
+# comptait que les classes exportees (MODULE_API), et un projet de 129
+# fichiers s'annoncait avec "1 classe".
+_TYPE_UNREAL = re.compile(
+    r"\b(UCLASS|USTRUCT|UENUM|UINTERFACE)\s*\([^)]*\)\s*"
+    r"(?:class|struct|enum(?:\s+class)?)\s+(?:\w+_API\s+)?(\w+)", re.S)
 
 
 @dataclass
@@ -234,6 +239,8 @@ class Projet:
     cibles: list[str]
     fichiers_code: int
     classes: list[str]
+    structures: list[str] = None
+    enumerations: list[str] = None
 
 
 def analyser(chemin: Path) -> Projet:
@@ -241,6 +248,8 @@ def analyser(chemin: Path) -> Projet:
     racine = chemin.parent
     source = racine / "Source"
     classes: list[str] = []
+    structures: list[str] = []
+    enumerations: list[str] = []
     nb = 0
     if source.is_dir():
         for f in source.rglob("*"):
@@ -248,8 +257,14 @@ def analyser(chemin: Path) -> Projet:
                 nb += 1
                 if f.suffix.lower() == ".h":
                     try:
-                        classes += _CLASSE.findall(
-                            f.read_text(encoding="utf-8", errors="replace"))
+                        texte = f.read_text(encoding="utf-8", errors="replace")
+                        for genre, nom in _TYPE_UNREAL.findall(texte):
+                            if genre in ("UCLASS", "UINTERFACE"):
+                                classes.append(nom)
+                            elif genre == "USTRUCT":
+                                structures.append(nom)
+                            else:
+                                enumerations.append(nom)
                     except OSError:
                         pass
     cibles = sorted(f.name[:-len(".Target.cs")]
@@ -264,6 +279,8 @@ def analyser(chemin: Path) -> Projet:
         cibles=cibles,
         fichiers_code=nb,
         classes=sorted(set(classes)),
+        structures=sorted(set(structures)),
+        enumerations=sorted(set(enumerations)),
     )
 
 
@@ -284,12 +301,55 @@ def resume_projet() -> str:
         f"Modules  {', '.join(projet.modules) or 'aucun (projet Blueprint)'}",
         f"Cibles   {', '.join(projet.cibles) or 'aucune'}",
         f"Plugins actives  {', '.join(projet.plugins) or 'aucun'}",
-        f"Code C++ {projet.fichiers_code} fichier(s) .h/.cpp, "
-        f"{len(projet.classes)} classe(s) exportee(s)",
+        f"Code C++ {projet.fichiers_code} fichier(s) .h/.cpp : "
+        f"{len(projet.classes)} classe(s), {len(projet.structures or [])} "
+        f"structure(s), {len(projet.enumerations or [])} enumeration(s) Unreal",
     ]
-    if projet.classes:
-        lignes.append("         " + ", ".join(projet.classes[:40])
-                      + (" ..." if len(projet.classes) > 40 else ""))
+    for titre, noms in (("Classes", projet.classes),
+                        ("Structures", projet.structures or []),
+                        ("Enums", projet.enumerations or [])):
+        if noms:
+            lignes.append(f"{titre:<9}" + ", ".join(noms[:60])
+                          + (f" ... (+{len(noms) - 60})" if len(noms) > 60 else ""))
+    lignes += ["", activite_recente(projet.chemin.parent)]
+    return "\n".join(lignes)
+
+
+def activite_recente(racine: Path, nombre: int = 12) -> str:
+    """Ce qui a bouge en dernier : fichiers modifies et commits Git.
+
+    C'est ce qui permet de repondre a "ou en est le projet" sans inventer.
+    """
+    suivis = []
+    for dossier in ("Source", "Config", "Content", "Plugins"):
+        base = racine / dossier
+        if not base.is_dir():
+            continue
+        for f in base.rglob("*"):
+            if (f.is_file() and f.suffix.lower() in (
+                    ".h", ".cpp", ".cs", ".ini", ".uasset", ".umap")
+                    and not any(p.lower() in ("binaries", "intermediate")
+                                for p in f.parts)):
+                try:
+                    suivis.append((f.stat().st_mtime, f))
+                except OSError:
+                    continue
+    suivis.sort(key=lambda x: -x[0])
+    lignes = ["Activite recente (fichiers modifies) :"]
+    lignes += [f"  {time.strftime('%d/%m/%Y %H:%M', time.localtime(t))}  "
+               f"{f.relative_to(racine).as_posix()}" for t, f in suivis[:nombre]]
+    if not suivis:
+        lignes.append("  aucun fichier suivi")
+    try:
+        r = subprocess.run(["git", "log", "-8", "--date=format:%d/%m/%Y",
+                            "--pretty=format:  %ad  %s"], cwd=str(racine),
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=20,
+                           creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0)
+        if r.returncode == 0 and r.stdout.strip():
+            lignes += ["Derniers enregistrements Git :", r.stdout.rstrip()]
+    except (OSError, subprocess.SubprocessError):
+        pass
     return "\n".join(lignes)
 
 
