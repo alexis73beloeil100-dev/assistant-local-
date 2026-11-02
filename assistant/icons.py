@@ -124,6 +124,14 @@ def _alimentation(c, ox, oy, s, col, w):
             _ligne(c, [(.5, .08), (.5, .44)], ox, oy, s, col, w)]
 
 
+def _telechargement(c, ox, oy, s, col, w):
+    """Mise a jour : une fleche qui descend dans un bac."""
+    return [_ligne(c, [(.5, .1), (.5, .62)], ox, oy, s, col, w),
+            _ligne(c, [(.3, .44), (.5, .64), (.7, .44)], ox, oy, s, col, w),
+            _ligne(c, [(.14, .66), (.14, .88), (.86, .88), (.86, .66)],
+                   ox, oy, s, col, w)]
+
+
 def _cle(c, ox, oy, s, col, w):
     """Cle a molette, en diagonale."""
     return [_ovale(c, .12, .12, .44, .44, ox, oy, s, col, w),
@@ -243,6 +251,7 @@ TRACES = {
     "dossier": _dossier,
     "alimentation": _alimentation,
     "cle": _cle,
+    "telechargement": _telechargement,
     "curseurs": _curseurs,
     "grille": _grille,
     "fusee": _fusee,

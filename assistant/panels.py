@@ -461,6 +461,23 @@ def _connexion() -> str:
     ])
 
 
+def _mise_a_jour() -> str:
+    """Version installee, SANS contacter GitHub : seul le bouton le fait."""
+    from assistant import __version__
+
+    return "\n".join([
+        "MISE A JOUR", "",
+        f"  Version installee   {__version__}",
+        "",
+        "  Le bouton Verifier interroge GitHub pour savoir si une version plus",
+        "  recente existe. Rien de personnel n'est envoye, et l'application ne",
+        "  le fait jamais d'elle-meme.",
+        "",
+        "  Un fichier telecharge n'est lance que si son empreinte est celle",
+        "  annoncee par GitHub.",
+    ])
+
+
 def _telephone() -> str:
     from assistant import serveur
 
@@ -618,6 +635,10 @@ PANELS: list[Panel] = [
           "presse-papier partagé et macros", _telephone,
           interactif="telephone", live=True,
           court="Téléphone", icone="terminal", categorie="reseau"),
+    Panel("miseajour", "Vérifier les mises à jour",
+          "version installée, et la dernière publiée", _mise_a_jour,
+          interactif="miseajour", live=True,
+          court="Mise à jour", icone="telechargement", categorie="assistant"),
 ]
 
 # Rubriques de la barre laterale, dans l'ordre d'affichage. Le libelle est ce

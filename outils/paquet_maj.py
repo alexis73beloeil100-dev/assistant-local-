@@ -31,16 +31,18 @@ RACINE = Path(__file__).resolve().parent.parent
 if str(RACINE) not in sys.path:
     sys.path.insert(0, str(RACINE))
 
-from outils import manifeste  # noqa: E402
+from outils import manifeste, publier  # noqa: E402
 
 LIVRE = RACINE / "dist" / "AssistantLocal"
 SORTIE = RACINE / "installateur"
 ISS = RACINE / "mise_a_jour.iss"
 
-# Inno Setup s'installe en mode utilisateur ici : il n'est pas dans le PATH,
-# et le chercher par "where" ne donne rien.
-ISCC = (Path(os.environ.get("LOCALAPPDATA", ""))
-        / "Programs" / "Inno Setup 6" / "ISCC.exe")
+# Inno Setup s'installe en mode utilisateur sur le PC de developpement, mais
+# dans Program Files sur les machines de construction de GitHub. On cherche
+# aux memes endroits que publier.py ; a defaut, le chemin utilisateur, pour
+# que le message d'echec dise ou on l'attendait.
+ISCC = publier.compilateur() or (Path(os.environ.get("LOCALAPPDATA", ""))
+                                 / "Programs" / "Inno Setup 6" / "ISCC.exe")
 
 # Le meme que l'installateur complet : c'est ce qui fait reconnaitre la mise a
 # jour comme une mise a jour, et non comme un second logiciel. Inno ajoute

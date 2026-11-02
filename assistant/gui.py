@@ -556,6 +556,10 @@ class AssistantWindow(tk.Tk):
                 from assistant.reseau_panneaux import Telephone
 
                 widget = Telephone(self.panel_widget_host, self)
+            elif panel.interactif == "miseajour":
+                from assistant.reseau_panneaux import MiseAJour
+
+                widget = MiseAJour(self.panel_widget_host, self)
             else:
                 return
             self.panel_widgets[panel.key] = widget
