@@ -145,6 +145,15 @@ def test_les_commandes_destructrices_le_restent_avec_un_accord(commande):
     ("Remove-Item x.txt", False),
     ("Get-Date; Remove-Item x.txt", False),
     ("Get-Process | Stop-Process", False),
+    ("Get-Item $(Remove-Item C:/x)", False),
+    ("Get-Date\nRemove-Item C:/x", False),
+    ("Get-Date\r\nRemove-Item C:/x", False),
+    ("echo (Stop-Process -Name explorer)", False),
+    ("Get-Item @(Remove-Item C:/x)", False),
+    ("Get-ChildItem | ForEach-Object { Remove-Item $_ }", False),
+    ("Get-Date `\nRemove-Item C:/x", False),
+    ("Get-Content x.ps1 | iex", False),
+    ("Write-Output 'x' | Invoke-Expression", False),
 ])
 def test_lecture_et_modification_sont_bien_distinguees(commande, lecture):
     """Un enchainement cache une commande modifiante derriere une lecture."""

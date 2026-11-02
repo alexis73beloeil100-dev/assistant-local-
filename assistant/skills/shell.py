@@ -76,6 +76,9 @@ LECTURE_SEULE = re.compile(
     re.IGNORECASE,
 )
 
+# Ce qui ouvre une seconde commande a l'interieur de la premiere.
+SOUS_COMMANDE = re.compile(r"[(){}`\r\n]|\$\(|@\(")
+
 # Enchainements qui permettraient de cacher une commande modifiante derriere
 # une commande de lecture.
 ENCHAINEMENT = re.compile(r"[;&|]{1,2}|\bthen\b", re.IGNORECASE)
@@ -99,7 +102,19 @@ def lecture_seule(commande: str) -> bool:
     """
     # "(Get-CimInstance ...).Caption" est une lecture : la parenthese
     # ouvrante ne doit pas la faire passer pour une commande modifiante.
-    debut = commande.strip().lstrip("(").lstrip()
+    debut = commande.strip()
+    if debut.startswith("("):
+        # Une seule paire de parentheses autour de la lecture, pas davantage.
+        debut = debut[1:].replace(")", "", 1).lstrip()
+    # Seul le premier mot est compare aux verbes de lecture ; tout ce qui
+    # permet d'executer une seconde commande plus loin doit donc disqualifier :
+    # sous-expression "$(...)" ou "(...)", bloc "{...}", saut de ligne
+    # (separateur d'instructions en PowerShell), accent grave (continuation,
+    # echappement) et evaluation de texte (iex, Invoke-Expression).
+    if (SOUS_COMMANDE.search(debut)
+            or re.search(r"\b(iex|invoke-expression|invoke-command)\b",
+                         commande, re.IGNORECASE)):
+        return False
     if not LECTURE_SEULE.match(debut):
         return False
     for morceau in re.split(r"[;&]{1,2}", commande)[1:]:
