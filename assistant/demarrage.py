@@ -34,16 +34,16 @@ from pathlib import Path
 
 from assistant import theme as t
 
-# Taille d'affichage. La video fait 1436x1092 ; on la reduit de moitie, ce qui
-# tient sur tout ecran et divise par quatre le travail de redimensionnement.
-LARGEUR, HAUTEUR = 718, 546
+# Cadre d'affichage maximal. La taille reelle suit la forme de la video
+# (lue dans le fichier) : une video 16:9 ou 4:3 n'est jamais deformee.
+LARGEUR_MAX, HAUTEUR_MAX = 768, 546
 
 # Images d'avance que le decodeur garde. Trop peu, et un a-coup de charge fait
 # saccader ; trop, et on garde des dizaines d'images en memoire pour rien.
 AVANCE = 45
 
-# Cadence de la video, et pas de la boucle d'affichage : c'est elle qui
-# dit quelle image le temps ecoule reclame.
+# Cadence par defaut si le fichier ne la donne pas. Sinon on prend celle de
+# la video : c'est elle qui dit quelle image le temps ecoule reclame.
 IMAGES_PAR_SECONDE = 30
 
 # Periode du reveil. Plus court que 1/30 s pour ne pas ajouter sa propre
@@ -66,6 +66,23 @@ def video_de_demarrage() -> Path | None:
     return None
 
 
+def format_video(chemin: Path) -> tuple[int, int, float]:
+    """Largeur et hauteur d'affichage (forme conservee, dimensions paires) et cadence."""
+    largeur, hauteur, cadence = 1436, 1092, float(IMAGES_PAR_SECONDE)
+    try:
+        import av
+
+        with av.open(str(chemin)) as conteneur:
+            flux = conteneur.streams.video[0]
+            largeur, hauteur = flux.codec_context.width, flux.codec_context.height
+            if flux.average_rate:
+                cadence = float(flux.average_rate)
+    except Exception:  # noqa: BLE001 - une decoration ne bloque jamais
+        pass
+    echelle = min(LARGEUR_MAX / largeur, HAUTEUR_MAX / hauteur)
+    return (int(largeur * echelle) // 2 * 2, int(hauteur * echelle) // 2 * 2, cadence)
+
+
 class EcranDeChargement(tk.Toplevel):
     """Fenetre sans bordure qui joue la video, puis s'efface."""
 
@@ -74,11 +91,12 @@ class EcranDeChargement(tk.Toplevel):
         self.overrideredirect(True)
         self.configure(bg="#000000")
 
+        self._largeur, self._hauteur, self._images_par_seconde = format_video(chemin)
         ecran_l = self.winfo_screenwidth()
         ecran_h = self.winfo_screenheight()
-        x = (ecran_l - LARGEUR) // 2
-        y = (ecran_h - HAUTEUR) // 2
-        self.geometry(f"{LARGEUR}x{HAUTEUR + 34}+{x}+{y}")
+        x = (ecran_l - self._largeur) // 2
+        y = (ecran_h - self._hauteur) // 2
+        self.geometry(f"{self._largeur}x{self._hauteur + 34}+{x}+{y}")
 
         self._toile = tk.Label(self, bg="#000000", bd=0)
         self._toile.pack()
@@ -116,7 +134,7 @@ class EcranDeChargement(tk.Toplevel):
                 # qui manquaient au demarrage.
                 for image in conteneur.decode(flux):
                     petite = image.reformat(
-                        width=LARGEUR, height=HAUTEUR, format="rgb24"
+                        width=self._largeur, height=self._hauteur, format="rgb24"
                     ).to_image()
                     # PhotoImage doit etre construit sur le fil graphique en
                     # theorie ; en pratique Tk l'accepte ici et c'est ce qui
@@ -143,7 +161,7 @@ class EcranDeChargement(tk.Toplevel):
         depassees. Une video qui saute quelques images reste une video de six
         secondes ; une video qui s'etire devient une attente.
         """
-        attendue = int((time.monotonic() - self._depart) * IMAGES_PAR_SECONDE)
+        attendue = int((time.monotonic() - self._depart) * self._images_par_seconde)
 
         image = None
         while self._rendues <= attendue:

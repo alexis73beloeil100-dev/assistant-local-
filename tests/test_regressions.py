@@ -3308,7 +3308,7 @@ def test_l_ecran_dure_le_temps_de_la_video_pas_celui_du_decodage():
 
     assert "time.monotonic()" in code, (
         "sans horloge, la duree redevient celle du decodage")
-    assert "IMAGES_PAR_SECONDE" in code
+    assert "_images_par_seconde" in code, "la cadence est celle de la video"
     assert "while" in code, "il faut pouvoir jeter plusieurs images en retard"
 
 
@@ -3663,3 +3663,11 @@ def test_les_modeles_proposes_existent_et_le_choix_est_large():
     assert {"qwen3-coder:30b", "gpt-oss:20b", "devstral:24b"} <= set(ids)
     assert [c[3] for c in comp.LLM_CHOICES] == sorted((c[3] for c in comp.LLM_CHOICES), reverse=True)
     assert comp.nom_modele_valide("qwen3:32b") and not comp.nom_modele_valide("x; rm -rf")
+
+
+def test_la_video_de_demarrage_garde_sa_forme_et_sa_cadence():
+    from assistant import demarrage
+
+    largeur, hauteur, cadence = demarrage.format_video(demarrage.video_de_demarrage())
+    assert (largeur, hauteur, cadence) == (768, 432, 24.0)
+    assert abs(largeur / hauteur - 1280 / 720) < 0.01
