@@ -1924,10 +1924,12 @@ _QUESTION_OUTILS = re.compile(
 
 
 _DEMANDE_TESTS = re.compile(
-    r"\b(?:lance|lancer|lances|relance|relancer|ex[eé]cute|ex[eé]cuter|fais tourner|"
-    r"run)\b[^.?!\n]{0,40}\btests?\b(?!\s+(?:en jeu|dans le jeu))", re.IGNORECASE)
+    r"\b(?:(?:re)?lan[cç]\w*|ex[eé]cute\w*|fais tourner|run)"
+    r"[^.?!\n]{0,40}\btests?\b(?!\s+(?:en jeu|dans le jeu))", re.IGNORECASE)
 
-_QUESTION_TOTAL = re.compile(r"\b(total|tas|deux modes|les 2|additionn)", re.IGNORECASE)
+_QUESTION_TOTAL = re.compile(
+    r"\bcombien\b.*\b(total|tas|deux modes|les 2|additionn)"
+    r"|\b(total|tas|deux modes|les 2|additionn)\b.*\bcombien\b", re.IGNORECASE)
 
 
 def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
@@ -1990,6 +1992,16 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
                 message = dict(message, content="")
 
         convo.append(message)
+        if not calls and not content.strip():
+            # Reponse vide : l'utilisateur voyait une bulle blanche. On
+            # redemande une fois, sans outils.
+            convo.append({"role": "system", "content":
+                          "Ta reponse etait vide. Reponds maintenant a la "
+                          "derniere demande de l'utilisateur, en francais."})
+            message = _call(convo, with_tools=False)
+            content = message.get("content", "") or (
+                "Je n'ai pas su repondre. Reformule ta demande, ou change de modele.")
+            convo.append(message)
         if not calls:
             return content.strip(), convo
 
@@ -2197,7 +2209,14 @@ def avec_consigne_de_mode(messages: list[dict]) -> list[dict]:
     mode = mode_actuel()
     texte = CONSIGNE_MODE[mode] + "\n\nTes outils, chiffres exacts : " + _chiffres_outils(mode)
     if mode == "dev":
-        from assistant.skills import code
+        from assistant.skills import code, unreal
+
+        try:
+            projet = unreal._projet_ou_echec()
+            texte += (f"\n\nProjet de travail : {projet.stem} ({projet}). C'est de "
+                      "LUI qu'on parle : ne demande jamais sur quel projet travailler.")
+        except Exception:  # noqa: BLE001 - aucun projet Unreal sur ce PC
+            pass
 
         notes = code.memoire_pour_le_modele()
         if notes:

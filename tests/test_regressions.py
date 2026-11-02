@@ -3898,3 +3898,34 @@ def test_aucun_test_dit_pourquoi(tmp_path, monkeypatch):
     assert "code de sortie 1" in texte and "modules are missing" in texte
     assert "compile le projet" in texte
     assert "-ExecCmds=Automation RunTests Project;Quit" in vus["commande"]
+
+
+def test_capture_du_12b_les_quatre_ratages(monkeypatch):
+    from assistant import llm
+
+    # « Lancemoi un test PI » et « un test complet automatise » lancent les tests.
+    for phrase in ("Lancemoi un test PI directement dans onedrive Engine",
+                   "Bah je voulais quon lance un test complet automatisé du niveau"):
+        assert llm._DEMANDE_TESTS.search(phrase), phrase
+    # Une insulte contenant « tas » n'est pas une question sur les outils.
+    assert not llm._QUESTION_TOTAL.search(
+        "Le seul projet que tas en tete cest Iron Fall arrete un peu")
+    assert llm._QUESTION_TOTAL.search("Total melange les 2 tas combien")
+    # Une reponse vide est redemandee.
+    reponses = iter([{"content": ""}, {"content": "Voici."}])
+    monkeypatch.setattr(llm, "_call", lambda *a, **k: next(reponses))
+    monkeypatch.setattr(llm, "avec_carte_machine", lambda m: m)
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "pc")
+    assert llm.chat([{"role": "user", "content": "salut"}])[0] == "Voici."
+
+
+def test_le_projet_le_plus_recent_est_pris_sans_demander(tmp_path, monkeypatch):
+    from assistant.skills import unreal
+
+    a, b = tmp_path / "Ironfall.uproject", tmp_path / "Autre.uproject"
+    a.write_text("{}"); b.write_text("{}")  # noqa: E702
+    memoire = {}
+    monkeypatch.setattr(unreal.settings, "get", lambda k, d=None: memoire.get(k, d))
+    monkeypatch.setattr(unreal.settings, "set", lambda k, v: memoire.__setitem__(k, v))
+    monkeypatch.setattr(unreal, "projets_recents", lambda: [a, b])
+    assert unreal._projet_ou_echec() == a

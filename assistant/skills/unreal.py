@@ -123,7 +123,9 @@ def _projet_ou_echec() -> Path:
     if p is not None:
         return p
     recents = projets_recents()
-    if len(recents) == 1:
+    if recents:
+        # Le plus recemment ouvert dans Unreal est celui sur lequel on
+        # travaille : demander « quel projet ? » a chaque fois exasperait.
         settings.set(CLE_PROJET, str(recents[0]))
         return recents[0]
     if recents:

@@ -299,16 +299,13 @@ def test_le_plantage_donne_le_message_et_signale_le_code_du_projet(tmp_path,
     assert "   UnrealEditor_Engine!UActorComponent::TickComponent()" in texte
 
 
-def test_sans_projet_choisi_il_propose_les_recents(tmp_path, reglages,
-                                                   monkeypatch):
+def test_sans_projet_choisi_il_prend_le_plus_recent(tmp_path, reglages,
+                                                    monkeypatch):
+    """Il demandait « sur quel projet ? » alors qu'Iron Fall etait le seul utilise."""
     a, b = faux_projet(tmp_path, "A"), faux_projet(tmp_path, "B")
     monkeypatch.setattr(unreal, "projets_recents", lambda: [a, b])
-    texte = unreal.resume_projet()
-    assert "Aucun projet choisi" in texte and str(a) in texte
-
-    monkeypatch.setattr(unreal, "projets_recents", lambda: [a])
     unreal.resume_projet()
-    assert unreal.projet_actuel() == a, "un seul projet recent : il est pris"
+    assert unreal.projet_actuel() == a, "le plus recemment ouvert est pris"
 
 
 # --- Etape 5 -----------------------------------------------------------------------
