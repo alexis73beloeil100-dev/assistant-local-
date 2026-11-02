@@ -66,7 +66,12 @@ qu'une phrase sur six.
 **La mini-fenêtre** : **Win+Maj+A**, n'importe où, fait apparaître un petit
 orbe en haut de l'écran, la zone de texte prête. Échap le renvoie.
 
-**L'atelier Unreal** (mode Dev) : projets récents ou **Choisir le projet**,
+**L'atelier de code** (mode Dev), pour **n'importe quel projet** choisi par
+son dossier : lire, chercher, modifier avec accord (différence en couleur),
+annuler, lancer les commandes du projet, plan, mémoire `ASSISTANT.md`, Git,
+forum Unreal et Stack Overflow. Voir `assistant/skills/code.py`.
+
+**L'atelier Unreal**, quand le projet est un projet Unreal : projets récents ou **Choisir le projet**,
 moteur UE5 retrouvé tout seul (registre, Launcher ou moteur compilé), compilation
 avec les erreurs par fichier et ligne, journaux de l'éditeur, dernier rapport de
 plantage. Voir `assistant/skills/unreal.py`.

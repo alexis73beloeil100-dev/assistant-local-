@@ -1,6 +1,10 @@
-"""Atelier Unreal, etape 2 : lire, chercher, ecrire et annuler du code.
+"""L'atelier de code : lire, chercher, ecrire, annuler, executer.
 
-Tout se passe DANS le dossier du projet Unreal choisi. Un chemin qui en sort
+Il marche sur N'IMPORTE QUEL projet : un jeu Unreal, une application Python,
+un site web, un projet Unity... Le projet est un dossier, choisi une fois.
+Si ce dossier contient un .uproject, les outils Unreal s'y branchent aussi.
+
+Tout se passe DANS le dossier du projet choisi. Un chemin qui en sort
 -- moteur, Windows, un autre projet -- est refuse, meme avec "..".
 
 Chaque ecriture :
@@ -25,10 +29,16 @@ CREATE_NO_WINDOW = 0x08000000
 
 # Ce qu'Unreal regenere : ni a lire, ni a chercher, ni a modifier.
 DOSSIERS_IGNORES = {"binaries", "intermediate", "saved", "deriveddatacache",
-                    ".vs", ".git", ".idea", "build"}
+                    ".vs", ".git", ".idea", "build", "node_modules",
+                    "__pycache__", ".venv", "venv", ".mypy_cache",
+                    ".pytest_cache", "dist", "obj", "library", "temp", "logs"}
 EXTENSIONS_CODE = (".h", ".hpp", ".cpp", ".c", ".inl", ".cs", ".ini",
                    ".uproject", ".uplugin", ".usf", ".ush", ".json", ".md",
-                   ".txt", ".py")
+                   ".txt", ".py", ".js", ".jsx", ".ts", ".tsx", ".html",
+                   ".css", ".scss", ".vue", ".java", ".kt", ".go", ".rs",
+                   ".rb", ".php", ".lua", ".gd", ".shader", ".hlsl", ".glsl",
+                   ".toml", ".yaml", ".yml", ".xml", ".cfg", ".bat", ".ps1",
+                   ".sh", ".sql", ".csproj", ".sln", ".cmake")
 LIGNES_MAX = 400
 RESULTATS_MAX = 120
 TAILLE_MAX = 2 * 1024 * 1024
@@ -44,14 +54,117 @@ class HorsProjet(Exception):
 
 # --- Le projet et ses chemins ------------------------------------------------
 
+CLE_DOSSIER = "projet_code"
+
+
 def racine() -> Path:
+    """Le dossier du projet de travail : choisi, sinon celui du projet Unreal."""
+    from assistant import settings
     from assistant.skills import unreal
 
+    dossier = settings.get(CLE_DOSSIER)
+    if dossier and Path(dossier).is_dir():
+        return Path(dossier).resolve()
     projet = unreal.projet_actuel()
     if projet is None:
-        raise HorsProjet("Aucun projet Unreal choisi : utilise Choisir le "
-                         "projet, ou l'outil choisir_projet_unreal.")
+        raise HorsProjet("Aucun projet choisi : utilise Choisir le projet, "
+                         "ou l'outil choisir_projet.")
     return projet.parent.resolve()
+
+
+def choisir_projet(chemin: str) -> str:
+    """Le dossier de travail. S'il contient un .uproject, Unreal suit."""
+    from assistant import settings
+    from assistant.skills import unreal
+
+    dossier = Path(str(chemin or "").strip().strip('"'))
+    if dossier.is_file():
+        dossier = dossier.parent
+    if not dossier.is_dir():
+        return f"{chemin} n'est pas un dossier existant."
+    settings.set(CLE_DOSSIER, str(dossier.resolve()))
+    message = f"Projet de travail : {dossier.name} ({dossier.resolve()})."
+    uprojects = sorted(dossier.glob("*.uproject"))
+    if uprojects:
+        unreal.choisir_projet(str(uprojects[0]))
+        message += f" C'est un projet Unreal : {uprojects[0].name}."
+    reperes = [n for n in ("package.json", "pyproject.toml", "requirements.txt",
+                           "CMakeLists.txt", "Cargo.toml", "go.mod", "pom.xml",
+                           "build.gradle", ".git") if (dossier / n).exists()]
+    reperes += [p.name for p in list(dossier.glob("*.sln"))[:2]]
+    if reperes:
+        message += f" Reperes : {', '.join(reperes)}."
+    return message
+
+
+def projet_nom() -> str:
+    try:
+        return racine().name
+    except HorsProjet:
+        return ""
+
+
+# --- Executer dans le projet ------------------------------------------------------
+
+# Construire et tester : des gestes qu'on refait vingt fois, sans danger pour
+# la machine. Ils passent sans fenetre, journalises. Tout le reste demande.
+_CONSTRUIRE = re.compile(
+    r"^\s*(python3?|py)\s+-m\s+(pytest|unittest|build|compileall)\b|"
+    r"^\s*(pytest|tox|nox)\b|"
+    r"^\s*(npm|pnpm|yarn)\s+(test|run\s+[\w:-]+|ci|install)\b|"
+    r"^\s*(dotnet)\s+(build|test|run|restore)\b|"
+    r"^\s*cmake\s+(--build|-S|-B)\b|^\s*(msbuild|ninja|make)\b|"
+    r"^\s*cargo\s+(build|test|check|run|clippy)\b|"
+    r"^\s*go\s+(build|test|vet|run)\b|"
+    r"^\s*(gradle|gradlew|\.[\\/]gradlew|mvn)\b", re.I)
+SORTIE_MAX = 200
+
+
+def executer(commande: str, delai: int = 600, ask=None) -> str:
+    """Lance une commande dans le dossier du projet et rend sa sortie."""
+    from assistant.skills import shell
+
+    commande = (commande or "").strip()
+    if not commande:
+        return "Aucune commande."
+    try:
+        base = racine()
+    except HorsProjet as exc:
+        return str(exc)
+    raison = shell.refus(commande)
+    if raison:
+        return f"Je refuse cette commande : {raison}."
+    routine = bool(_CONSTRUIRE.match(commande)) or shell.lecture_seule(commande)
+    action = safety.Action(kind="commande", summary=f"Dans {base.name} : {commande}",
+                           targets=[str(base)], reversible=routine,
+                           routine=routine)
+    try:
+        if not safety.guard(action, ask=ask):
+            return "Commande refusee."
+    except safety.Refused as exc:
+        return str(exc)
+    if os.name == "nt":
+        argv = ["powershell.exe", "-NoProfile", "-NonInteractive",
+                "-ExecutionPolicy", "Bypass", "-Command", commande]
+    else:
+        argv = ["sh", "-c", commande]
+    debut = time.time()
+    try:
+        r = subprocess.run(argv, cwd=str(base), capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           timeout=max(10, min(int(delai or 600), 3600)),
+                           creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0)
+    except subprocess.TimeoutExpired:
+        return f"Arretee apres {delai} s : la commande ne rendait pas la main."
+    except OSError as exc:
+        return f"Lancement impossible : {exc}"
+    lignes = (r.stdout + ("\n" + r.stderr if r.stderr.strip() else "")).splitlines()
+    coupe = len(lignes) > SORTIE_MAX
+    if coupe:
+        lignes = lignes[:40] + [f"... ({len(lignes) - SORTIE_MAX} lignes) ..."] + lignes[-(SORTIE_MAX - 40):]
+    return (f"Code de sortie {r.returncode} en {time.time() - debut:.1f} s"
+            + (" (sortie coupee au milieu)" if coupe else "") + "\n"
+            + "\n".join(lignes))
 
 
 def resoudre(chemin: str) -> Path:

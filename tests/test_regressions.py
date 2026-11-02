@@ -3592,4 +3592,4 @@ def test_la_barre_laterale_suit_le_mode():
     assert {"configuration", "fichiers", "commandes", "miseajour"} <= dev & pc
     for p in panels.PANELS:
         assert set(p.modes) <= set(llm.MODES), p.key
-    assert ("unreal", "unreal") in panels.CATEGORIES
+    assert ("unreal", "projet") in panels.CATEGORIES

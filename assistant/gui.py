@@ -402,29 +402,27 @@ class AssistantWindow(tk.Tk):
             return
         from tkinter import filedialog
 
-        from assistant.skills import unreal
+        from assistant.skills import code, unreal
 
         recents = unreal.projets_recents()
         depart = str(recents[0].parent.parent) if recents else None
-        chemin = filedialog.askopenfilename(
-            parent=self, title="Choisir le projet Unreal",
-            initialdir=depart,
-            filetypes=[("Projet Unreal", "*.uproject")])
+        chemin = filedialog.askdirectory(
+            parent=self, title="Choisir le dossier du projet",
+            initialdir=depart, mustexist=True)
         if not chemin:
             return
-        self.post("info", unreal.choisir_projet(chemin))
+        self.post("info", code.choisir_projet(chemin))
         self._montrer_projet()
 
     def _montrer_projet(self) -> None:
-        from assistant.skills import unreal
+        from assistant.skills import code
 
         if llm.mode_actuel() != "dev":
-            # Le projet Unreal ne concerne que le mode Dev.
+            # Le projet de travail ne concerne que le mode Dev.
             self.lien_projet.configure(text="", cursor="arrow")
             return
-        projet = unreal.projet_actuel()
-        texte = (f"Projet : {projet.stem}" if projet
-                 else "Choisir le projet Unreal")
+        nom = code.projet_nom()
+        texte = f"Projet : {nom}" if nom else "Choisir le projet"
         self.lien_projet.configure(text=texte[:30], cursor="hand2")
 
     def _montrer_mode(self) -> None:

@@ -194,3 +194,66 @@ def test_en_mode_dev_le_modele_a_trente_tours_et_ne_tourne_pas_en_rond(monkeypat
     assert lances == ["lire_code", "lire_code"], "le 3e appel identique ne part pas"
     assert any("tournes en rond" in str(m.get("content")) for m in convo)
     assert tours["n"] == llm.TOURS_DEV + 1
+
+
+# --- N'importe quel projet ------------------------------------------------------
+
+@pytest.fixture
+def reglages(monkeypatch):
+    memoire: dict = {}
+    import assistant.settings as s
+
+    monkeypatch.setattr(s, "get", lambda k, d=None: memoire.get(k, d))
+    monkeypatch.setattr(s, "set", lambda k, v: memoire.__setitem__(k, v))
+    return memoire
+
+
+def test_un_projet_python_quelconque_devient_le_projet_de_travail(tmp_path, reglages,
+                                                                  monkeypatch):
+    app = tmp_path / "MonAppli"
+    (app / "src").mkdir(parents=True)
+    (app / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    (app / "src" / "calcul.py").write_text("def double(x):\n    return x * 2\n",
+                                           encoding="utf-8")
+    message = code.choisir_projet(str(app))
+    assert "MonAppli" in message and "pyproject.toml" in message
+    assert code.racine() == app.resolve()
+    assert "src/calcul.py:2:" in code.chercher_code("return x")
+    monkeypatch.setattr(code.safety, "guard", lambda action, ask=None: True)
+    assert "Modifie" in code.modifier_fichier("src/calcul.py", "x * 2", "x + x")
+
+
+def test_un_dossier_avec_uproject_branche_aussi_unreal(tmp_path, reglages):
+    from assistant.skills import unreal
+
+    jeu = tmp_path / "Tireur"
+    jeu.mkdir()
+    (jeu / "Tireur.uproject").write_text("{}", encoding="utf-8")
+    assert "projet Unreal" in code.choisir_projet(str(jeu))
+    assert unreal.projet_actuel() == jeu / "Tireur.uproject"
+
+
+def test_executer_lance_dans_le_projet_et_rend_la_sortie(tmp_path, reglages, monkeypatch):
+    code.choisir_projet(str(tmp_path))
+    monkeypatch.setattr(code.safety, "guard", lambda action, ask=None: True)
+    commande = "pwd" if code.os.name != "nt" else "Get-Location"
+    texte = code.executer(commande)
+    assert texte.startswith("Code de sortie 0")
+    assert str(tmp_path.resolve()) in texte
+
+
+def test_construire_et_tester_passent_sans_fenetre_le_reste_demande(tmp_path, reglages,
+                                                                    monkeypatch):
+    code.choisir_projet(str(tmp_path))
+    vues = []
+    monkeypatch.setattr(code.safety, "guard",
+                        lambda action, ask=None: vues.append(action) or False)
+    code.executer("python -m pytest -q")
+    code.executer("npm run build")
+    code.executer("del important.txt")
+    assert [a.routine for a in vues] == [True, True, False]
+
+
+def test_une_commande_dangereuse_est_refusee_d_office(tmp_path, reglages):
+    code.choisir_projet(str(tmp_path))
+    assert code.executer("format c:").startswith("Je refuse")

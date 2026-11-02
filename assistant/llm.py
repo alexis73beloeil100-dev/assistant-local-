@@ -988,9 +988,30 @@ LISTE_INT = {"type": "array", "items": INT}
 
 TOOLS += [
     Tool(
+        "choisir_projet",
+        "Choisit le dossier du projet de travail, quel qu'il soit : jeu "
+        "Unreal, application Python, site web, Unity, C#, C++... Tous les "
+        "outils de code y travaillent ensuite.",
+        _obj({"chemin": {**STR, "description": "Chemin du dossier du projet"}}, ["chemin"]),
+        lambda chemin: code.choisir_projet(str(chemin)),
+    ),
+    Tool(
+        "executer_dans_projet",
+        "Lance une commande dans le dossier du projet (PowerShell) et rend sa "
+        "sortie et son code de sortie : compiler, lancer les tests, installer "
+        "les dependances, lancer un script. Les commandes de construction et "
+        "de test courantes passent sans fenetre ; les autres demandent "
+        "l'accord de l'utilisateur.",
+        _obj({"commande": STR, "delai": {**INT, "description": "Secondes, 600 par defaut"}},
+             ["commande"]),
+        lambda commande, delai=600: code.executer(str(commande), int(delai)),
+        effect=True,
+    ),
+    Tool(
         "arborescence_projet",
-        "Montre l'arborescence du projet Unreal (sans Binaries, Intermediate, "
-        "Saved...). 'dossier' est relatif au projet, vide = racine.",
+        "Montre l'arborescence du projet de travail (sans les dossiers "
+        "generes : Binaries, Intermediate, node_modules...). 'dossier' est "
+        "relatif au projet, vide = racine.",
         _obj({"dossier": STR, "profondeur": INT}),
         lambda dossier="", profondeur=3: code.arborescence(str(dossier), int(profondeur)),
     ),
@@ -1005,7 +1026,7 @@ TOOLS += [
     Tool(
         "chercher_dans_le_code",
         "Cherche un mot, une classe ou une fonction dans tout le code du "
-        "projet (.h, .cpp, .cs, .ini...). Rend fichier:ligne: texte.",
+        "projet de travail. Rend fichier:ligne: texte.",
         _obj({"motif": STR, "regex": {"type": "boolean"}, "dossier": STR}, ["motif"]),
         lambda motif, regex=False, dossier="": code.chercher_code(
             str(motif), bool(regex), str(dossier)),
@@ -1339,7 +1360,7 @@ OUTILS_EDITEUR = frozenset({
 })
 
 OUTILS_ATELIER_CODE = frozenset({
-    "arborescence_projet", "lire_code", "chercher_dans_le_code",
+    "choisir_projet", "executer_dans_projet", "arborescence_projet", "lire_code", "chercher_dans_le_code",
     "modifier_fichier", "creer_fichier", "historique_modifications",
     "annuler_modification", "plan", "memoire_projet", "git_etat",
     "git_difference", "git_enregistrer", "chercher_documentation", "lire_page",
@@ -1397,16 +1418,19 @@ OUTILS_DEV = frozenset({
 
 CONSIGNE_MODE = {
     "pc": "Mode actuel : PC. Tu as les outils de la machine Windows.",
-    "dev": ("Mode actuel : Dev. Tu es un assistant de developpement Unreal "
-            "Engine 5 (C++ et Blueprint). Methode :\n"
+    "dev": ("Mode actuel : Dev. Tu es un assistant de developpement, sur "
+            "n'importe quel projet (jeu Unreal Engine 5 en C++ et Blueprint, "
+            "Python, web, C#, C++...). Le projet de travail se choisit avec "
+            "choisir_projet. Methode :\n"
             "- Une demande en plusieurs etapes : ecris d'abord un plan (outil "
             "plan), coche chaque etape finie.\n"
             "- Avant de modifier un fichier, lis-le (lire_code) ; cherche "
             "les usages (chercher_dans_le_code) avant de renommer ou supprimer.\n"
             "- Modifie par petits passages exacts (modifier_fichier), jamais "
             "un fichier entier de memoire.\n"
-            "- Apres une modification de C++, compile (compiler_unreal) ; "
-            "si ca echoue, lis l'erreur, corrige, recompile.\n"
+            "- Apres une modification, verifie : projet Unreal -> "
+            "compiler_unreal ; autre projet -> executer_dans_projet (build, "
+            "tests). Si ca echoue, lis l'erreur, corrige, recommence.\n"
             "- Une API dont tu n'es pas sur : chercher_documentation.\n"
             "- Un choix durable (convention, architecture) : note-le avec "
             "memoire_projet.\n"

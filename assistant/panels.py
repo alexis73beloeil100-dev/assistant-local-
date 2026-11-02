@@ -458,9 +458,19 @@ def _mise_a_jour() -> str:
 
 
 def _projet_unreal() -> str:
-    from assistant.skills import unreal
+    from assistant.skills import code, unreal
 
-    lignes = ["PROJET UNREAL", "", unreal.resume_projet(), ""]
+    try:
+        racine = code.racine()
+    except code.HorsProjet as exc:
+        return f"PROJET\n\n{exc}"
+    lignes = ["PROJET", "", f"Dossier  {racine}", ""]
+    lignes += ["GIT", "", code.git_etat(), ""]
+    if unreal.projet_actuel() is None or unreal.projet_actuel().parent.resolve() != racine:
+        lignes += ["NOTES DU PROJET (ASSISTANT.md)", "",
+                   code.memoire_projet()[-1500:]]
+        return "\n".join(lignes)
+    lignes += ["UNREAL", "", unreal.resume_projet(), ""]
     if unreal.derniere_compilation:
         lignes += ["DERNIERE COMPILATION", "", unreal.derniere_compilation, ""]
     lignes += ["JOURNAL DE LA DERNIERE SESSION", "", unreal.journaux(15)]
@@ -618,8 +628,9 @@ PANELS: list[Panel] = [
     Panel("preinstalle", "Préinstallés",
           "ce qui était là avant vous", _preinstalle,
           court="D'origine", icone="grille", categorie="logiciels"),
-    Panel("unreal_projet", "Projet Unreal",
-          "le projet, la derniere compilation, le journal", _projet_unreal,
+    Panel("unreal_projet", "Projet",
+          "le projet de travail, Git, et pour Unreal la compilation",
+          _projet_unreal,
           live=True, court="Projet", icone="dossier", categorie="unreal",
           modes=("dev",)),
     Panel("miseajour", "Vérifier les mises à jour",
@@ -632,7 +643,7 @@ PANELS: list[Panel] = [
 # Rubriques de la barre laterale, dans l'ordre d'affichage. Le libelle est ce
 # que l'utilisateur lit ; la cle est ce que porte chaque Panel.
 CATEGORIES = [
-    ("unreal", "unreal"),
+    ("unreal", "projet"),
     ("machine", "ma machine"),
     ("reparer", "reparer"),
     ("logiciels", "logiciels"),
