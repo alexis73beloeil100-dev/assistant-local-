@@ -535,6 +535,64 @@ def _projet_unreal() -> str:
     return "\n".join(lignes + _demandes_dev())
 
 
+def _actions(*demandes: str) -> list[str]:
+    return ["", "ACTIONS (clique une ligne)", ""] + [f"{EXEMPLE}{d}" for d in demandes]
+
+
+def _dev_jouer() -> str:
+    from assistant.skills import unreal
+
+    projet = unreal.projet_actuel()
+    lignes = ["JOUER", "",
+              f"  Projet Unreal : {projet.stem if projet else 'aucun (choisis-le en bas a gauche)'}",
+              "  Le test dans l'editeur demande l'editeur ouvert et son Python",
+              "  active ; sinon le jeu se lance seul, hors editeur."]
+    return "\n".join(lignes + _actions(
+        "Ouvre Unreal", "Lance un test dans l'éditeur", "Lance une simulation dans l'éditeur",
+        "Arrête le test", "Lance le jeu seul en fenêtre", "Active le Python de l'éditeur"))
+
+
+def _dev_compiler() -> str:
+    from assistant.skills import unreal
+
+    dernier = unreal.derniere_compilation or "  Aucune compilation depuis l'ouverture de l'application."
+    return "\n".join(["COMPILER", "", "DERNIER RESULTAT", "", dernier] + _actions(
+        "Compile le projet", "Compile le projet et corrige les erreurs",
+        "Compile en DebugGame", "Empaquète une version jouable en Development",
+        "Empaquète une version Shipping"))
+
+
+def _dev_journal() -> str:
+    from assistant.skills import unreal
+
+    return "\n".join(["JOURNAL D'UNREAL", "", unreal.journaux(40)] + _actions(
+        "Explique-moi les erreurs du journal", "Montre la fin brute du journal",
+        "Corrige la première erreur du journal"))
+
+
+def _dev_plantages() -> str:
+    from assistant.skills import unreal
+
+    return "\n".join(["PLANTAGES", "", unreal.dernier_plantage()] + _actions(
+        "Explique-moi ce plantage", "Trouve la cause du plantage et corrige-la"))
+
+
+def _dev_git() -> str:
+    from assistant.skills import code
+
+    return "\n".join(["GIT", "", code.git_etat()] + _actions(
+        "Montre les différences non enregistrées", "Enregistre mes changements dans Git",
+        "Où en est le projet ?"))
+
+
+def _dev_bibliotheque() -> str:
+    from assistant.skills import bibliotheque
+
+    return "\n".join(["BIBLIOTHEQUE LOCALE", "", bibliotheque.etat()] + _actions(
+        "Installe la bibliothèque C++", "Installe la bibliothèque Python",
+        "Cherche dans la bibliothèque comment utiliser std::unique_ptr"))
+
+
 def _controle() -> str:
     from assistant.skills import control
 
@@ -691,6 +749,20 @@ PANELS: list[Panel] = [
           _projet_unreal,
           live=True, court="Projet", icone="dossier", categorie="unreal",
           modes=("dev",)),
+    Panel("dev_jouer", "Jouer", "ouvrir Unreal, tester, lancer le jeu", _dev_jouer,
+          live=True, court="Jouer", icone="manette", categorie="unreal", modes=("dev",)),
+    Panel("dev_compiler", "Compiler", "compilation et empaquetage", _dev_compiler,
+          live=True, court="Compiler", icone="cle", categorie="unreal", modes=("dev",)),
+    Panel("dev_journal", "Journal d'Unreal", "erreurs et avertissements", _dev_journal,
+          live=True, court="Logs UE", icone="registre", categorie="unreal",
+          modes=("dev",)),
+    Panel("dev_plantages", "Plantages", "le dernier rapport de plantage", _dev_plantages,
+          live=True, court="Crashs", icone="alerte", categorie="unreal", modes=("dev",)),
+    Panel("dev_git", "Git", "etat et enregistrements", _dev_git,
+          live=True, court="Git", icone="terminal", categorie="unreal", modes=("dev",)),
+    Panel("dev_bibliotheque", "Bibliotheque locale", "documentation hors ligne",
+          _dev_bibliotheque, live=True, court="Biblio", icone="note",
+          categorie="unreal", modes=("dev",)),
     Panel("miseajour", "Vérifier les mises à jour",
           "version installée, et la dernière publiée", _mise_a_jour,
           interactif="miseajour", live=True,

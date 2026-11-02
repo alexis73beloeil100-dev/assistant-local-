@@ -561,3 +561,59 @@ def python_editeur(script: str, ask=None) -> str:
         return executer_python(script)
     except Indisponible as exc:
         return str(exc)
+
+
+# --- Jouer dans l'editeur (PIE) ----------------------------------------------------
+
+_JOUER = """
+sub = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+if action == "jouer":
+    sub.editor_request_begin_play()
+elif action == "simuler":
+    sub.editor_play_simulate()
+else:
+    sub.editor_request_end_play()
+_rendre({"ok": True, "action": action})
+"""
+
+
+def jouer_dans_editeur(action: str = "jouer") -> str:
+    """Lance (ou arrete) une partie de test dans l'editeur ouvert."""
+    from assistant.skills import unreal
+
+    action = action if action in ("jouer", "simuler", "arreter") else "jouer"
+    try:
+        _geste_editeur_ouvert(_JOUER, action=action)
+    except Indisponible:
+        if action == "arreter":
+            return "Aucun editeur ouvert a arreter."
+        return ("L'editeur n'est pas ouvert, ou son Python n'est pas active : "
+                "je lance le jeu seul a la place.\n" + unreal.lancer_jeu())
+    return {"jouer": "Partie de test lancee dans l'editeur (Play In Editor).",
+            "simuler": "Simulation lancee dans l'editeur.",
+            "arreter": "Partie de test arretee."}[action]
+
+
+def _geste_editeur_ouvert(script: str, **valeurs):
+    """Comme _geste, mais seulement dans l'editeur OUVERT : jouer n'a pas de
+    sens dans un Unreal en arriere-plan."""
+    import time
+
+    code = _ENTETE + "".join(f"{k} = {json.dumps(v)}\n" for k, v in valeurs.items()) + script
+    re_mod = _module_epic()
+    session = re_mod.RemoteExecution()
+    session.start()
+    try:
+        debut = time.time()
+        while not session.remote_nodes and time.time() - debut < 5:
+            time.sleep(0.2)
+        if not session.remote_nodes:
+            raise Indisponible("editeur ferme")
+        session.open_command_connection(session.remote_nodes[0]["node_id"])
+        r = session.run_command(code, unattended=True, exec_mode=re_mod.MODE_EXEC_FILE,
+                                raise_on_failure=False)
+    finally:
+        session.stop()
+    if not r.get("success"):
+        raise Indisponible(str(r.get("result")))
+    return r

@@ -1510,6 +1510,24 @@ TOOLS += [
 ]
 
 TOOLS += [
+    Tool("ouvrir_unreal",
+         "Ouvre le projet dans l'editeur Unreal Engine, avec la version du "
+         "moteur qu'il utilise. C'est CET outil pour \"ouvre Unreal\", "
+         "\"ouvre l'editeur\", \"lance Unreal Engine\" -- pas ouvrir_application.",
+         _obj({}), lambda: unreal.ouvrir_editeur(), effect=True),
+    Tool("jouer_test",
+         "Lance une partie de test dans l'editeur Unreal ouvert (Play In "
+         "Editor, PIE), une simulation, ou l'arrete. Editeur ferme : lance le "
+         "jeu seul. C'est CET outil pour \"lance un test\", \"PIE\", "
+         "\"joue\", \"teste le jeu\".",
+         _obj({"action": {**STR, "enum": ["jouer", "simuler", "arreter"]}}),
+         lambda action="jouer": animation.jouer_dans_editeur(str(action)), effect=True),
+    Tool("lancer_jeu_unreal",
+         "Lance le jeu Unreal du projet seul, hors editeur, en fenetre (option 'carte' : chemin "
+         "d'un niveau /Game/...).",
+         _obj({"carte": STR, "fenetre": {"type": "boolean"}}),
+         lambda carte="", fenetre=True: unreal.lancer_jeu(str(carte), bool(fenetre)),
+         effect=True),
     Tool("empaqueter_unreal",
          "Construit une version jouable du jeu Unreal (cook, pak, archive) "
          "dans Packaged/<configuration>. Long : de quelques minutes a une heure.",
@@ -1526,6 +1544,7 @@ OUTILS_ANIMATION = frozenset({
     "activer_python_editeur", "anim_squelette", "anim_infos", "anim_compatibilite",
     "anim_mesurer", "anim_notify", "anim_courbe", "anim_montage",
     "retargeter_animations", "python_editeur", "empaqueter_unreal",
+    "ouvrir_unreal", "jouer_test", "lancer_jeu_unreal",
     "assets_lourds",
 })
 
@@ -1603,7 +1622,9 @@ OUTILS_DEV = frozenset({
 })
 
 CONSIGNE_MODE = {
-    "pc": "Mode actuel : PC. Tu as les outils de la machine Windows.",
+    "pc": ("Mode actuel : PC. Tu as les outils de la machine Windows. Pour "
+           "Unreal, le code ou un projet de developpement, dis a "
+           "l'utilisateur de passer en mode Dev avec le bouton Dev / PC."),
     "dev": ("Mode actuel : Dev. Tu es un assistant de developpement, sur "
             "n'importe quel projet (jeu Unreal Engine 5 en C++ et Blueprint, "
             "Python, web, C#, C++...). Le projet de travail se choisit avec "
@@ -1626,6 +1647,9 @@ CONSIGNE_MODE = {
             "identifiant : garde-le pour blueprint_relier. Compile le "
             "Blueprint a la fin (blueprint_compiler) et verifie par "
             "capture_editeur puis lire_image.\n"
+            "- Unreal : \"ouvre Unreal\" -> ouvrir_unreal ; \"lance un test\", "
+            "\"PIE\", \"joue\" -> jouer_test ; jamais ouvrir_application pour "
+            "Unreal Engine.\n"
             "- \"Ou en est le projet\", \"qu'est-ce qui a ete fait\" : "
             "point_du_projet, puis reponds a partir de ce qu'il rend, sans "
             "inventer.\n"

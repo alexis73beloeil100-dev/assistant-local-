@@ -661,3 +661,47 @@ def assets_lourds(nombre: int = 25) -> str:
                   "pas de niveaux de detail (LOD) ; sons : non compresses. A "
                   "verifier dans l'editeur ou avec python_editeur.")
     return "\n".join(lignes)
+
+
+# --- Ouvrir Unreal, jouer, arreter ------------------------------------------------
+
+def _editeur_exe(moteur: Path) -> Path:
+    exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor.exe"
+    if not exe.is_file():
+        raise Echec(f"UnrealEditor.exe introuvable dans le moteur : {exe}")
+    return exe
+
+
+def ouvrir_editeur() -> str:
+    """Ouvre le projet dans l'editeur Unreal de sa version."""
+    try:
+        projet = analyser(_projet_ou_echec())
+        exe = _editeur_exe(dossier_moteur(projet.chemin, projet.association))
+    except Echec as exc:
+        return str(exc)
+    try:
+        subprocess.Popen([str(exe), str(projet.chemin)], cwd=str(projet.chemin.parent),
+                         creationflags=0x00000008 if os.name == "nt" else 0)
+    except OSError as exc:
+        return f"Ouverture impossible : {exc}"
+    return (f"Unreal Engine {projet.association} s'ouvre sur {projet.nom}. "
+            "Le chargement prend de quelques secondes a quelques minutes.")
+
+
+def lancer_jeu(carte: str = "", fenetre: bool = True) -> str:
+    """Lance le jeu tout seul, hors editeur (-game), pour un test rapide."""
+    try:
+        projet = analyser(_projet_ou_echec())
+        exe = _editeur_exe(dossier_moteur(projet.chemin, projet.association))
+    except Echec as exc:
+        return str(exc)
+    commande = [str(exe), str(projet.chemin)] + ([carte] if carte else []) + ["-game", "-log"]
+    if fenetre:
+        commande += ["-windowed", "-ResX=1600", "-ResY=900"]
+    try:
+        subprocess.Popen(commande, cwd=str(projet.chemin.parent),
+                         creationflags=0x00000008 if os.name == "nt" else 0)
+    except OSError as exc:
+        return f"Lancement impossible : {exc}"
+    return (f"{projet.nom} se lance en jeu{' sur ' + carte if carte else ''}. "
+            "Le journal de la partie se lira avec journaux_unreal.")

@@ -371,3 +371,70 @@ def test_l_activite_recente_donne_les_derniers_fichiers_touches(tmp_path):
     lignes = texte.splitlines()
     assert lignes[0].startswith("Activite recente")
     assert "Arme.h" in lignes[1] and "Arme.cpp" in lignes[-1]
+
+
+# --- Ouvrir Unreal, jouer ------------------------------------------------------------
+
+@pytest.fixture
+def moteur_installe(tmp_path, reglages, monkeypatch):
+    uproject = faux_projet(tmp_path, "IronFall", "5.8")
+    unreal.choisir_projet(str(uproject))
+    moteur = tmp_path / "UE_5.8"
+    exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    monkeypatch.setattr(unreal, "dossier_moteur", lambda _p, _a: moteur)
+    lances = []
+    monkeypatch.setattr(unreal.subprocess, "Popen",
+                        lambda cmd, **kw: lances.append(cmd))
+    return uproject, exe, lances
+
+
+def test_ouvrir_unreal_ouvre_le_projet_avec_son_moteur(moteur_installe):
+    uproject, exe, lances = moteur_installe
+    texte = unreal.ouvrir_editeur()
+    assert lances == [[str(exe), str(uproject)]]
+    assert "Unreal Engine 5.8" in texte and "IronFall" in texte
+
+
+def test_jouer_sans_editeur_ouvert_lance_le_jeu_seul(moteur_installe, monkeypatch):
+    from assistant.skills import animation
+
+    uproject, exe, lances = moteur_installe
+
+    def ferme(*a, **k):
+        raise animation.Indisponible("editeur ferme")
+
+    monkeypatch.setattr(animation, "_geste_editeur_ouvert", ferme)
+    texte = animation.jouer_dans_editeur("jouer")
+    assert "lance le jeu seul" in texte
+    assert lances[0][:2] == [str(exe), str(uproject)] and "-game" in lances[0]
+
+
+def test_jouer_avec_l_editeur_ouvert_demande_le_play_in_editor(moteur_installe, monkeypatch):
+    from assistant.skills import animation
+
+    vus = []
+    monkeypatch.setattr(animation, "_geste_editeur_ouvert",
+                        lambda script, **v: vus.append((script, v)))
+    assert "Play In Editor" in animation.jouer_dans_editeur("jouer")
+    assert "editor_request_begin_play" in vus[0][0] and vus[0][1] == {"action": "jouer"}
+
+
+def test_le_modele_a_les_bons_outils_pour_unreal():
+    from assistant import llm
+
+    for nom in ("ouvrir_unreal", "jouer_test", "lancer_jeu_unreal"):
+        assert nom in llm.OUTILS_DEV
+    assert "jamais ouvrir_application" in llm.CONSIGNE_MODE["dev"]
+
+
+def test_la_barre_dev_a_ses_panneaux_d_action():
+    from assistant import panels
+
+    dev = [p for p in panels.PANELS if "dev" in p.modes and p.categorie == "unreal"]
+    assert {p.key for p in dev} >= {"unreal_projet", "dev_jouer", "dev_compiler",
+                                    "dev_journal", "dev_plantages", "dev_git",
+                                    "dev_bibliotheque"}
+    texte = panels._dev_jouer()
+    assert f"{panels.EXEMPLE}Lance un test dans l'éditeur" in texte
