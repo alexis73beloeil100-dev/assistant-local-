@@ -3770,3 +3770,21 @@ def test_choisir_un_modele_deja_telecharge_l_enregistre(tmp_path, monkeypatch):
     assert settings.get("llm_model") == "qwen3:14b"
     code = open("assistant/installer.py", encoding="utf-8").read()
     assert code.index("selectionner_si_installe") < code.index("Aucun composant selectionne")
+
+
+def test_ollama_est_lance_avec_une_console_invisible_dont_ses_enfants_heritent():
+    """Fenetres noires une par une au premier demarrage apres un redemarrage
+    du PC : Ollama lance detache (sans console) ouvrait une console neuve pour
+    chacun de ses sous-programmes."""
+    import ast
+    from pathlib import Path
+
+    from assistant import backend
+
+    source = Path(backend.__file__).read_text(encoding="utf-8")
+    appel = next(n for n in ast.walk(ast.parse(source))
+                 if isinstance(n, ast.Call) and ast.unparse(n.func) == "subprocess.Popen"
+                 and "serve" in ast.unparse(n))
+    drapeaux = ast.unparse(next(k.value for k in appel.keywords if k.arg == "creationflags"))
+    assert "CREATE_NO_WINDOW" in drapeaux and "DETACHED" not in drapeaux
+    assert not hasattr(backend, "DETACHED_PROCESS")

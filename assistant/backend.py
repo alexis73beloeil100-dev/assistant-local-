@@ -36,7 +36,9 @@ POLL_INTERVAL = 0.7
 # Lancement sans fenetre de console : l'utilisateur ne doit pas voir clignoter
 # un terminal noir quand il ouvre l'assistant.
 CREATE_NO_WINDOW = 0x08000000
-DETACHED_PROCESS = 0x00000008
+# Nouveau groupe : un Ctrl+C ou la fermeture de l'application n'arrete pas
+# le moteur.
+CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 
 def find_ollama() -> Path | None:
@@ -111,7 +113,14 @@ def start(on_progress=None) -> tuple[bool, str]:
             # un processus etranger verrouille nos propres fichiers et toute
             # reconstruction de l'executable echoue sur un WinError 5.
             cwd=str(exe.parent),
-            creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS,
+            # SURTOUT PAS DETACHED_PROCESS. Detache, Ollama n'a aucune
+            # console ; chaque programme console qu'il lance ensuite (ses
+            # runners, la detection des cartes graphiques au premier
+            # demarrage apres un redemarrage du PC) en recoit alors une
+            # NEUVE : autant de fenetres noires, une par une. Avec
+            # CREATE_NO_WINDOW seul, il a une console invisible, et ses
+            # enfants en heritent.
+            creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
