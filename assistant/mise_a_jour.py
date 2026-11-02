@@ -20,6 +20,11 @@ Deux paquets possibles, du plus leger au plus lourd :
 
 Un fichier telecharge n'est lance que si son empreinte SHA-256 est celle que
 GitHub annonce pour lui. Sinon il est efface et rien ne part.
+
+Depot prive : GitHub ne montre ses versions qu'avec une cle d'acces
+(jeton personnel, en lecture seule). Elle est rangee dans le Gestionnaire
+d'identification de Windows, chiffree pour la session de l'utilisateur, et
+jamais dans un fichier de reglages. Elle ne part que vers api.github.com.
 """
 from __future__ import annotations
 
@@ -36,6 +41,8 @@ from assistant import __version__, config, safety
 DEPOT = "alexis73beloeil100-dev/assistant-local-"
 API = f"https://api.github.com/repos/{DEPOT}/releases/latest"
 HOTE_TELECHARGEMENT = "https://github.com/"
+API_FICHIERS = f"https://api.github.com/repos/{DEPOT}/releases/assets/"
+CIBLE_CLE = "AssistantLocal/github"
 
 COMPLET = "Installer_AssistantLocal.exe"
 DOSSIER = config.DATA_DIR / "mises_a_jour"
@@ -56,6 +63,7 @@ class Disponible:
     sha256: str
     notes: str
     partiel: bool
+    url_api: str = ""
 
 
 def paquet_partiel(depuis: str, vers: str) -> str:
@@ -89,15 +97,72 @@ def choisir(release: dict, locale: str = __version__) -> Disponible | None:
             # lance : on n'en propose pas.
             continue
         url = str(asset.get("browser_download_url", ""))
+        url_api = str(asset.get("url", ""))
         if not url.startswith(HOTE_TELECHARGEMENT):
+            continue
+        if url_api and not url_api.startswith(API_FICHIERS):
             continue
         return Disponible(version=vers, nom=nom, url=url,
                           taille=int(asset.get("size", 0)),
                           sha256=digest.split(":", 1)[1].lower(),
                           notes=str(release.get("body") or "").strip(),
-                          partiel=est_partiel)
+                          partiel=est_partiel, url_api=url_api)
     raise Echec(f"la version {vers} est publiee, mais sans fichier "
                 f"d'installation verifiable pour la {locale}")
+
+
+# --- Cle d'acces au depot prive ---------------------------------------------
+
+def jeton() -> str:
+    """La cle d'acces GitHub enregistree, ou "" s'il n'y en a pas."""
+    try:
+        import win32cred
+
+        cred = win32cred.CredRead(CIBLE_CLE, win32cred.CRED_TYPE_GENERIC)
+    except Exception:  # noqa: BLE001 - absente, ou hors Windows
+        return ""
+    blob = cred.get("CredentialBlob") or b""
+    return blob.decode("utf-16-le") if isinstance(blob, bytes) else str(blob)
+
+
+def enregistrer_jeton(valeur: str) -> str:
+    valeur = (valeur or "").strip()
+    if not valeur:
+        return "Aucune cle saisie."
+    if not re.fullmatch(r"(github_pat_|ghp_)[A-Za-z0-9_]{20,}", valeur):
+        return ("Ce n'est pas une cle d'acces GitHub : elle commence par "
+                "github_pat_ (ou ghp_).")
+    try:
+        import win32cred
+
+        win32cred.CredWrite({
+            "Type": win32cred.CRED_TYPE_GENERIC,
+            "TargetName": CIBLE_CLE,
+            "UserName": "assistant-local",
+            "CredentialBlob": valeur,
+            "Persist": win32cred.CRED_PERSIST_LOCAL_MACHINE,
+        }, 0)
+    except Exception as exc:  # noqa: BLE001
+        return f"Cle non enregistree : {exc}"
+    return "Cle enregistree dans le Gestionnaire d'identification de Windows."
+
+
+def oublier_jeton() -> str:
+    try:
+        import win32cred
+
+        win32cred.CredDelete(CIBLE_CLE, win32cred.CRED_TYPE_GENERIC)
+    except Exception:  # noqa: BLE001
+        return "Aucune cle enregistree."
+    return "Cle effacee."
+
+
+def _entetes(accept: str) -> dict:
+    entetes = {"Accept": accept, "X-GitHub-Api-Version": "2022-11-28"}
+    cle = jeton()
+    if cle:
+        entetes["Authorization"] = f"Bearer {cle}"
+    return entetes
 
 
 def verifier(session=None) -> Disponible | None:
@@ -110,10 +175,16 @@ def verifier(session=None) -> Disponible | None:
                                 targets=[API]), "auto:clic")
     try:
         reponse = session.get(API, timeout=DELAI,
-                              headers={"Accept": "application/vnd.github+json"})
+                              headers=_entetes("application/vnd.github+json"))
     except requests.RequestException:
         raise Echec("GitHub injoignable : pas de connexion, ou ligne coupee")
+    if reponse.status_code in (401, 403) and jeton():
+        raise Echec("GitHub refuse la cle d'acces : elle a expire, ou n'a pas "
+                    "le droit de lire ce depot. Remplace-la.")
     if reponse.status_code == 404:
+        if not jeton():
+            raise Echec("rien de visible sur GitHub. Si le depot est prive, "
+                        "enregistre une cle d'acces ci-dessous.")
         raise Echec("aucune version publiee sur GitHub")
     if reponse.status_code != 200:
         raise Echec(f"GitHub a repondu {reponse.status_code}")
@@ -133,7 +204,16 @@ def telecharger(dispo: Disponible,
     calcul = hashlib.sha256()
     recu = 0
     try:
-        with session.get(dispo.url, stream=True, timeout=DELAI) as reponse:
+        # Avec une cle, par l'API : c'est le seul chemin qui marche sur un
+        # depot prive. GitHub renvoie vers son stockage, et requests retire
+        # l'en-tete d'autorisation en changeant d'hote : la cle ne part que
+        # vers api.github.com.
+        if jeton() and dispo.url_api:
+            url, entetes = dispo.url_api, _entetes("application/octet-stream")
+        else:
+            url, entetes = dispo.url, {}
+        with session.get(url, stream=True, timeout=DELAI,
+                         headers=entetes) as reponse:
             if reponse.status_code != 200:
                 raise Echec(f"telechargement refuse ({reponse.status_code})")
             with partiel.open("wb") as fh:

@@ -412,3 +412,42 @@ def test_ouvrir_le_panneau_mise_a_jour_ne_contacte_personne():
     code = inspect.getsource(panels._mise_a_jour)
     assert "verifier" not in code.replace("Verifier", "")
     assert "requests" not in code
+
+
+def test_avec_une_cle_le_telechargement_passe_par_l_api(monkeypatch, tmp_path):
+    """Sur un depot prive, seule l'adresse de l'API accepte la cle."""
+    from assistant import mise_a_jour as maj
+
+    release = _release("1.0.5", [("Installer_AssistantLocal.exe", b"contenu")])
+    release["assets"][0]["url"] = maj.API_FICHIERS + "42"
+    dispo = maj.choisir(release, "1.0.4")
+    monkeypatch.setattr(maj, "DOSSIER", tmp_path)
+    monkeypatch.setattr(maj, "jeton", lambda: "github_pat_" + "x" * 30)
+
+    appels = []
+
+    class Session:
+        def get(self, url, **kw):
+            appels.append((url, kw.get("headers", {})))
+            return _Reponse(b"contenu")
+
+    maj.telecharger(dispo, session=Session())
+    url, entetes = appels[0]
+    assert url == maj.API_FICHIERS + "42"
+    assert entetes["Authorization"].startswith("Bearer github_pat_")
+    assert entetes["Accept"] == "application/octet-stream"
+
+
+def test_une_adresse_d_api_etrangere_est_ecartee():
+    from assistant import mise_a_jour as maj
+
+    release = _release("1.0.5", [("Installer_AssistantLocal.exe", b"x")])
+    release["assets"][0]["url"] = "https://api.github.com/repos/autre/depot/releases/assets/1"
+    with pytest.raises(maj.Echec):
+        maj.choisir(release, "1.0.4")
+
+
+def test_une_cle_mal_formee_est_refusee_avant_d_etre_rangee():
+    from assistant import mise_a_jour as maj
+
+    assert "commence par github_pat_" in maj.enregistrer_jeton("motdepasse123")
