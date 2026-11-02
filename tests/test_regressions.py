@@ -3754,3 +3754,19 @@ def test_basculer_de_modele_vaut_tout_de_suite(tmp_path, monkeypatch):
                                                     "qwen3.5:4b"])
     assert backend.modeles_de_conversation() == ["qwen3.5:4b", "qwen3:14b"]
     assert "config.LLM_MODEL" in open("assistant/llm.py", encoding="utf-8").read()
+
+
+def test_choisir_un_modele_deja_telecharge_l_enregistre(tmp_path, monkeypatch):
+    """Le 14B etait telecharge : « rien a telecharger », et l'assistant
+    restait sur le 4B, parce que seul le telechargement enregistrait le choix."""
+    from assistant import components as comp, config, settings
+
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings, "_cache", None)
+    monkeypatch.setattr(comp, "model_installed", lambda n: n == "qwen3:14b")
+    assert comp.selectionner_si_installe("qwen3:14b")
+    assert settings.get("llm_model") == "qwen3:14b"
+    assert not comp.selectionner_si_installe("devstral:24b")
+    assert settings.get("llm_model") == "qwen3:14b"
+    code = open("assistant/installer.py", encoding="utf-8").read()
+    assert code.index("selectionner_si_installe") < code.index("Aucun composant selectionne")

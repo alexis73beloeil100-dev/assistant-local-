@@ -306,9 +306,15 @@ class Installer(tk.Tk):
     def start(self) -> None:
         if self.running:
             return
+        # Un modele DEJA telecharge n'a rien a installer, donc son
+        # installation -- qui enregistrait le choix -- ne tournait jamais :
+        # l'application restait sur l'ancien modele. On enregistre ici.
+        modele = self.autre_modele.get().strip() or self.model_choice.get()
+        selectionne = bool(modele) and comp.selectionner_si_installe(modele)
         choisis = [c for c in self.components if self.vars[c.key].get()]
         if not choisis:
-            self.post("etat", "Aucun composant selectionne.")
+            self.post("etat", f"Modele {modele} selectionne : l'assistant l'utilise "
+                      "des maintenant." if selectionne else "Aucun composant selectionne.")
             return
 
         self.running = True

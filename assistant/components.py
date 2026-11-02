@@ -258,6 +258,16 @@ def _model_installed(name: str) -> bool:
     return name in presents or f"{name}:latest" in presents
 
 
+def selectionner_si_installe(name: str) -> bool:
+    """Enregistre le modele choisi s'il est deja la. Vrai si c'est fait."""
+    if not model_installed(name):
+        return False
+    from assistant import settings
+
+    settings.set("llm_model", name)
+    return True
+
+
 def _install_model(name: str):
     def run(progress) -> tuple[bool, str]:
         from assistant import backend
