@@ -3929,3 +3929,51 @@ def test_le_projet_le_plus_recent_est_pris_sans_demander(tmp_path, monkeypatch):
     monkeypatch.setattr(unreal.settings, "set", lambda k, v: memoire.__setitem__(k, v))
     monkeypatch.setattr(unreal, "projets_recents", lambda: [a, b])
     assert unreal._projet_ou_echec() == a
+
+
+AIGUILLAGE_ATTENDU = [
+    # Phrases dictees, telles que sur les captures.
+    ("Lancemoi un test PI directement dans onedrive Engine", "jouer_test"),
+    ("Je tai dit lance Moi un test pis Directement Dans unREAL Engine", "jouer_test"),
+    ("Bah je voulais quon lance un test complet automatisé Du niveau complet avec tous "
+     "les déplacements et tirs", "tests_unreal"),
+    ("Allez pour la 2e fois je veux que tu me lances un test PI automatisé Iron Fall",
+     "tests_unreal"),
+    ("Est-ce que tu peux lancer un test automatisé pour Iron Fall", "tests_unreal"),
+    ("relance les tests", "tests_unreal"),
+    ("lance une partie dans l éditeur", "jouer_test"),
+    ("compile le projet", "compiler_unreal"),
+    ("ouvre unreal", "ouvrir_unreal"),
+    ("lance Unreal Engine", "ouvrir_unreal"),
+    ("montre le dernier crash", "dernier_plantage_unreal"),
+    ("lis les logs", "journaux_unreal"),
+    ("où en est le projet", "point_du_projet"),
+    # Ce qui doit rester au modele.
+    ("compile et corrige les erreurs", None),
+    ("ouvre unreal et crée un acteur cube dans le niveau", None),
+    ("écris un test pour la classe arme", None),
+    ("salut comment ça va", None),
+    ("Arrête le seul projet que tas en tête cest Iron Fall", None),
+    ("ouvre le fichier logs.txt dans le dossier Documents de mon frère", None),
+]
+
+
+def test_les_demandes_nettes_vont_droit_au_bon_outil():
+    from assistant import llm
+
+    for phrase, outil in AIGUILLAGE_ATTENDU:
+        route = llm.aiguiller(phrase)
+        assert (route[0] if route else None) == outil, phrase
+
+
+def test_pas_de_reflexion_silencieuse_hors_code(monkeypatch):
+    from assistant import llm
+
+    vus = []
+    monkeypatch.setattr(llm, "_call", lambda c, with_tools=True, think=None:
+                        vus.append(think) or {"content": "ok"})
+    monkeypatch.setattr(llm, "avec_carte_machine", lambda m: m)
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "pc")
+    llm.chat([{"role": "user", "content": "comment ca va"}])
+    llm.chat([{"role": "user", "content": "corrige le bug de la classe Arme"}])
+    assert vus == [False, None]

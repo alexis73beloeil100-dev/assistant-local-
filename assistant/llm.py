@@ -28,6 +28,11 @@ SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 Tu reponds en francais, brievement, sans formule de politesse superflue.
 
 Regles :
+- Tu fais ce qu'on te demande. Jamais de reponse generique du genre "Je suis
+  pret, dis-moi ce que tu veux faire" : si la demande est claire, agis ; si
+  un outil a echoue, recopie son message d'erreur et dis ce qui bloque.
+- Les messages sont souvent dictes : "PI" ou "pis" = PIE, "onedrive
+  Engine" = Unreal Engine. Comprends l'intention, ne corrige pas l'orthographe.
 - Pour toute question sur des fichiers, l'etat de la machine ou les jeux, tu
   DOIS appeler un outil. Tu n'inventes jamais un chemin, une taille ou un
   nom de jeu : si tu ne l'as pas lu dans un resultat d'outil, tu ne le sais pas.
@@ -1536,8 +1541,8 @@ TOOLS += [
     Tool("jouer_test",
          "Lance une partie de test dans l'editeur Unreal ouvert (Play In "
          "Editor, PIE), une simulation, ou l'arrete. Editeur ferme : lance le "
-         "jeu seul. C'est CET outil pour \"lance un test\", \"PIE\", "
-         "\"joue\", \"teste le jeu\".",
+         "jeu seul. C'est CET outil pour \"PIE\", \"joue\", \"teste le jeu\". "
+         "Les tests AUTOMATISES, c'est tests_unreal.",
          _obj({"action": {**STR, "enum": ["jouer", "simuler", "arreter"]}}),
          lambda action="jouer": animation.jouer_dans_editeur(str(action)), effect=True),
     Tool("tests_unreal",
@@ -1915,6 +1920,10 @@ def _call(convo: list[dict], with_tools: bool = True,
     if with_tools:
         payload["tools"] = [t.schema() for t in outils_du_mode()]
     r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=payload, timeout=300)
+    if r.status_code == 400 and "think" in payload:
+        # Modele sans mode reflexion : Ollama refuse le parametre.
+        payload.pop("think")
+        r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=payload, timeout=300)
     r.raise_for_status()
     return r.json()["message"]
 
@@ -1926,6 +1935,58 @@ _QUESTION_OUTILS = re.compile(
 _DEMANDE_TESTS = re.compile(
     r"\b(?:(?:re)?lan[cç]\w*|ex[eé]cute\w*|fais tourner|run)"
     r"[^.?!\n]{0,40}\btests?\b(?!\s+(?:en jeu|dans le jeu))", re.IGNORECASE)
+
+_TEST_AUTOMATISE = re.compile(r"automat|\btests\b|complet|tous les tests", re.IGNORECASE)
+_JOUER_EDITEUR = re.compile(
+    r"\b(?:lan[cç]\w*|d[eé]marr\w*|fais)\b[^.?!\n]{0,40}"
+    r"\b(?:pie|pi|pis|play in editor|partie)\b|\bjoue(?:r)?\s+dans\s+l'?[eé]diteur"
+    r"|\btest\b[^.?!\n]{0,30}\bdans\s+(?:unreal|l'?[eé]diteur)",
+    re.IGNORECASE)
+
+# Demandes nettes executees par l'application, sans passer par le modele :
+# un petit modele les ratait (refus, mauvais outil, bulle vide, « sur quel
+# projet ? »). Toutes en mode Dev, et seulement quand la phrase est courte :
+# une demande longue (« compile et corrige ») a besoin du modele.
+AIGUILLAGE = [
+    # (motif, outil, arguments, longueur maximale en mots)
+    (re.compile(r"^\W*(?:re)?compil\w*\b(?!.*\b(?:corrig|r[eé]pare|explique|pourquoi)\w*)",
+                re.IGNORECASE), "compiler_unreal", {}, 8),
+    (re.compile(r"\b(?:ouvr\w*|lan[cç]\w*|d[eé]marr\w*)\b[^.?!\n]{0,25}"
+                r"\b(?:unreal(?:\s+engine)?|l'?[eé]diteur)\s*[.!]?\s*$", re.IGNORECASE),
+     "ouvrir_unreal", {}, 8),
+    (re.compile(r"\b(?:dernier|derni[eè]re|lis|montre|pourquoi)\b[^.?!\n]{0,30}"
+                r"\b(?:plantage|crash\w*)", re.IGNORECASE), "dernier_plantage_unreal", {}, 12),
+    (re.compile(r"\b(?:lis|montre|affiche|ouvre)\b[^.?!\n]{0,20}\b(?:journa\w*|logs?)\b",
+                re.IGNORECASE), "journaux_unreal", {}, 10),
+    (re.compile(r"\bo[uù]\s+(?:on\s+)?en\s+est\b|\bpoint\s+(?:sur|du)\s+(?:le\s+)?projet",
+                re.IGNORECASE), "point_du_projet", {}, 12),
+]
+
+
+def aiguiller(texte: str) -> tuple[str, dict] | None:
+    """L'outil a lancer directement pour cette demande, ou None (le modele decide)."""
+    if not isinstance(texte, str) or not texte.strip():
+        return None
+    jouer = bool(_JOUER_EDITEUR.search(texte))
+    automatise = bool(_TEST_AUTOMATISE.search(texte))
+    if (_DEMANDE_TESTS.search(texte) and (automatise or not jouer)) or (jouer and automatise):
+        return "tests_unreal", {}
+    if jouer:
+        return "jouer_test", {"action": "jouer"}
+    mots = len(texte.split())
+    for motif, outil, arguments, maximum in AIGUILLAGE:
+        if mots <= maximum and motif.search(texte):
+            return outil, dict(arguments)
+    return None
+
+
+# Ce qui merite que le modele reflechisse avant de repondre. Le reste
+# (bonjour, une question simple, choisir un outil) part sans reflexion :
+# 43 s -> 3 s mesure sur une tache simple.
+_DEMANDE_DE_CODE = re.compile(
+    r"\b(?:code|classe|fonction|corrig\w*|bug|erreur|[eé]cri[st]\w*|modifi\w*|ajout\w*|"
+    r"impl[eé]ment\w*|plan|refactor\w*|optimis\w*|pourquoi|explique\w*|c\+\+|blueprint)\b",
+    re.IGNORECASE)
 
 _QUESTION_TOTAL = re.compile(
     r"\bcombien\b.*\b(total|tas|deux modes|les 2|additionn)"
@@ -1959,16 +2020,16 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
         texte = texte[0].upper() + texte[1:]
         return texte, list(messages) + [{"role": "assistant", "content": texte}]
 
-    # « Lance les tests » : l'application les lance elle-meme. Un petit
-    # modele a refuse, lance trois fois sans rien rendre, ou resume le projet
-    # a la place ; une demande aussi nette ne passe plus par lui.
-    if (isinstance(dernier, str) and _DEMANDE_TESTS.search(dernier)
-            and not dry_run and mode_actuel() == "dev"):
+    # Demande nette (tests, compiler, ouvrir Unreal, PIE, plantage...) :
+    # l'application lance l'outil elle-meme. Voir AIGUILLAGE.
+    route = aiguiller(dernier) if (not dry_run and mode_actuel() == "dev") else None
+    if route is not None:
+        outil, arguments = route
         if on_tool:
-            on_tool("tests_unreal", {})
-        resultat = dispatch("tests_unreal", {})
+            on_tool(outil, arguments)
+        resultat = dispatch(outil, arguments)
         if on_result:
-            on_result("tests_unreal", resultat)
+            on_result(outil, resultat)
         return resultat, list(messages) + [{"role": "assistant", "content": resultat}]
 
     convo = avec_carte_machine(list(messages))
@@ -1979,8 +2040,9 @@ def chat(messages: list[dict], max_rounds: int = 4, on_tool=None,
         max_rounds = max(max_rounds, TOURS_DEV)
     deja_vus: dict[str, int] = {}
 
+    reflexion = None if (isinstance(dernier, str) and _DEMANDE_DE_CODE.search(dernier)) else False
     for _ in range(max_rounds):
-        message = _call(convo, with_tools=True)
+        message = _call(convo, with_tools=True, think=reflexion)
         content = message.get("content", "")
 
         calls = message.get("tool_calls") or []
