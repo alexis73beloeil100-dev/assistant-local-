@@ -20,7 +20,7 @@ from assistant.skills import (apps, archives, cleanup, content, control,
                               desk, documents, files, fixes, gamemode, games,
                               hardware, inventaire, reminders, shell, system,
                               unreal, vision)
-from assistant.skills import code, editeur, web
+from assistant.skills import animation, code, editeur, web
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -1349,6 +1349,77 @@ TOOLS += [
          lambda **k: _widget(**k), effect=True),
 ]
 
+LISTE_PAIRES = {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
+                "description": "[[temps_s, valeur], ...]"}
+
+TOOLS += [
+    Tool("activer_python_editeur",
+         "Active le Python de l'editeur Unreal dans le projet (necessaire aux "
+         "outils d'animation). Redemarrer l'editeur ensuite.",
+         _obj({}), lambda: animation.activer_python_editeur(), effect=True),
+    Tool("anim_squelette",
+         "Liste les os d'un squelette, d'un maillage ou d'une animation (chemin "
+         "d'asset /Game/...), ranges par partie du corps (tete, colonne, bras, "
+         "mains, doigts, jambes, pieds, gauche/droite), avec la hierarchie.",
+         _obj({"chemin": STR}, ["chemin"]), lambda chemin: animation.squelette(str(chemin))),
+    Tool("anim_infos",
+         "Duree, nombre d'images, cadence, squelette, root motion, notifies et "
+         "courbes d'une animation.",
+         _obj({"chemin": STR}, ["chemin"]), lambda chemin: animation.infos_animation(str(chemin))),
+    Tool("anim_compatibilite",
+         "Verifie qu'une animation va sur un maillage : meme squelette, os "
+         "manquants ou en trop.",
+         _obj({"animation": STR, "maillage": STR}, ["animation", "maillage"]),
+         # **k : le parametre "animation" masquerait le module du meme nom.
+         lambda **k: animation.compatibilite(str(k["animation"]), str(k["maillage"]))),
+    Tool("anim_mesurer",
+         "Mesure la qualite d'une animation : glissement des pieds au sol (cm, "
+         "tolerance 2 cm) et sauts de pose d'une image a l'autre.",
+         _obj({"chemin": STR, "pieds": LISTE_STR, "cadence": {"type": "number"}}, ["chemin"]),
+         lambda chemin, pieds=None, cadence=30.0: animation.mesurer(
+             str(chemin), pieds, float(cadence))),
+    Tool("anim_notify",
+         "Ajoute un notify a une animation, a un instant en secondes ('classe' : "
+         "AnimNotify_PlaySound, AnimNotify_PlayParticleEffect, ou chemin d'un "
+         "notify Blueprint).",
+         _obj({"chemin": STR, "temps": {"type": "number"}, "classe": STR, "piste": STR},
+              ["chemin", "temps"]),
+         lambda chemin, temps, classe="AnimNotify_PlaySound", piste="1": animation.ajouter_notify(
+             str(chemin), float(temps), str(classe), str(piste)), effect=True),
+    Tool("anim_courbe",
+         "Ajoute une courbe flottante a une animation, avec ses cles.",
+         _obj({"chemin": STR, "nom": STR, "cles": LISTE_PAIRES}, ["chemin", "nom", "cles"]),
+         lambda chemin, nom, cles: animation.ajouter_courbe(str(chemin), str(nom), list(cles)),
+         effect=True),
+    Tool("anim_montage",
+         "Cree un Montage a partir d'une animation, avec ses temps de fondu.",
+         _obj({"chemin": STR, "nom": STR, "fondu_entree": {"type": "number"},
+               "fondu_sortie": {"type": "number"}}, ["chemin"]),
+         lambda chemin, nom="", fondu_entree=0.25, fondu_sortie=0.25: animation.creer_montage(
+             str(chemin), str(nom), float(fondu_entree), float(fondu_sortie)), effect=True),
+    Tool("retargeter_animations",
+         "Transfere des animations vers un autre squelette avec un IK "
+         "Retargeter (chemins d'assets).",
+         _obj({"animations": LISTE_STR, "retargeter": STR, "maillage_cible": STR,
+               "maillage_source": STR, "prefixe": STR},
+              ["animations", "retargeter", "maillage_cible"]),
+         lambda animations, retargeter, maillage_cible, maillage_source="", prefixe="RTG_":
+         animation.retargeter(list(animations), str(retargeter), str(maillage_cible),
+                              str(maillage_source), str(prefixe)), effect=True),
+    Tool("python_editeur",
+         "Execute un script Python dans l'editeur Unreal (module unreal), pour "
+         "tout ce que les autres outils ne couvrent pas : assets, animations, "
+         "Blend Spaces, niveaux. L'utilisateur voit le script et accepte.",
+         _obj({"script": STR}, ["script"]),
+         lambda script: animation.python_editeur(str(script)), effect=True),
+]
+
+OUTILS_ANIMATION = frozenset({
+    "activer_python_editeur", "anim_squelette", "anim_infos", "anim_compatibilite",
+    "anim_mesurer", "anim_notify", "anim_courbe", "anim_montage",
+    "retargeter_animations", "python_editeur",
+})
+
 OUTILS_EDITEUR = frozenset({
     "installer_plugin_editeur", "editeur_etat", "niveau_acteurs", "acteur_lire",
     "acteur_creer", "acteur_depuis_blueprint", "acteur_transformer",
@@ -1412,6 +1483,7 @@ OUTILS_DEV = frozenset({
     # L'atelier de code, et l'editeur.
     *OUTILS_ATELIER_CODE,
     *OUTILS_EDITEUR,
+    *OUTILS_ANIMATION,
     # Passer un extrait de code a l'utilisateur.
     "lire_presse_papier", "copier",
 })
@@ -1479,7 +1551,7 @@ def changer_mode(mode: str) -> None:
 OUTILS_DEV_SEULEMENT = frozenset({
     "projets_unreal", "choisir_projet_unreal", "projet_unreal",
     "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
-}) | OUTILS_ATELIER_CODE | OUTILS_EDITEUR
+}) | OUTILS_ATELIER_CODE | OUTILS_EDITEUR | OUTILS_ANIMATION
 
 
 def outils_du_mode(mode: str | None = None) -> list[Tool]:
