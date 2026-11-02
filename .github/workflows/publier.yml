@@ -40,6 +40,46 @@ jobs:
             choco install innosetup -y --no-progress
           }
 
+      - name: Executable
+        run: python -m PyInstaller --noconfirm AssistantLocal.spec
+
+      - name: Installateur complet
+        run: python outils/publier.py
+
+      # Le paquet de mise a jour se calcule contre ce qui est REELLEMENT
+      # installe chez les gens. Deux sources, apres l'installateur complet
+      # (publier.py refuse un arbre de travail modifie) :
+      #   - manifestes/reference.txt, "version identifiant-d-execution" : un
+      #     essai installe a la main, dont le manifeste est reste dans les
+      #     artefacts de son execution ;
+      #   - a defaut, le manifeste joint a la derniere Release.
+      - name: Reference installee
+        id: reference
+        shell: bash
+        run: |
+          if [ -f manifestes/reference.txt ]; then
+            read -r version execution < manifestes/reference.txt
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "execution=$execution" >> "$GITHUB_OUTPUT"
+            echo "Reference : essai $version, execution $execution"
+          fi
+
+      - name: Manifeste de l'essai installe
+        if: steps.reference.outputs.execution != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: manifeste-${{ steps.reference.outputs.version }}
+          path: manifestes
+          run-id: ${{ steps.reference.outputs.execution }}
+          github-token: ${{ github.token }}
+
+      - name: Manifeste de la derniere Release
+        if: steps.reference.outputs.execution == ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --pattern "*.json" --dir manifestes --clobber || echo "aucun manifeste joint a la derniere Release"
+
       - name: Versions
         id: versions
         shell: bash
@@ -58,12 +98,6 @@ jobs:
           echo "vers=$vers" >> "$GITHUB_OUTPUT"
           echo "depuis=$depuis" >> "$GITHUB_OUTPUT"
           echo "De $depuis vers $vers"
-
-      - name: Executable
-        run: python -m PyInstaller --noconfirm AssistantLocal.spec
-
-      - name: Installateur complet
-        run: python outils/publier.py
 
       - name: Paquet de mise a jour
         shell: bash
