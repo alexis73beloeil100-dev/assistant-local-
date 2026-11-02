@@ -759,7 +759,35 @@ def lire_rapport_tests(rapport: dict | None, journal: str) -> tuple[list[tuple[s
     return resultats, "journal"
 
 
-def lancer_tests(filtre: str = "Project") -> str:
+_TEST_DECLARE = re.compile(
+    r"(?:IMPLEMENT_(?:SIMPLE|COMPLEX|CUSTOM_SIMPLE|CUSTOM_COMPLEX)_AUTOMATION_TEST"
+    r"|BEGIN_DEFINE_SPEC|DEFINE_SPEC|IMPLEMENT_NETWORKED_AUTOMATION_TEST)"
+    r"\s*\(\s*\w+\s*,\s*(?:\w+\s*,\s*)?\"([^\"]+)\"")
+
+
+def familles_de_tests(racine: Path) -> list[str]:
+    """Debuts de nom des tests ecrits dans le code du projet (Source/, Plugins/).
+
+    "Project" n'est qu'une convention : les tests d'Iron Fall s'appellent
+    autrement, et le filtre par defaut ne trouvait rien.
+    """
+    familles: list[str] = []
+    for dossier in (racine / "Source", racine / "Plugins"):
+        if not dossier.is_dir():
+            continue
+        for f in dossier.rglob("*.cpp"):
+            try:
+                texte = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for nom in _TEST_DECLARE.findall(texte):
+                tete = nom.split(".")[0].strip()
+                if tete and tete not in familles:
+                    familles.append(tete)
+    return familles
+
+
+def lancer_tests(filtre: str = "") -> str:
     """Lance les tests automatises d'Unreal (Session Frontend) sans fenetre."""
     import json as _json
     import tempfile
@@ -772,7 +800,10 @@ def lancer_tests(filtre: str = "Project") -> str:
     exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor-Cmd.exe"
     if not exe.is_file():
         return f"UnrealEditor-Cmd.exe introuvable : {exe}"
-    filtre = re.sub(r"[^\w. +-]", "", filtre or "Project") or "Project"
+    filtre = re.sub(r"[^\w. +-]", "", filtre or "")
+    if not filtre or filtre == "Project":
+        familles = familles_de_tests(projet.chemin.parent)
+        filtre = "+".join(familles) if familles else "Project"
     safety.guard(safety.Action(kind="compilation", summary=f"Tests Unreal : {filtre}",
                                targets=[str(projet.chemin)], routine=True))
     with tempfile.TemporaryDirectory() as dossier:
@@ -802,9 +833,24 @@ def lancer_tests(filtre: str = "Project") -> str:
     resultats, source = lire_rapport_tests(rapport, r.stdout + r.stderr)
     duree = time.time() - debut
     if not resultats:
-        return (f"Aucun test trouve pour le filtre « {filtre} » ({duree:.0f} s). "
-                "Les tests du projet se trouvent souvent sous « Project » ; "
-                "essaie un autre filtre, par exemple le nom du projet.")
+        # Le plus souvent, l'editeur n'a meme pas demarre (projet pas
+        # compile, module manquant) : on montre POURQUOI, pas juste « rien ».
+        erreurs = [l.strip() for l in (r.stdout + r.stderr).splitlines()
+                   if re.search(r"\b(Error|Fatal|missing|could not be found|"
+                                r"failed to load|rebuild)\b", l, re.IGNORECASE)]
+        message = (f"Aucun test n'a tourne pour « {filtre} » ({duree:.0f} s, code "
+                   f"de sortie {r.returncode}).")
+        if erreurs:
+            message += " Erreurs d'Unreal :\n" + "\n".join(f"  {e[:240]}" for e in erreurs[-8:])
+            if any(re.search(r"missing|rebuild|could not be found", e, re.IGNORECASE)
+                   for e in erreurs):
+                message += ("\nLe projet n'est probablement pas compile pour l'editeur : "
+                            "demande « compile le projet », puis relance les tests.")
+        else:
+            message += (" Aucun test du projet ne porte ce nom. Tests trouves dans "
+                        "le code : " + (", ".join(familles_de_tests(projet.chemin.parent))
+                                        or "aucun") + ".")
+        return message
     echecs = [x for x in resultats if x[0].lower() not in ("success", "succeeded")]
     lignes = [f"Tests Unreal « {filtre} » : {len(resultats) - len(echecs)} reussi(s), "
               f"{len(echecs)} en echec, en {duree:.0f} s (d'apres le {source})."]

@@ -115,6 +115,21 @@ def _decouper(ligne: str, base: str) -> list[tuple[str, str]]:
     return morceaux
 
 
+def _resume_args(args: dict) -> str:
+    if not args:
+        return ""
+    texte = ", ".join(f"{k}={v!r}" for k, v in args.items())
+    return texte if len(texte) <= 140 else texte[:137] + "..."
+
+
+def _resume_resultat(resultat) -> str:
+    lignes = [l.strip() for l in str(resultat).splitlines() if l.strip()]
+    if not lignes:
+        return "(rien)"
+    texte = lignes[0][:200] + (f"  (+{len(lignes) - 1} lignes)" if len(lignes) > 1 else "")
+    return texte
+
+
 class AssistantWindow(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -1221,7 +1236,10 @@ class AssistantWindow(tk.Tk):
             try:
                 reponse, self.convo = llm.chat(
                     self.convo,
-                    on_tool=lambda n, _a: self.post("tool", f"    {n}"),
+                    on_tool=lambda n, a: self.post("tool", f"    > {n}  {_resume_args(a)}"),
+                    # Ce que l'outil a rendu : l'utilisateur voit ce que
+                    # l'assistant a fait, pas seulement son nom.
+                    on_result=lambda _n, r: self.post("tool", f"      = {_resume_resultat(r)}"),
                 )
                 self.post("assistant", reponse)
             except Exception as exc:  # noqa: BLE001

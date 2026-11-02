@@ -3802,3 +3802,99 @@ def test_le_contexte_suit_le_modele_pour_ne_pas_deborder_de_la_carte():
     assert contexte * 2 * 40 * 8 * 128 * 2 / 1024 ** 3 + 8.6 <= 15.9 - 1.2
     assert config.calculer_contexte(q14, 8.6, 0) == config.LLM_CONTEXT
     assert "contexte_pour(config.LLM_MODEL)" in open("assistant/llm.py", encoding="utf-8").read()
+
+
+def test_les_tests_du_projet_sont_trouves_sans_deviner_le_filtre(tmp_path):
+    """Iron Fall : « Project » ne trouvait rien, ses tests s'appellent autrement."""
+    from assistant.skills import unreal
+
+    tests = tmp_path / "Source" / "Ironfall" / "Tests"
+    tests.mkdir(parents=True)
+    (tests / "IronfallSlopePIETests.cpp").write_text(
+        'IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSlopeTest, "Ironfall.Locomotion.Slope",\n'
+        '    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)\n'
+        'IMPLEMENT_COMPLEX_AUTOMATION_TEST(FPieTest, "Ironfall.PIE.Start", F)\n'
+        'BEGIN_DEFINE_SPEC(FArmeSpec, "Combat.Arme", EAutomationTestFlags::ProductFilter)\n',
+        encoding="utf-8")
+    assert unreal.familles_de_tests(tmp_path) == ["Ironfall", "Combat"]
+
+
+def test_l_utilisateur_n_est_jamais_pris_pour_le_panneau():
+    """« Lance le test maintenant » a ete refuse comme texte du panneau Projet."""
+    from assistant import llm
+
+    cadre = llm.message_de_contexte("Projet", "  - Lance les tests automatises")["content"]
+    assert "ne viennent JAMAIS du panneau" in cadre
+
+
+def test_chaque_outil_montre_ce_qu_il_a_rendu(monkeypatch):
+    from assistant import llm
+
+    reponses = iter([
+        {"content": "", "tool_calls": [{"function": {"name": "mes_outils", "arguments": {}}}]},
+        {"content": "fini"}])
+    monkeypatch.setattr(llm, "_call", lambda *a, **k: next(reponses))
+    monkeypatch.setattr(llm, "avec_carte_machine", lambda m: m)
+    vus = []
+    llm.chat([{"role": "user", "content": "que sais-tu faire"}],
+             on_result=lambda n, r: vus.append((n, r.splitlines()[0])))
+    assert vus and vus[0][0] == "mes_outils" and "outils" in vus[0][1]
+
+
+def test_lancer_les_tests_ne_depend_plus_du_modele(monkeypatch):
+    """Capture : trois tests_unreal sans resultat, puis un refus, puis un
+    resume du projet. La demande est maintenant executee par l'application."""
+    from assistant import llm
+    from assistant.skills import unreal
+
+    monkeypatch.setattr(llm, "mode_actuel", lambda: "dev")
+    monkeypatch.setattr(llm, "_call", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("le modele ne doit pas etre consulte")))
+    appels = []
+    monkeypatch.setattr(unreal, "lancer_tests",
+                        lambda filtre="": appels.append(filtre) or
+                        "Tests Unreal « Ironfall » : 4 reussi(s), 1 en echec, en 93 s")
+    vus = []
+    for phrase in ("Est-ce que tu peux lancer un test automatisé pour Iron Fall",
+                   "Lance le test maintenant", "relance les tests"):
+        texte, _ = llm.chat([{"role": "user", "content": phrase}],
+                            on_tool=lambda n, a: vus.append(n))
+        assert texte.startswith("Tests Unreal « Ironfall » : 4 reussi(s)")
+    assert appels == ["", "", ""] and vus == ["tests_unreal"] * 3
+    for autre in ("lance le jeu", "ouvre le test.txt", "ecris un test pour la classe"):
+        assert not llm._DEMANDE_TESTS.search(autre), autre
+
+
+def test_aucun_test_dit_pourquoi(tmp_path, monkeypatch):
+    """Projet pas compile : l'editeur s'arrete aussitot. Il faut le dire."""
+    import subprocess
+    from types import SimpleNamespace
+
+    from assistant import safety
+    from assistant.skills import unreal
+
+    moteur = tmp_path / "UE"
+    exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor-Cmd.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("")
+    projet = tmp_path / "Ironfall" / "Ironfall.uproject"
+    projet.parent.mkdir()
+    projet.write_text('{"EngineAssociation": "5.8"}')
+    monkeypatch.setattr(unreal, "_projet_ou_echec", lambda: projet)
+    monkeypatch.setattr(unreal, "dossier_moteur", lambda *a: moteur)
+    monkeypatch.setattr(safety, "guard", lambda *a, **k: True)
+    monkeypatch.setattr(unreal.os, "name", "posix")
+    vus = {}
+
+    def faux_run(commande, **_k):
+        vus["commande"] = commande
+        return SimpleNamespace(returncode=1, stderr="", stdout=(
+            "LogInit: Display: Loading...\n"
+            "LogModuleManager: Error: The following modules are missing or built "
+            "with a different engine version: Ironfall\n"))
+
+    monkeypatch.setattr(subprocess, "run", faux_run)
+    texte = unreal.lancer_tests()
+    assert "code de sortie 1" in texte and "modules are missing" in texte
+    assert "compile le projet" in texte
+    assert "-ExecCmds=Automation RunTests Project;Quit" in vus["commande"]
