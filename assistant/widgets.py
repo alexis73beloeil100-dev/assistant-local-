@@ -5,6 +5,7 @@ et cartes de message se construisent a la main, sur un Canvas.
 """
 from __future__ import annotations
 
+import re
 import tkinter as tk
 
 from assistant import theme as t
@@ -202,7 +203,8 @@ def _dispatch_wheel(event):
         if isinstance(widget, ScrollArea):
             widget.canvas.yview_scroll(int(-event.delta / 120), "units")
             return "break"
-        if isinstance(widget, tk.Text):
+        if isinstance(widget, tk.Text) and not isinstance(widget,
+                                                          TexteMarkdown):
             widget.yview_scroll(int(-event.delta / 120), "units")
             return "break"
         widget = getattr(widget, "master", None)
@@ -312,15 +314,106 @@ class Message(tk.Frame):
                      font=t.FONT_LABEL, anchor="w").pack(
                 fill="x", padx=t.PAD_L, pady=(t.PAD, 0))
 
-        self.body = tk.Label(
-            card, text=text, bg=bubble_bg, fg=fg, font=font,
-            justify="left", anchor="w", wraplength=width_hint,
-        )
-        self.body.pack(fill="x", padx=t.PAD_L,
-                       pady=(2, t.PAD) if label else (4, 4))
+        pady = (2, t.PAD) if label else (4, 4)
+        if role == "assistant" and font != t.FONT_MONO:
+            # Le modele ecrit en Markdown : **gras**, listes, `code`. Affiche
+            # brut dans un Label, ca donnait des asterisques partout.
+            self.body = TexteMarkdown(card, text, bg=bubble_bg, fg=fg,
+                                      font=font)
+        else:
+            self.body = tk.Label(
+                card, text=text, bg=bubble_bg, fg=fg, font=font,
+                justify="left", anchor="w", wraplength=width_hint,
+            )
+        self.body.pack(fill="x", padx=t.PAD_L, pady=pady)
 
     def set_wrap(self, width: int) -> None:
-        self.body.configure(wraplength=max(width, 200))
+        if isinstance(self.body, tk.Label):
+            self.body.configure(wraplength=max(width, 200))
+
+
+# --- Markdown -------------------------------------------------------------
+
+_GRAS_OU_CODE = re.compile(r"(\*\*.+?\*\*|__.+?__|`[^`]+`)")
+_PUCE = re.compile(r"^(\s*)[-*+]\s+")
+_TITRE = re.compile(r"^\s*#{1,6}\s+")
+
+
+def segments_markdown(texte: str) -> list[tuple[str, str]]:
+    """Decoupe un texte Markdown en (morceau, style).
+
+    Styles : "" (normal), "gras", "code", "titre", "bloc" (bloc de code).
+    Seul le sous-ensemble qu'ecrivent les modeles est traite : gras, code,
+    titres, listes, blocs de code. Le reste passe tel quel.
+    """
+    sortie: list[tuple[str, str]] = []
+    dans_bloc = False
+    lignes = texte.split("\n")
+    for i, ligne in enumerate(lignes):
+        fin = "\n" if i < len(lignes) - 1 else ""
+        if ligne.strip().startswith("```"):
+            dans_bloc = not dans_bloc
+            continue
+        if dans_bloc:
+            sortie.append((ligne + fin, "bloc"))
+            continue
+        if _TITRE.match(ligne):
+            titre = _TITRE.sub("", ligne).replace("**", "")
+            sortie.append((titre + fin, "titre"))
+            continue
+        ligne = _PUCE.sub(lambda m: m.group(1) + "• ", ligne)
+        for morceau in _GRAS_OU_CODE.split(ligne):
+            if not morceau:
+                continue
+            if morceau.startswith(("**", "__")) and len(morceau) > 4:
+                sortie.append((morceau[2:-2], "gras"))
+            elif morceau.startswith("`") and len(morceau) > 2:
+                sortie.append((morceau[1:-1], "code"))
+            else:
+                sortie.append((morceau, ""))
+        if fin:
+            sortie.append((fin, ""))
+    return sortie
+
+
+class TexteMarkdown(tk.Text):
+    """Texte en lecture seule qui rend le gras, les titres et le code.
+
+    Un Text plutot qu'un Label : c'est le seul widget Tk qui melange des
+    styles dans un meme paragraphe. Sa hauteur suit le nombre de lignes
+    affichees, recalculee a chaque changement de largeur. Le texte reste
+    selectionnable : on peut copier un extrait de code.
+    """
+
+    def __init__(self, parent, texte: str, *, bg, fg, font):
+        super().__init__(parent, bg=bg, fg=fg, font=font, wrap="word",
+                         relief="flat", bd=0, highlightthickness=0,
+                         height=1, padx=0, pady=0, cursor="arrow",
+                         selectbackground=t.ACCENT_SOFT,
+                         insertwidth=0)
+        famille, taille = font[0], font[1]
+        self.tag_configure("gras", foreground="#EEF6F9")
+        self.tag_configure("titre", foreground="#EEF6F9",
+                           font=(famille, taille + 1, "bold"))
+        self.tag_configure("code", foreground=t.ACCENT, font=t.FONT_MONO)
+        self.tag_configure("bloc", foreground=t.ACCENT, font=t.FONT_MONO)
+        for morceau, style in segments_markdown(texte):
+            self.insert("end", morceau, style or ())
+        self.configure(state="disabled")
+        self.bind("<Configure>", lambda _e: self._ajuster())
+        # Un message ne defile pas : la molette fait defiler la conversation.
+        # Sans ce renvoi, la liaison de classe de Text l'avalait.
+        self.bind("<MouseWheel>", lambda e: _dispatch_wheel(e) or "break")
+
+    def _ajuster(self) -> None:
+        try:
+            lignes = self.count("1.0", "end", "displaylines")
+        except tk.TclError:
+            return
+        hauteur = max(1, int(lignes[0] if isinstance(lignes, tuple)
+                             else lignes or 1))
+        if int(self.cget("height")) != hauteur:
+            self.configure(height=hauteur)
 
 
 def _looks_tabular(text: str) -> bool:

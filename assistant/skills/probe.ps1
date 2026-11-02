@@ -113,6 +113,16 @@ $events = Safe {
     }
 }
 
+# Arrets brutaux (Kernel-Power 41) ACCOMPAGNES d'un plantage. L'evenement est
+# ecrit a chaque arret sans extinction propre : debrancher le PC ou maintenir
+# le bouton en laisse un aussi. Seul son premier champ, BugcheckCode, les
+# distingue : 0 = courant coupe, sans plantage de Windows.
+$kernel_power_plantages = Safe {
+  $since = (Get-Date).AddDays(-7)
+  @(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Kernel-Power'; Id=41; StartTime=$since} -MaxEvents 100 -ErrorAction SilentlyContinue |
+    Where-Object { $_.Properties.Count -gt 0 -and [int64]$_.Properties[0].Value -ne 0 }).Count
+}
+
 # Un redemarrage en attente explique quantite de comportements bizarres.
 $reboot_pending = Safe {
   $keys = @(
@@ -276,6 +286,7 @@ $result = [pscustomobject]@{
   bad_devices    = @($bad_devices)
   events         = @($events)
   reboot_pending = $reboot_pending
+  kernel_power_plantages = $kernel_power_plantages
   defender       = $defender
   memory_slots   = $memory_slots
   network        = @($network)

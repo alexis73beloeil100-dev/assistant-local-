@@ -93,11 +93,16 @@ ACTIONABLE_EVENTS = {
         "Le fichier de vidage memoire contient la cause exacte. "
         "C:\\Windows\\Minidump",
     ),
+    # Compte a part : seuls les arrets ACCOMPAGNES d'un plantage (voir
+    # kernel_power_plantages dans probe.ps1). L'evenement brut est ecrit aussi
+    # quand on debranche le PC ou qu'on maintient le bouton : il signalait un
+    # probleme d'alimentation a chaque arret volontaire.
     "kernel-power": (
-        "A SURVEILLER", 2,
-        "Arret brutal de la machine, sans extinction propre.",
-        "Coupure de courant, plantage, ou surchauffe. Si cela se repete, "
-        "suspecte l'alimentation ou la temperature.",
+        "A SURVEILLER", 1,
+        "Arret brutal avec plantage de Windows.",
+        "Le PC s'est arrete en plein plantage, sans extinction propre. Si "
+        "cela se repete, suspecte la temperature, l'alimentation ou un "
+        "reglage d'overclocking instable.",
     ),
     "microsoft-windows-wer-systemerrorreporting": (
         "A SURVEILLER", 2,
@@ -421,16 +426,8 @@ def _severity_sort(items: list[tuple[str, str, str]]) -> list[tuple[str, str, st
     return sorted(items, key=lambda x: ordre.get(x[0], 3))
 
 
-def problems() -> str:
-    """Passe la machine en revue et rapporte ce qui ne va pas.
-
-    Les regles sont generiques : elles s'appliquent a n'importe quelle
-    configuration, sans rien savoir a l'avance du materiel installe.
-    """
-    data = collect()
-    if not data:
-        return _error or "Releve indisponible."
-
+def problemes_depuis(data: dict) -> list[tuple[str, str, str]]:
+    """(gravite, constat, remede) pour chaque probleme du releve."""
     trouve: list[tuple[str, str, str]] = []
 
     # --- disques : le seul poste ou une panne detruit des donnees
@@ -559,6 +556,10 @@ def problems() -> str:
             continue
 
         gravite, seuil, explication, remede = regle
+        if "kernel-power" in source:
+            # Un releve ancien, sans ce champ, ne doit pas ressusciter la
+            # fausse alerte : faute de savoir, on se tait.
+            nombre = int(data.get("kernel_power_plantages") or 0)
         if nombre < seuil:
             continue
 
@@ -592,6 +593,21 @@ def problems() -> str:
             f"Signatures antivirus vieilles de {age:.0f} jours",
             "Lance une mise a jour de la protection.",
         ))
+
+    return trouve
+
+
+def problems() -> str:
+    """Passe la machine en revue et rapporte ce qui ne va pas.
+
+    Les regles sont generiques : elles s'appliquent a n'importe quelle
+    configuration, sans rien savoir a l'avance du materiel installe.
+    """
+    data = collect()
+    if not data:
+        return _error or "Releve indisponible."
+
+    trouve = problemes_depuis(data)
 
     # Un reglage perfectible n'est pas une panne. Les melanger ferait
     # ressembler une machine saine a une machine malade.

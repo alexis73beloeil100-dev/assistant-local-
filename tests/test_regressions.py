@@ -3536,3 +3536,44 @@ def test_le_modele_sait_dans_quel_mode_il_est_sans_empiler(monkeypatch):
     consignes = [m for m in deux if str(m.get("content", "")).startswith(
         llm.MODE_MARQUEUR)]
     assert len(consignes) == 1 and "Dev" in consignes[0]["content"]
+
+
+def test_debrancher_le_pc_n_est_pas_signale_comme_un_probleme():
+    """Kernel-Power 41 est ecrit a chaque arret sans extinction propre.
+
+    L'utilisateur debranchait son PC, et l'assistant lui annoncait un
+    probleme d'alimentation. Seuls les arrets accompagnes d'un plantage
+    (BugcheckCode different de 0) doivent remonter.
+    """
+    from assistant.skills import hardware
+
+    evenement = {"source": "Microsoft-Windows-Kernel-Power", "count": 3,
+                 "last": "2026-11-01 17:37", "message": ""}
+    sans_plantage = {"events": [evenement], "kernel_power_plantages": 0}
+    avec_plantage = {"events": [evenement], "kernel_power_plantages": 2}
+    releve_ancien = {"events": [evenement]}
+
+    def alertes(data):
+        return [p for p in hardware.problemes_depuis(data)
+                if "Kernel-Power" in p[1]]
+
+    assert not alertes(sans_plantage)
+    assert not alertes(releve_ancien)
+    trouve = alertes(avec_plantage)
+    assert trouve and trouve[0][1].startswith("2 ")
+
+
+def test_le_markdown_du_modele_ne_laisse_plus_d_asterisques():
+    """Les reponses affichaient "**Fichiers et systeme :**" tel quel."""
+    from assistant.widgets import segments_markdown
+
+    morceaux = segments_markdown(
+        "**Fichiers :**\n- Chercher\n### Code\nUtilise `Tick`\n```\nint a;\n```")
+    texte = "".join(m for m, _ in morceaux)
+    assert "*" not in texte and "#" not in texte and "`" not in texte
+    styles = dict((m.strip(), s) for m, s in morceaux if m.strip())
+    assert styles["Fichiers :"] == "gras"
+    assert styles["Code"] == "titre"
+    assert styles["Tick"] == "code"
+    assert styles["int a;"] == "bloc"
+    assert "• Chercher" in texte
