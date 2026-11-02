@@ -29,9 +29,9 @@ import secrets
 from datetime import date, timedelta
 from pathlib import Path
 
-# La cle PUBLIQUE du proprietaire, en hexadecimal. Vide tant que la cle
-# maitre n'a pas ete creee : le mode Dev reste alors ferme pour tout le monde.
-CLE_PUBLIQUE = ""
+# La cle PUBLIQUE du proprietaire, en hexadecimal : elle verifie les cles
+# d'acces, elle n'en fabrique aucune. Creee le 02/11/2026 sur son PC.
+CLE_PUBLIQUE = "9e42f5bb20a4b2f4c29cd1d567a250ad9d179d3f0c332ea5636dcbaa12bd461c"
 
 PREFIXE = "ALDEV-"
 ENTETE_SECRET = "ALDEV-SECRET-NE-JAMAIS-PARTAGER"

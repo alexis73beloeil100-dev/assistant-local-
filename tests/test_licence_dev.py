@@ -201,3 +201,12 @@ def test_l_essai_actif_ouvre_le_mode_dev_sans_cle(traces, monkeypatch):
     assert not licence.dev_autorise()
     licence.commencer_essai()
     assert licence.dev_autorise()
+
+
+def test_la_cle_publique_du_proprietaire_est_inscrite_et_valide():
+    cle = bytes.fromhex(licence.CLE_PUBLIQUE)
+    assert len(cle) == 32
+    licence._decoder(cle)  # leve si ce n'est pas un point de la courbe
+    # Une cle fabriquee par n'importe quelle autre cle maitre est refusee.
+    autre = licence.fabriquer_cle(GRAINE, "Pirate")
+    assert not licence.examiner(autre, pc="")[0]

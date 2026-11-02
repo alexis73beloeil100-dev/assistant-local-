@@ -116,7 +116,11 @@ def ouvrir(fenetre, apres_validation) -> None:
         RoundButton(cadre, "Créer la clé maître", creer, width=180).pack(
             anchor="e", pady=(4, 0))
 
-    if graine is not None and licence.CLE_PUBLIQUE:
+    # Seulement si la cle maitre de CE PC est bien celle que l'application
+    # reconnait : une autre fabriquerait des cles refusees.
+    if (graine is not None and licence.CLE_PUBLIQUE
+            and licence.publique_depuis_graine(graine).hex()
+            == licence.CLE_PUBLIQUE):
         titre("propriétaire : délivrer une clé")
         ligne("Ta clé maître est sur ce PC. Nom, identifiant du PC (vide = "
               "tout PC), date de fin AAAA-MM-JJ (vide = sans fin) :",
