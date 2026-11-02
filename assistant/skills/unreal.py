@@ -705,3 +705,31 @@ def lancer_jeu(carte: str = "", fenetre: bool = True) -> str:
         return f"Lancement impossible : {exc}"
     return (f"{projet.nom} se lance en jeu{' sur ' + carte if carte else ''}. "
             "Le journal de la partie se lira avec journaux_unreal.")
+
+
+def moteurs_installes() -> dict[str, Path]:
+    """{"5.8": dossier} : tous les Unreal Engine installes sur ce PC."""
+    trouves: dict[str, Path] = {}
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SOFTWARE\EpicGames\Unreal Engine") as racine:
+            i = 0
+            while True:
+                try:
+                    version = winreg.EnumKey(racine, i)
+                except OSError:
+                    break
+                i += 1
+                dossier = _registre("HKLM", rf"SOFTWARE\EpicGames\Unreal Engine\{version}"
+                                    ).get("InstalledDirectory")
+                if dossier and Path(dossier).is_dir():
+                    trouves[version] = Path(dossier)
+    except (ImportError, OSError):
+        pass
+    for version, dossier in _launcher_installes().items():
+        if dossier.is_dir():
+            trouves.setdefault(version, dossier)
+    return dict(sorted(trouves.items(), key=lambda kv: [int(x) for x in kv[0].split(".")
+                                                         if x.isdigit()]))

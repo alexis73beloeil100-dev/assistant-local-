@@ -195,8 +195,34 @@ def catalogue(refresh: bool = False) -> list[App]:
             continue
         applications.append(App(nom, commande, "windows"))
 
+    # Unreal Engine s'installe par le Launcher d'Epic, sans entree dans le menu
+    # Demarrer : "ouvre Unreal" ne trouvait rien et proposait une liste ou il
+    # ne figurait pas. On ajoute chaque moteur installe, par sa version.
+    for app in _depuis_unreal():
+        if canon(app.nom) not in connus:
+            connus.add(canon(app.nom))
+            applications.append(app)
+
     _cache = sorted(applications, key=lambda a: a.nom.lower())
     return _cache
+
+
+def _depuis_unreal() -> list[App]:
+    try:
+        from assistant.skills import unreal
+
+        moteurs = unreal.moteurs_installes()
+    except Exception:  # noqa: BLE001 - jamais bloquant pour le catalogue
+        return []
+    apps = []
+    for version, dossier in moteurs.items():
+        exe = dossier / "Engine" / "Binaries" / "Win64" / "UnrealEditor.exe"
+        if exe.is_file():
+            apps.append(App(f"Unreal Engine {version}", str(exe), "epic"))
+    if apps:
+        # "Unreal Engine" tout court : la version la plus recente.
+        apps.append(App("Unreal Engine", apps[-1].cible, "epic"))
+    return apps
 
 
 def rafraichir() -> str:
@@ -327,6 +353,13 @@ def _lancer(app: App) -> None:
 
 def open_app(nom: str, refresh_si_absent: bool = True) -> str:
     """Ouvre une application par son nom."""
+    # "Ouvre Unreal" avec un projet choisi : c'est le projet qu'on veut, dans
+    # la version du moteur qu'il utilise, pas l'ecran d'accueil d'Unreal.
+    if "unreal" in canon(nom):
+        from assistant.skills import unreal
+
+        if unreal.projet_actuel() is not None:
+            return unreal.ouvrir_editeur()
     resultats = find(nom)
 
     # Rien trouve ? L'application vient peut-etre d'etre installee. On refait

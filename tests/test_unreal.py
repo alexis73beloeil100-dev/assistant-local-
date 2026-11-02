@@ -453,3 +453,23 @@ def test_ouvrir_jouer_et_lancer_ne_demandent_aucune_confirmation(moteur_installe
     unreal.lancer_jeu()
     animation.jouer_dans_editeur("jouer")
     animation.jouer_dans_editeur("arreter")
+
+
+def test_unreal_engine_figure_parmi_les_applications(tmp_path, monkeypatch):
+    from assistant.skills import apps
+
+    moteur = tmp_path / "UE_5.8"
+    exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    monkeypatch.setattr(unreal, "moteurs_installes", lambda: {"5.8": moteur})
+    noms = {a.nom: a.cible for a in apps._depuis_unreal()}
+    assert noms == {"Unreal Engine 5.8": str(exe), "Unreal Engine": str(exe)}
+
+
+def test_ouvre_unreal_avec_un_projet_ouvre_le_projet(moteur_installe, monkeypatch):
+    from assistant.skills import apps
+
+    uproject, exe, lances = moteur_installe
+    texte = apps.open_app("Unreal Engine")
+    assert lances == [[str(exe), str(uproject)]] and "IronFall" in texte
