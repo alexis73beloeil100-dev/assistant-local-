@@ -73,6 +73,15 @@ jobs:
              "installateur/MiseAJour_AssistantLocal_${{ steps.versions.outputs.depuis }}_vers_${{ steps.versions.outputs.vers }}.exe"
           ls -l installateur
 
+      # Le paquet a tester AVANT toute publication : il se telecharge depuis
+      # la page de cette execution (onglet Actions), sans Release.
+      - name: Paquet a tester
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiseAJour-${{ steps.versions.outputs.depuis }}-vers-${{ steps.versions.outputs.vers }}
+          path: installateur/MiseAJour_AssistantLocal_${{ steps.versions.outputs.depuis }}_vers_${{ steps.versions.outputs.vers }}.exe
+          retention-days: 30
+
       # Le manifeste de la nouvelle version servira de reference a la
       # suivante : il doit etre recupere et versionne.
       - name: Manifeste
