@@ -307,3 +307,108 @@ def test_le_script_genere_compile_vraiment(tmp_path):
     # devant les 1,15 Go de l'installateur complet.
     assert produit.stat().st_size < 5_000_000, (
         f"paquet anormalement gros : {produit.stat().st_size} octets")
+
+
+# --- Le bouton de mise a jour ------------------------------------------------
+
+def _release(vers, assets):
+    return {"tag_name": f"v{vers}", "body": "notes", "assets": [
+        {"name": nom, "size": len(contenu), "state": "uploaded",
+         "digest": "sha256:" + __import__("hashlib").sha256(contenu).hexdigest(),
+         "browser_download_url": f"https://github.com/x/{nom}"}
+        for nom, contenu in assets]}
+
+
+def test_le_paquet_partiel_n_est_propose_qu_a_sa_version_de_depart():
+    """Pose sur une autre version, il laisserait un melange de deux versions."""
+    from assistant import mise_a_jour as maj
+
+    release = _release("1.0.5", [
+        ("MiseAJour_AssistantLocal_1.0.4_vers_1.0.5.exe", b"p"),
+        ("Installer_AssistantLocal.exe", b"complet")])
+    assert maj.choisir(release, "1.0.4").partiel is True
+    assert maj.choisir(release, "1.0.3").nom == "Installer_AssistantLocal.exe"
+    assert maj.choisir(release, "1.0.5") is None
+    assert maj.choisir(release, "1.0.6") is None
+
+
+def test_les_versions_se_comparent_en_nombres():
+    from assistant import mise_a_jour as maj
+
+    assert maj.version_tuple("v1.0.10") > maj.version_tuple("1.0.9")
+
+
+def test_un_fichier_sans_empreinte_annoncee_n_est_pas_propose():
+    from assistant import mise_a_jour as maj
+
+    release = _release("1.0.5", [("Installer_AssistantLocal.exe", b"x")])
+    release["assets"][0]["digest"] = None
+    with pytest.raises(maj.Echec):
+        maj.choisir(release, "1.0.4")
+
+
+class _Reponse:
+    def __init__(self, contenu, code=200):
+        self.contenu, self.status_code = contenu, code
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def iter_content(self, _taille):
+        yield self.contenu
+
+
+class _Session:
+    def __init__(self, contenu):
+        self.contenu = contenu
+
+    def get(self, *_a, **_k):
+        return _Reponse(self.contenu)
+
+
+def test_un_fichier_abime_est_efface_et_refuse(monkeypatch, tmp_path):
+    from assistant import mise_a_jour as maj
+
+    monkeypatch.setattr(maj, "DOSSIER", tmp_path)
+    dispo = maj.choisir(_release("1.0.5", [
+        ("Installer_AssistantLocal.exe", b"vrai contenu")]), "1.0.4")
+    with pytest.raises(maj.Echec, match="empreinte"):
+        maj.telecharger(dispo, session=_Session(b"contenu trafique"))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_un_fichier_intact_est_garde(monkeypatch, tmp_path):
+    from assistant import mise_a_jour as maj
+
+    monkeypatch.setattr(maj, "DOSSIER", tmp_path)
+    dispo = maj.choisir(_release("1.0.5", [
+        ("Installer_AssistantLocal.exe", b"vrai contenu")]), "1.0.4")
+    chemin = maj.telecharger(dispo, session=_Session(b"vrai contenu"))
+    assert chemin.read_bytes() == b"vrai contenu"
+
+
+def test_sans_internet_la_verification_le_dit(monkeypatch):
+    import requests
+
+    from assistant import mise_a_jour as maj
+
+    class Coupee:
+        def get(self, *_a, **_k):
+            raise requests.ConnectionError("pas de reseau")
+
+    monkeypatch.setattr(maj.safety, "_audit", lambda *_a: "x")
+    with pytest.raises(maj.Echec, match="injoignable"):
+        maj.verifier(session=Coupee())
+
+
+def test_ouvrir_le_panneau_mise_a_jour_ne_contacte_personne():
+    import inspect
+
+    from assistant import panels
+
+    code = inspect.getsource(panels._mise_a_jour)
+    assert "verifier" not in code.replace("Verifier", "")
+    assert "requests" not in code

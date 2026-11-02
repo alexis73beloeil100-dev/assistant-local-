@@ -1,0 +1,97 @@
+name: Publier une version
+
+# Construit l'application sur un Windows de GitHub, fabrique le paquet de mise
+# a jour depuis la version precedente, et publie les deux installateurs.
+#
+#   - poussee sur une branche claude/** : construction et MESURE seulement
+#     (taille du paquet), rien n'est publie ;
+#   - etiquette vX.Y.Z : construction et publication de la Release.
+
+on:
+  push:
+    branches: ["claude/**"]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  construire:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12 : celle de la version deja installee. Une autre changerait
+      # python312.dll et toutes les extensions, et le paquet grossirait.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Dependances
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Versions
+        id: versions
+        shell: bash
+        run: |
+          vers=$(python -c "import assistant; print(assistant.__version__)")
+          depuis=$(python - <<'PY'
+          import re
+          from pathlib import Path
+          import assistant
+          v = lambda s: tuple(int(n) for n in re.findall(r"\d+", s))
+          avant = [p.stem for p in Path("manifestes").glob("*.json")
+                   if v(p.stem) < v(assistant.__version__)]
+          print(max(avant, key=v))
+          PY
+          )
+          echo "vers=$vers" >> "$GITHUB_OUTPUT"
+          echo "depuis=$depuis" >> "$GITHUB_OUTPUT"
+          echo "De $depuis vers $vers"
+
+      - name: Executable
+        run: python -m PyInstaller --noconfirm AssistantLocal.spec
+
+      - name: Installateur complet
+        run: python outils/publier.py
+
+      - name: Paquet de mise a jour
+        shell: bash
+        run: |
+          python outils/paquet_maj.py "${{ steps.versions.outputs.depuis }}"
+          mv "installateur/MiseAJour_AssistantLocal_${{ steps.versions.outputs.vers }}.exe" \
+             "installateur/MiseAJour_AssistantLocal_${{ steps.versions.outputs.depuis }}_vers_${{ steps.versions.outputs.vers }}.exe"
+          ls -l installateur
+
+      # Le manifeste de la nouvelle version servira de reference a la
+      # suivante : il doit etre recupere et versionne.
+      - name: Manifeste
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifeste-${{ steps.versions.outputs.vers }}
+          path: manifestes/${{ steps.versions.outputs.vers }}.json
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          vers="${{ steps.versions.outputs.vers }}"
+          test "${GITHUB_REF_NAME}" = "v$vers" || { echo "etiquette $GITHUB_REF_NAME, code en $vers"; exit 1; }
+          gh release create "v$vers" \
+            --title "Assistant local $vers" \
+            --notes-file "notes_de_version/$vers.md" \
+            "installateur/MiseAJour_AssistantLocal_${{ steps.versions.outputs.depuis }}_vers_$vers.exe" \
+            installateur/Installer_AssistantLocal.exe \
+            "manifestes/$vers.json"

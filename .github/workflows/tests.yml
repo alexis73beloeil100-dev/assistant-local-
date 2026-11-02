@@ -25,4 +25,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-ci.txt
       - name: Tests
-        run: python -m pytest -q tests
+        # Les deux tests du manifeste de la version courante : il ne nait
+        # qu'a la construction (voir DESELECTION_PRE_VOL dans livrer.py).
+        run: >-
+          python -m pytest -q tests
+          --deselect tests/test_mise_a_jour.py::test_partir_de_la_version_courante_est_refuse
+          --deselect tests/test_mise_a_jour.py::test_le_manifeste_de_la_version_publiee_est_versionne
