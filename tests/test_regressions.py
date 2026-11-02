@@ -3671,3 +3671,17 @@ def test_la_video_de_demarrage_garde_sa_forme_et_sa_cadence():
     largeur, hauteur, cadence = demarrage.format_video(demarrage.video_de_demarrage())
     assert (largeur, hauteur, cadence) == (768, 432, 24.0)
     assert abs(largeur / hauteur - 1280 / 720) < 0.01
+
+
+def test_le_son_de_demarrage_accompagne_la_video():
+    import wave
+
+    from assistant import demarrage
+
+    son = demarrage.son_de_demarrage()
+    assert son is not None, "la piste son doit etre livree avec la video"
+    with wave.open(str(son)) as w:
+        duree = w.getnframes() / w.getframerate()
+    assert abs(duree - 10.03) < 0.1, "le son dure autant que la video"
+    assert "demarrage.wav" in open("AssistantLocal.spec", encoding="utf-8").read()
+    assert demarrage.jouer_son(None) is False

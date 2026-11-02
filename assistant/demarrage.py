@@ -51,19 +51,51 @@ IMAGES_PAR_SECONDE = 30
 TICK = 16
 
 
-def video_de_demarrage() -> Path | None:
-    """Trouve la video, en sources comme dans l'executable packagee."""
+def _ressource(nom: str) -> Path | None:
+    """Trouve un fichier de ressources, en sources comme dans l'executable packagee."""
     import sys
 
-    voisin = Path(__file__).resolve().parent / "ressources" / "demarrage.mp4"
+    voisin = Path(__file__).resolve().parent / "ressources" / nom
     if voisin.is_file():
         return voisin
     base = getattr(sys, "_MEIPASS", None)
     if base:
-        embarque = Path(base) / "assistant" / "ressources" / "demarrage.mp4"
+        embarque = Path(base) / "assistant" / "ressources" / nom
         if embarque.is_file():
             return embarque
     return None
+
+
+def video_de_demarrage() -> Path | None:
+    return _ressource("demarrage.mp4")
+
+
+def son_de_demarrage() -> Path | None:
+    """Piste son de la video, a part : winsound ne lit que le WAV, sans dependance."""
+    return _ressource("demarrage.wav")
+
+
+def jouer_son(chemin: Path | None) -> bool:
+    """Lance le son sans bloquer. Faux si impossible : la video reste muette."""
+    if chemin is None:
+        return False
+    try:
+        import winsound
+
+        winsound.PlaySound(str(chemin), winsound.SND_FILENAME | winsound.SND_ASYNC
+                           | winsound.SND_NODEFAULT)
+        return True
+    except Exception:  # noqa: BLE001 - une decoration ne bloque jamais
+        return False
+
+
+def couper_son() -> None:
+    try:
+        import winsound
+
+        winsound.PlaySound(None, 0)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def format_video(chemin: Path) -> tuple[int, int, float]:
@@ -113,6 +145,9 @@ class EcranDeChargement(tk.Toplevel):
         self._pret = False
         self._chemin = chemin
         self._a_la_fin = a_la_fin
+        # Son et image partent du meme instant : l'horloge de l'affichage
+        # rattrape le decodage, donc les deux restent alignes.
+        jouer_son(son_de_demarrage())
         self._depart = time.monotonic()
         self._rendues = 0
 
@@ -214,6 +249,7 @@ class EcranDeChargement(tk.Toplevel):
         """
         if not self._finie:
             return
+        couper_son()
         try:
             self.destroy()
         except tk.TclError:
