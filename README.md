@@ -1,14 +1,15 @@
 ﻿# Assistant local
 
-Assistant vocal et textuel qui connaît cette machine. **Tout tourne en
-local** : le modèle de langage, la reconnaissance vocale et la synthèse ne
-quittent jamais le PC. Vos fichiers, vos conversations et ce que l'assistant
-apprend de la machine restent ici.
+Assistant textuel qui connaît cette machine, et qui s'oriente vers le
+développement de jeux vidéo. **Le modèle de langage tourne en local**, sur la
+carte graphique.
 
-Deux fonctions contactent l'extérieur, seulement quand vous les demandez, et
-n'envoient rien de personnel : le **test de débit** (des octets nuls vers le
-point de mesure public de Cloudflare) et la **réparation de l'image de
-Windows** (DISM, qui récupère des fichiers sains auprès de Windows Update).
+**La règle : les données privées ne quittent jamais le PC.** Vos fichiers,
+vos conversations et ce que l'assistant apprend de la machine restent ici.
+L'application peut aller sur Internet pour ce qui la concerne elle-même, et
+seulement quand vous le demandez : la **vérification des mises à jour**
+(GitHub) et la **réparation de l'image de Windows** (DISM, qui récupère des
+fichiers sains auprès de Windows Update).
 
 ### [⬇️ Télécharger l'installateur (Windows)](https://github.com/alexis73beloeil100-dev/assistant-local-/releases/latest)
 
@@ -22,8 +23,7 @@ le code source : elle ne sert qu'à qui veut le lire.
 **Double-clic sur « Assistant local » sur le Bureau.**
 
 C'est un vrai exécutable Windows : `dist\AssistantLocal\AssistantLocal.exe`.
-Il n'a besoin ni de Python ni de rien d'installé — tout est embarqué (2,3 Go,
-dont l'essentiel en bibliothèques CUDA).
+Il n'a besoin ni de Python ni de rien d'installé — tout est embarqué.
 
 L'application **démarre elle-même son moteur** (le serveur Ollama). Tu n'as
 rien à lancer avant elle. C'est important : Ollama ne s'inscrit pas au
@@ -55,24 +55,21 @@ modèle qui recopie des chiffres finit toujours par en déformer un.
 | Démarrage de Windows | ce qui se lance avec la session |
 | Ce que je peux réparer | correctifs disponibles |
 | Autotest | vérifier que tout fonctionne |
+| Mise à jour | vérifier et installer la dernière version publiée |
 
 **La conversation**, pour les questions libres, où le modèle est
-indispensable. Bouton **Parler** pour dicter, case « Répondre à voix haute »
-décochée par défaut.
+indispensable. Pour dicter : la dictée de Windows, **Win+H** dans la zone de
+texte. La voix de l'assistant (reconnaissance, mot-clé, lecture à voix
+haute) a été retirée en 1.0.6 : avec un modèle local, elle ne comprenait
+qu'une phrase sur six.
 
-### Éclairage RGB : OpenRGB s'installe à part
+**La mini-fenêtre** : **Win+Maj+A**, n'importe où, fait apparaître un petit
+orbe en haut de l'écran, la zone de texte prête. Échap le renvoie.
 
-Le pilotage des LED marche, mais **l'application ne livre pas OpenRGB** — il
-faut l'installer soi-même depuis <https://openrgb.org> (rubrique Downloads,
-Windows 64-bit). L'assistant le cherche tout seul dans les emplacements
-d'installation habituels ; une version portable posée dans `outils/OpenRGB/`
-fait aussi l'affaire, et le panneau **Contrôle** dit où le prendre tant qu'il
-ne trouve rien.
-
-Deux choses à savoir : l'éclairage d'une carte mère passe par le bus SMBus,
-qui demande les **droits administrateur**, et le logiciel du fabricant doit
-être **fermé** — deux programmes sur le même contrôleur font clignoter les LED
-au hasard.
+**Le mode Dev / PC**, en bas à gauche. En **Dev**, le modèle ne voit que les
+outils du développement (fichiers et code, captures, commandes, applications,
+état du PC) : 21 outils au lieu de 81, il répond plus vite et se trompe moins
+d'outil. En **PC**, il a tout.
 
 La pastille en haut à droite : verte = prêt, ambre = en travail, rouge =
 problème.
@@ -263,97 +260,9 @@ normalement.
 
 ---
 
-## Voix
-
-```bash
-.venv\Scripts\python.exe -m assistant.main
-```
-
-### Dicter une phrase
-
-Le bouton **Parler** est un interrupteur : un clic démarre, un second clic
-transcrit et envoie.
-
-Ce n'est pas un détail d'ergonomie. La détection automatique de fin de phrase
-ne peut pas être fiable : elle repose sur un seuil de volume, et un simple pic
-de bruit ambiant suffit à la déclencher. Mesuré sur cette machine —
-« parole détectée » à 2,3 s puis arrêt à 6,2 s **alors que personne n'avait
-parlé**. L'utilisateur voyait le vu-mètre bouger et n'obtenait jamais sa
-phrase. Quand quelqu'un peut cliquer, il n'y a aucune raison de deviner.
-
-### Écoute permanente
-
-Case **« Écoute permanente (alexa) »** dans la barre latérale, décochée
-par défaut.
-
-| Déclencheur | Quand l'utiliser |
-|---|---|
-| Dire **« alexa »** | à la souris, hors jeu |
-| **Ctrl + Alt + Espace** | en jeu ou en vocal — aucun faux déclenchement |
-
-**Pourquoi « alexa » et pas « hey jarvis ».** openWakeWord ne fournit que six
-modèles pré-entraînés, tous entraînés sur de l'anglais. Les deux détecteurs ont
-été mis à tourner en parallèle sur le même flux, même micro, même voix :
-
-| Modèle | Score maximal | Blocs au-dessus du seuil |
-|---|---|---|
-| `hey_jarvis` | 0,097 | **0** — n'a jamais déclenché |
-| `alexa` | **0,692** | 4 |
-
-Sept fois plus haut. Ce n'était ni le micro, ni le seuil : le modèle
-`hey_jarvis` ne reconnaît pas cette prononciation. Un mot-clé au choix — « Tom »,
-par exemple — demanderait d'entraîner un réseau de neurones : torch, tensorflow,
-plusieurs giga-octets et des heures de calcul. Et une syllabe est de toute façon
-trop courte pour un déclenchement fiable.
-
-Le mot-clé se change à un seul endroit, `WAKE_MODEL` dans `voice/wake.py`.
-
-Là, personne ne peut cliquer pour dire « j'ai fini » : la fin de phrase doit
-être détectée. Trois règles évitent le défaut ci-dessus — il faut **320 ms de
-son continu** pour croire à de la parole (un claquement de clavier ne dure
-qu'un bloc), l'enregistrement ne s'arrête **jamais avant 2,5 s** (une
-hésitation en début de phrase ne doit pas le couper), et le silence exigé est
-porté à **1,5 s**.
-
-Décochée par défaut, parce que le micro écoute alors en continu : ça se
-déclenche sur ce que disent les autres en vocal, et ça consomme du processeur
-pendant une partie. C'est un choix, pas un réglage imposé.
-
-Options utiles :
-
-```bash
---no-wake      # raccourci seul, zéro CPU au repos
---muet         # répond à l'écrit sans parler
---micros       # liste les micros
---mic 11       # force un micro
---seuil 0.7    # mot-clé plus strict s'il part tout seul
-```
-
----
-
-## Si le micro ne répond pas
-
-L'assistant **calibre le seuil de parole sur ton micro** au début de chaque
-enregistrement : il mesure le bruit de fond pendant 0,4 s et place le seuil
-au-dessus. Un seuil fixe ne peut pas marcher — le niveau dépend entièrement du
-gain de la carte son.
-
-En bas de la barre latérale :
-
-1. Choisis le micro dans la liste déroulante.
-2. Clique **Tester le micro** → il affiche le bruit de fond et le seuil calculé.
-   - « muet » en rouge = ce périphérique ne capte rien, prends-en un autre.
-3. Clique **Parler** : la barre du vu-mètre monte quand tu parles, le trait
-   ambre est le seuil, la barre passe au vert quand tu le franchis.
-
-Sur cette machine, le micro *Mic in at rear panel* sort un bruit de fond de
-`0.0033`, ce qui donne un seuil de `0.0073`.
-
----
-
 ## Distribuer l'application
 
-`installateur\Installer_AssistantLocal.exe` (1,13 Go) est un installateur
+`installateur\Installer_AssistantLocal.exe` (116 Mo) est un installateur
 Windows classique, produit par Inno Setup depuis `installateur.iss`.
 
 - s'installe dans `%LOCALAPPDATA%\AssistantLocal`, **sans droits
@@ -368,7 +277,14 @@ Windows classique, produit par Inno Setup depuis `installateur.iss`.
 Le moteur d'IA et les modèles ne sont **pas** dans l'installateur : ils pèsent
 plusieurs Go et dépendent du matériel de la machine cible.
 
-Pour le reconstruire :
+**Les mises à jour** passent par le panneau **Mise à jour** : *Vérifier*
+interroge la dernière Release GitHub, *Installer* télécharge le paquet,
+contrôle son empreinte SHA-256 et le lance. Le paquet ne contient que les
+fichiers qui ont changé. Il est fabriqué par GitHub
+(`.github/workflows/publier.yml`) : un commit dont le message contient
+`[publier]` construit l'application sous Windows et publie la Release.
+
+Pour le reconstruire à la main :
 
 ```bash
 .venv\Scripts\python.exe reconstruire.py
@@ -383,9 +299,9 @@ Pour le reconstruire :
 dist\AssistantLocal\AssistantLocal.exe --autotest
 ```
 
-Onze vérifications : environnement, droits d'écriture, disques, relevé
-matériel, moteur d'IA, modèle, transcription, micro, lecture d'images, voix,
-jeux. Chacune dit ce qu'elle teste, ce qu'elle trouve, et quoi faire si ça
+Chaque partie est vérifiée : environnement, droits d'écriture, disques,
+relevé matériel, moteur d'IA, modèle, lecture d'images, jeux, applications,
+inventaire, démarrage de Windows. Chacune dit ce qu'elle teste, ce qu'elle trouve, et quoi faire si ça
 échoue.
 
 C'est ce qui a permis de trouver deux bugs invisibles autrement : les modèles
@@ -418,7 +334,6 @@ assistant/
   safety.py          garde-fou d'écriture + journal d'audit
   llm.py             Ollama + catalogue d'outils appelables par le modèle
   cli.py             entrée texte
-  main.py            entrée vocale
   index/
     db.py            schéma SQLite + requêtes (FTS5)
     scanner.py       parcours des disques
@@ -429,10 +344,9 @@ assistant/
   gui.py             la fenêtre
   theme.py           couleurs, polices, espacements
   widgets.py         coins arrondis, zone défilante, cartes de message
-  voice/
-    stt.py           Whisper (GPU, repli CPU automatique)
-    tts.py           voix Windows Hortense
-    wake.py          mot-clé + raccourci global
+  mini_fenetre.py    l'orbe de Win+Maj+A
+  mise_a_jour.py     vérifier, télécharger, contrôler, installer
+  sans_console.py    aucune fenêtre noire pour les programmes lancés
   startup.py         démarrage automatique avec Windows
 ```
 
@@ -464,9 +378,6 @@ qui rend le comportement prévisible et vérifiable.
 | Rôle | Choix | Où |
 |---|---|---|
 | Modèle de langage | `qwen3.5:4b` | GPU, ~6,1 Go VRAM |
-| Reconnaissance vocale | `faster-whisper medium` | GPU, ~1,5 Go VRAM |
-| Mot-clé | openWakeWord `alexa` | CPU, négligeable |
-| Synthèse vocale | SAPI Hortense | CPU |
 | Index fichiers | SQLite + FTS5 | **mémoire vive uniquement** |
 
 Les deux modèles GPU tiennent ensemble dans les 16 Go de la RTX 5060 Ti, en
@@ -541,11 +452,9 @@ transporte que les fichiers dont le contenu a changé.
 
 ### Pourquoi rien ne se met à jour tout seul
 
-Il n'y a **aucune vérification automatique**, et c'est délibéré. Elle
-obligerait l'application à contacter un serveur **d'elle-même**, sans que
-personne l'ait demandé — c'est cela qu'on refuse, et c'est ce qui la
-distingue du test de débit ou de DISM, qui ne partent que sur une phrase
-explicite. Le paquet se distribue à la main, comme le premier.
+Il n'y a **aucune vérification automatique** : le panneau Mise à jour ne
+contacte GitHub que sur un clic. Une application qui se connecte d'elle-même,
+sans que personne l'ait demandé, c'est ce qu'on refuse.
 
 ### Le détail qui fait tenir l'ensemble
 
@@ -563,13 +472,9 @@ Un test vérifie que les deux identifiants restent égaux.
 **Le programme distribué est sous [licence MIT](LICENSE).**
 
 Il s'est transmis sous GPLv3 jusqu'au 23/08/2026, parce qu'il intégrait
-`openrgb-python`. Cette bibliothèque a été remplacée par
-`assistant/skills/openrgb_protocole.py`, écrit pour ce projet, qui parle
-directement au serveur OpenRGB. Plus aucun composant intégré n'impose sa
-licence à l'ensemble, et le code source n'accompagne plus le binaire.
-
-OpenRGB lui-même n'est **pas** distribué avec le programme depuis le
-23/08/2026 : c'est un logiciel libre distinct que l'utilisateur installe.
+`openrgb-python`. Cette bibliothèque a d'abord été remplacée par du code écrit
+pour ce projet, puis le pilotage de l'éclairage a été retiré entièrement en
+1.0.7. Plus aucun composant intégré n'impose sa licence à l'ensemble.
 
 Les fichiers écrits pour ce projet restent sous [licence MIT](LICENSE) et
 réutilisables comme tels. Le détail composant par composant est dans

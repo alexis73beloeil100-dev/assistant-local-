@@ -1,3 +1,3 @@
 """Assistant local : assistant PC hors ligne pour Windows."""
 
-__version__ = "1.0.6"
+__version__ = "1.0.7"

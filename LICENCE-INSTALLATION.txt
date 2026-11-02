@@ -12,8 +12,8 @@ Le programme que vous installez est distribue sous licence MIT.
 
 Jusqu'au 23/08/2026 il se transmettait sous GPLv3, parce qu'il integrait la
 bibliotheque openrgb-python, elle-meme sous cette licence. Cette bibliotheque
-a ete remplacee par du code ecrit pour ce projet : l'assistant parle
-directement au serveur OpenRGB, par son protocole reseau.
+a ete remplacee par du code ecrit pour ce projet, puis le pilotage de
+l'eclairage a ete retire entierement le 02/11/2026.
 
 Le programme n'integre donc plus aucun composant qui impose sa licence a
 l'ensemble.
@@ -31,19 +31,14 @@ mention de copyright et le texte de la licence.
 LES AUTRES COMPOSANTS
 ---------------------
 
-Le logiciel embarque une trentaine de bibliotheques tierces : reconnaissance
-vocale, calcul, lecture d'images, et les bibliotheques CUDA de NVIDIA qui
-representent l'essentiel de sa taille. Chacune garde sa propre licence.
+Le logiciel embarque une vingtaine de bibliotheques tierces : calcul, lecture
+d'images, documents. Chacune garde sa propre licence.
 
 Le detail complet, composant par composant, est dans le fichier
 LICENCES-TIERS.md installe a cote du programme.
 
-OpenRGB n'est PAS livre avec ce programme. Le pilotage de l'eclairage RGB
-demande de l'installer separement, depuis :
-
-    https://openrgb.org
-
-C'est un logiciel libre distinct, sous GPLv2, edite par un tiers.
+OpenRGB n'est PAS livre avec ce programme, et le programme ne le pilote
+plus.
 
 
 ABSENCE DE GARANTIE
@@ -57,11 +52,12 @@ resulteraient de son utilisation.
 CE QUE LE LOGICIEL NE FAIT PAS
 ------------------------------
 
-Rien de ce que vous dites ou de ce qui se trouve sur cette machine n'est
-envoye ailleurs. Le modele de langage, la reconnaissance vocale et la
-synthese fonctionnent entierement en local. Il n'y a aucune verification
-automatique de mise a jour, aucune telemetrie, aucun compte.
+Vos donnees privees ne quittent jamais cette machine : rien de ce que vous
+ecrivez ni de ce qui se trouve sur le PC n'est envoye ailleurs. Le modele de
+langage fonctionne entierement en local. Il n'y a aucune telemetrie, aucun
+compte.
 
-La seule connexion sortante a lieu si vous demandez explicitement le
-telechargement des composants (moteur d'IA et modeles de voix), sur l'ecran
-propose a la fin de l'installation.
+Le programme se connecte a Internet seulement quand vous le demandez : pour
+le telechargement des composants (moteur d'IA et modeles), sur l'ecran
+propose a la fin de l'installation ; pour verifier et installer une mise a
+jour, depuis le panneau Mise a jour ; pour reparer l'image de Windows.
