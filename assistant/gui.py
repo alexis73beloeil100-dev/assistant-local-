@@ -380,9 +380,13 @@ class AssistantWindow(tk.Tk):
         self._montrer_mode()
         self._montrer_projet()
         self._remplir_rail()
-        # Le panneau ouvert n'existe peut-etre plus dans ce mode.
+        # En Dev, on arrive sur le panneau Projet : il montre le projet et
+        # tout ce qu'on peut demander. Sinon, le panneau ouvert n'existe
+        # peut-etre plus dans ce mode.
         panneau = panels.BY_KEY.get(self.current)
-        if panneau is not None and mode not in panneau.modes:
+        if mode == "dev":
+            self.show("unreal_projet")
+        elif panneau is not None and mode not in panneau.modes:
             self.show(CHAT_KEY)
         elif self.current in self._nav:
             self._nav[self.current].set_actif(True)

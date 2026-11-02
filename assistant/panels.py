@@ -457,24 +457,82 @@ def _mise_a_jour() -> str:
     ])
 
 
+# Ce que l'atelier sait faire, en phrases cliquables : un panneau vide ne
+# montrait rien de tout ce qui existe, et on concluait qu'il n'y avait rien.
+DEMANDES_DEV = [
+    ("LE CODE", [
+        "Résume mon projet",
+        "Montre-moi l'arborescence du projet",
+        "Cherche où est utilisée la fonction BeginPlay",
+        "Explique-moi ce que fait le fichier principal du jeu",
+        "Ajoute une variable Munitions réglable dans l'éditeur à mon personnage",
+        "Compile le projet et corrige les erreurs",
+        "Annule ta dernière modification",
+        "Écris le plan pour ajouter un système de rechargement",
+    ]),
+    ("UNREAL", [
+        "Compile le projet",
+        "Qu'est-ce qu'il y a dans les journaux ?",
+        "Pourquoi le jeu a planté ?",
+        "Quels sont les assets les plus lourds ?",
+        "Empaquète une version jouable en Development",
+    ]),
+    ("L'ÉDITEUR ET LES BLUEPRINTS", [
+        "Installe le plugin de l'éditeur dans mon projet",
+        "Est-ce que l'éditeur répond ?",
+        "Liste les acteurs du niveau",
+        "Crée un Blueprint BP_Caisse avec un cube et la physique",
+        "Fais une capture de la vue de l'éditeur et dis-moi ce que tu vois",
+    ]),
+    ("L'ANIMATION", [
+        "Active le Python de l'éditeur",
+        "Montre les os du squelette de mon personnage par partie du corps",
+        "Mesure le glissement des pieds sur l'animation de marche",
+        "Crée un montage de rechargement avec des fondus de 0,2 s",
+    ]),
+    ("GIT ET DOCUMENTATION", [
+        "Quel est l'état Git du projet ?",
+        "Enregistre mes changements dans Git",
+        "Cherche sur le forum Unreal pourquoi TickComponent n'est pas appelé",
+    ]),
+]
+
+
+def _demandes_dev() -> list[str]:
+    lignes = ["CE QUE TU PEUX DEMANDER (clique une ligne)", ""]
+    for titre, demandes in DEMANDES_DEV:
+        lignes.append(f"  {titre}")
+        lignes += [f"{EXEMPLE}{d}" for d in demandes]
+        lignes.append("")
+    return lignes
+
+
 def _projet_unreal() -> str:
     from assistant.skills import code, unreal
 
     try:
         racine = code.racine()
-    except code.HorsProjet as exc:
-        return f"PROJET\n\n{exc}"
+    except code.HorsProjet:
+        lignes = ["AUCUN PROJET CHOISI", "",
+                  "  Clique « Choisir le projet », en bas à gauche, et prends le",
+                  "  DOSSIER de ton projet : jeu Unreal, application, site...", ""]
+        recents = unreal.projets_recents()[:8]
+        if recents:
+            lignes += ["  Ou clique un projet ouvert récemment dans Unreal :", ""]
+            lignes += [f"{EXEMPLE}Choisis le projet {r.parent}" for r in recents]
+            lignes.append("")
+        return "\n".join(lignes + _demandes_dev())
     lignes = ["PROJET", "", f"Dossier  {racine}", ""]
     lignes += ["GIT", "", code.git_etat(), ""]
     if unreal.projet_actuel() is None or unreal.projet_actuel().parent.resolve() != racine:
         lignes += ["NOTES DU PROJET (ASSISTANT.md)", "",
-                   code.memoire_projet()[-1500:]]
-        return "\n".join(lignes)
+                   code.memoire_projet()[-1500:], ""]
+        return "\n".join(lignes + _demandes_dev())
     lignes += ["UNREAL", "", unreal.resume_projet(), ""]
     if unreal.derniere_compilation:
         lignes += ["DERNIERE COMPILATION", "", unreal.derniere_compilation, ""]
-    lignes += ["JOURNAL DE LA DERNIERE SESSION", "", unreal.journaux(15)]
-    return "\n".join(lignes)
+    lignes += ["JOURNAL DE LA DERNIERE SESSION", "", unreal.journaux(15), ""]
+    return "\n".join(lignes + _demandes_dev())
 
 
 def _controle() -> str:

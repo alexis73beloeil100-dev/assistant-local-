@@ -3593,3 +3593,22 @@ def test_la_barre_laterale_suit_le_mode():
     for p in panels.PANELS:
         assert set(p.modes) <= set(llm.MODES), p.key
     assert ("unreal", "projet") in panels.CATEGORIES
+
+
+def test_le_panneau_projet_n_est_jamais_vide(monkeypatch):
+    """Il affichait « Aucun projet » et rien d'autre : on croyait l'atelier vide."""
+    from pathlib import Path
+
+    from assistant import panels
+    from assistant.skills import code, unreal
+
+    def sans_projet():
+        raise code.HorsProjet("aucun")
+
+    monkeypatch.setattr(code, "racine", sans_projet)
+    monkeypatch.setattr(unreal, "projets_recents",
+                        lambda: [Path("D:/Jeux/Tireur/Tireur.uproject")])
+    texte = panels._projet_unreal()
+    assert f"{panels.EXEMPLE}Choisis le projet" in texte
+    cliquables = [l for l in texte.splitlines() if l.startswith(panels.EXEMPLE)]
+    assert len(cliquables) >= 20
