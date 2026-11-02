@@ -566,3 +566,212 @@ def git_enregistrer(message: str, ask=None) -> str:
         return sortie
     code, sortie = _git("commit", "-m", message)
     return sortie
+
+
+# --- Ce qui manquait pour avoir les memes outils qu'un assistant de code -------
+
+def trouver_fichiers(motif: str, dossier: str = "") -> str:
+    """Les fichiers dont le chemin correspond a un motif (ex. **/*Arme*.h)."""
+    try:
+        base = resoudre(dossier)
+    except HorsProjet as exc:
+        return str(exc)
+    motif = (motif or "*").strip().replace("\\", "/")
+    trouves = []
+    for f in base.glob(motif if "/" in motif or "**" in motif else f"**/{motif}"):
+        if f.is_file() and not _ignore(f.relative_to(base)):
+            trouves.append(f)
+    if not trouves:
+        return f"Aucun fichier ne correspond a « {motif} »."
+    trouves.sort(key=lambda f: -f.stat().st_mtime)
+    lignes = [f"{len(trouves)} fichier(s), du plus recemment modifie au plus ancien :"]
+    lignes += [f"  {_relatif(f)}" for f in trouves[:RESULTATS_MAX]]
+    if len(trouves) > RESULTATS_MAX:
+        lignes.append(f"  ... et {len(trouves) - RESULTATS_MAX} autres")
+    return "\n".join(lignes)
+
+
+def ecrire_fichier(chemin: str, contenu: str, ask=None) -> str:
+    """Remplace tout le contenu d'un fichier existant, difference montree."""
+    try:
+        cible = resoudre(chemin)
+        avant = _lire_texte(cible)
+    except (HorsProjet, ValueError) as exc:
+        return str(exc)
+    except OSError:
+        return creer_fichier(chemin, contenu, ask=ask)
+    fin = "\r\n" if "\r\n" in avant else "\n"
+    norm, apres = avant.replace("\r\n", "\n"), contenu.replace("\r\n", "\n")
+    if norm == apres:
+        return "Rien ne change : le contenu est identique."
+    diff = _difference(norm, apres, _relatif(cible))
+    action = safety.Action(kind="code", summary=f"Reecrire {_relatif(cible)}",
+                           targets=[str(cible)], reversible=True, details=diff)
+    try:
+        if not safety.guard(action, ask=ask):
+            return "Reecriture refusee : rien n'a ete ecrit."
+    except safety.Refused as exc:
+        return str(exc)
+    copie = _sauvegarder(cible)
+    _ecrire(cible, apres, fin)
+    numero = _noter({"genre": "modification", "fichier": str(cible),
+                     "copie": copie, "quand": time.strftime("%Y-%m-%d %H:%M:%S")})
+    return f"Reecrit : {_relatif(cible)} (modification n°{numero}).\n{diff}"
+
+
+def modifier_plusieurs(chemin: str, remplacements: list, ask=None) -> str:
+    """Plusieurs remplacements dans un fichier, en une seule validation.
+
+    Tout ou rien : si un seul passage est introuvable ou ambigu, rien n'est
+    ecrit. Chaque remplacement s'applique au resultat du precedent.
+    """
+    try:
+        cible = resoudre(chemin)
+        avant = _lire_texte(cible)
+    except (HorsProjet, ValueError) as exc:
+        return str(exc)
+    except OSError:
+        return f"{chemin} introuvable."
+    fin = "\r\n" if "\r\n" in avant else "\n"
+    texte = avant.replace("\r\n", "\n")
+    for n, r in enumerate(remplacements or [], 1):
+        ancien = str((r or {}).get("ancien", "")).replace("\r\n", "\n")
+        nouveau = str((r or {}).get("nouveau", "")).replace("\r\n", "\n")
+        nombre = texte.count(ancien) if ancien else 0
+        if nombre != 1:
+            return (f"Remplacement n°{n} : passage {'introuvable' if not nombre else f'present {nombre} fois'}"
+                    f" dans {_relatif(cible)}. Rien n'a ete ecrit.")
+        texte = texte.replace(ancien, nouveau, 1)
+    norm = avant.replace("\r\n", "\n")
+    if texte == norm:
+        return "Rien ne change."
+    diff = _difference(norm, texte, _relatif(cible))
+    action = safety.Action(kind="code",
+                           summary=f"Modifier {_relatif(cible)} ({len(remplacements)} passages)",
+                           targets=[str(cible)], reversible=True, details=diff)
+    try:
+        if not safety.guard(action, ask=ask):
+            return "Modification refusee : rien n'a ete ecrit."
+    except safety.Refused as exc:
+        return str(exc)
+    copie = _sauvegarder(cible)
+    _ecrire(cible, texte, fin)
+    numero = _noter({"genre": "modification", "fichier": str(cible),
+                     "copie": copie, "quand": time.strftime("%Y-%m-%d %H:%M:%S")})
+    return f"Modifie : {_relatif(cible)} (modification n°{numero}).\n{diff}"
+
+
+# Commandes longues lancees en fond : serveur de developpement, surveillance,
+# compilation d'une heure. On les suit sans bloquer la conversation.
+_en_fond: dict[int, dict] = {}
+
+
+def lancer_en_fond(commande: str, ask=None) -> str:
+    import threading
+
+    try:
+        base = racine()
+    except HorsProjet as exc:
+        return str(exc)
+    from assistant.skills import shell
+
+    raison = shell.refus(commande)
+    if raison:
+        return f"Je refuse cette commande : {raison}."
+    routine = bool(_CONSTRUIRE.match(commande))
+    action = safety.Action(kind="commande", summary=f"En fond, dans {base.name} : {commande}",
+                           targets=[str(base)], reversible=routine, routine=routine)
+    try:
+        if not safety.guard(action, ask=ask):
+            return "Commande refusee."
+    except safety.Refused as exc:
+        return str(exc)
+    argv = (["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
+             "Bypass", "-Command", commande] if os.name == "nt" else ["sh", "-c", commande])
+    proc = subprocess.Popen(argv, cwd=str(base), stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                            errors="replace",
+                            creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0)
+    numero = max(_en_fond, default=0) + 1
+    suivi = {"proc": proc, "commande": commande, "lignes": [], "debut": time.time()}
+
+    def lire():
+        for ligne in proc.stdout:
+            suivi["lignes"].append(ligne.rstrip())
+            del suivi["lignes"][:-2000]
+
+    threading.Thread(target=lire, daemon=True).start()
+    _en_fond[numero] = suivi
+    return f"Lance en fond, n°{numero} : {commande}. Suis-le avec sortie_en_fond."
+
+
+def sortie_en_fond(numero: int = 0, lignes: int = 60) -> str:
+    if not _en_fond:
+        return "Aucune commande en fond."
+    if not numero:
+        lignes_etat = []
+        for n, s in _en_fond.items():
+            code_fin = s["proc"].poll()
+            etat = "en cours" if code_fin is None else f"finie (code {code_fin})"
+            lignes_etat.append(f"n°{n}  {etat}  {int(time.time() - s['debut'])} s  "
+                               f"{s['commande']}")
+        return "\n".join(lignes_etat)
+    suivi = _en_fond.get(int(numero))
+    if suivi is None:
+        return f"Pas de commande en fond n°{numero}."
+    etat = suivi["proc"].poll()
+    entete = (f"n°{numero} {'en cours' if etat is None else f'finie, code {etat}'}, "
+              f"{int(time.time() - suivi['debut'])} s : {suivi['commande']}")
+    return entete + "\n" + "\n".join(suivi["lignes"][-max(5, int(lignes)):])
+
+
+def arreter_en_fond(numero: int) -> str:
+    suivi = _en_fond.get(int(numero))
+    if suivi is None:
+        return f"Pas de commande en fond n°{numero}."
+    if suivi["proc"].poll() is None:
+        suivi["proc"].terminate()
+        try:
+            suivi["proc"].wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            suivi["proc"].kill()
+    return f"Commande n°{numero} arretee."
+
+
+def point_du_projet() -> str:
+    """Ou en est le projet, en un seul appel : de quoi repondre sans inventer."""
+    try:
+        base = racine()
+    except HorsProjet as exc:
+        return str(exc)
+    from assistant.skills import unreal
+
+    morceaux = [f"PROJET {base.name} ({base})"]
+    projet_ue = unreal.projet_actuel()
+    if projet_ue is not None and projet_ue.parent.resolve() == base:
+        morceaux.append(unreal.resume_projet())
+    else:
+        recents = []
+        for f in base.rglob("*"):
+            if (f.is_file() and not _ignore(f.relative_to(base))
+                    and f.suffix.lower() in EXTENSIONS_CODE):
+                try:
+                    recents.append((f.stat().st_mtime, f))
+                except OSError:
+                    continue
+        recents.sort(key=lambda x: -x[0])
+        morceaux.append("Activite recente (fichiers modifies) :\n" + "\n".join(
+            f"  {time.strftime('%d/%m/%Y %H:%M', time.localtime(t))}  {_relatif(f)}"
+            for t, f in recents[:12]) if recents else "Aucun fichier de code.")
+        code_git, journal = _git("log", "-8", "--date=format:%d/%m/%Y",
+                                 "--pretty=format:  %ad  %s")
+        if not code_git and journal:
+            morceaux.append("Derniers enregistrements Git :\n" + journal)
+    morceaux.append("Git, maintenant :\n" + git_etat())
+    morceaux.append(plan())
+    notes = memoire_pour_le_modele()
+    morceaux.append("Notes du projet (ASSISTANT.md) :\n" + (notes[-2000:] if notes else "aucune"))
+    morceaux.append(historique(5))
+    if _en_fond:
+        morceaux.append("Commandes en fond :\n" + sortie_en_fond(0))
+    return "\n\n".join(morceaux)

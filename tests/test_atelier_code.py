@@ -257,3 +257,97 @@ def test_construire_et_tester_passent_sans_fenetre_le_reste_demande(tmp_path, re
 def test_une_commande_dangereuse_est_refusee_d_office(tmp_path, reglages):
     code.choisir_projet(str(tmp_path))
     assert code.executer("format c:").startswith("Je refuse")
+
+
+# --- Les memes outils qu'un assistant de code -----------------------------------
+
+def test_trouver_des_fichiers_par_motif(projet):
+    texte = code.trouver_fichiers("*Arme*")
+    assert "Source/Tireur/Arme.h" in texte and "Source/Tireur/Arme.cpp" in texte
+    assert "Binaries" not in texte
+    assert "Source/Tireur/Arme.cpp" in code.trouver_fichiers("Source/**/*.cpp")
+
+
+def test_reecrire_un_fichier_entier_puis_l_annuler(projet):
+    fichier = projet / "Source" / "Tireur" / "Arme.cpp"
+    avant = fichier.read_bytes()
+    texte = code.ecrire_fichier("Source/Tireur/Arme.cpp", "// vide\n")
+    assert "Reecrit" in texte and "+// vide" in texte
+    code.annuler(0)
+    assert fichier.read_bytes() == avant
+
+
+def test_plusieurs_remplacements_tout_ou_rien(projet):
+    fichier = projet / "Source" / "Tireur" / "Arme.cpp"
+    avant = fichier.read_bytes()
+    texte = code.modifier_plusieurs("Source/Tireur/Arme.cpp", [
+        {"ancien": "Tirer()", "nouveau": "Tirer(int Coups)"},
+        {"ancien": "Viser()", "nouveau": "x"}])
+    assert "n°2" in texte and "Rien n'a ete ecrit" in texte
+    assert fichier.read_bytes() == avant
+    code.modifier_plusieurs("Source/Tireur/Arme.cpp", [
+        {"ancien": "Tirer()", "nouveau": "Tirer(int Coups)"},
+        {"ancien": "Munitions--;", "nouveau": "Munitions -= Coups;"}])
+    assert "Munitions -= Coups;" in fichier.read_text()
+
+
+def test_une_commande_en_fond_se_suit_et_s_arrete(projet):
+    import time as _t
+
+    texte = code.lancer_en_fond("echo prete; sleep 30" if code.os.name != "nt"
+                                else "Write-Output prete; Start-Sleep 30")
+    numero = int(texte.split("n°")[1].split(" ")[0].rstrip(":"))
+    for _ in range(50):
+        if "prete" in code.sortie_en_fond(numero):
+            break
+        _t.sleep(0.1)
+    assert "en cours" in code.sortie_en_fond(numero) and "prete" in code.sortie_en_fond(numero)
+    code.arreter_en_fond(numero)
+    assert "finie" in code.sortie_en_fond(numero)
+
+
+def test_le_point_du_projet_rassemble_tout(projet, monkeypatch):
+    from assistant.skills import unreal
+
+    monkeypatch.setattr(unreal, "projet_actuel", lambda: None)
+    code.plan(["Ajouter le rechargement", "Compiler"], [1])
+    code.memoire_projet("Les armes heritent de UArmeBase.")
+    code.modifier_fichier("Source/Tireur/Arme.h", "= 30;", "= 35;")
+    texte = code.point_du_projet()
+    assert "PROJET Tireur" in texte
+    assert "Activite recente" in texte and "Source/Tireur/Arme.h" in texte
+    assert "Plan (1/2)" in texte
+    assert "UArmeBase" in texte
+    assert "n°1" in texte
+
+
+def test_l_encyclopedie_rend_titres_liens_et_resumes(monkeypatch):
+    class Rep:
+        def __init__(self, d, code=200):
+            self._d, self.status_code = d, code
+
+        def json(self):
+            return self._d
+
+    reponses = [Rep({"query": {"search": [{"title": "Unreal Engine"}]}}),
+                Rep({"query": {"pages": {"1": {"title": "Unreal Engine",
+                                                "extract": "Moteur de jeu d'Epic Games."}}}})]
+
+    class Session:
+        def get(self, url, **kw):
+            return reponses.pop(0)
+
+    monkeypatch.setattr(web.safety, "_audit", lambda *a: None)
+    texte = web.chercher_encyclopedie("Unreal Engine", session=Session())
+    assert "## Unreal Engine" in texte
+    assert "https://fr.wikipedia.org/wiki/Unreal_Engine" in texte
+    assert "Moteur de jeu d'Epic Games." in texte
+
+
+def test_le_modele_doit_chercher_au_lieu_d_inventer():
+    from assistant import llm
+
+    assert "CHERCHE au lieu de deviner" in llm.SYSTEM_PROMPT
+    assert "tu ne sais pas" in llm.SYSTEM_PROMPT
+    pc = {t.name for t in llm.outils_du_mode("pc")}
+    assert {"chercher_encyclopedie", "chercher_documentation", "lire_page"} <= pc

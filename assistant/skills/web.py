@@ -122,3 +122,46 @@ def lire_page(url: str, session=None) -> str:
     if len(texte) > TAILLE_PAGE:
         texte = texte[:TAILLE_PAGE] + "\n... (page coupee)"
     return f"{url}\n\n{texte}"
+
+
+# --- Connaissances generales -----------------------------------------------------
+
+WIKI = "https://{langue}.wikipedia.org/w/api.php"
+AGENT_WIKI = ("AssistantLocal/1.0 "
+              "(https://github.com/alexis73beloeil100-dev/assistant-local-)")
+
+
+def chercher_encyclopedie(requete: str, langue: str = "fr", session=None) -> str:
+    """Wikipedia, par son API publique : les articles et leur resume."""
+    import requests
+
+    requete = (requete or "").strip()
+    if not requete:
+        return "Recherche vide."
+    langue = langue if re.fullmatch(r"[a-z]{2,3}", langue or "") else "fr"
+    session = session or requests
+    url = WIKI.format(langue=langue)
+    safety._audit(safety.Action(kind="reseau", summary=f"encyclopedie : {requete}",
+                                targets=[url]), "auto:demande")
+    entetes = {"User-Agent": AGENT_WIKI}
+    try:
+        r = session.get(url, timeout=DELAI, headers=entetes, params={
+            "action": "query", "list": "search", "srsearch": requete,
+            "format": "json", "srlimit": 3})
+        if r.status_code == 429:
+            return "Wikipedia demande d'attendre un peu avant une nouvelle recherche."
+        titres = [x["title"] for x in r.json()["query"]["search"]]
+        if not titres:
+            return f"Aucun article pour « {requete} » sur Wikipedia ({langue})."
+        r = session.get(url, timeout=DELAI, headers=entetes, params={
+            "action": "query", "prop": "extracts", "explaintext": 1,
+            "exintro": 1, "titles": "|".join(titres), "format": "json"})
+        pages = r.json()["query"]["pages"].values()
+    except (requests.RequestException, ValueError, KeyError):
+        return "Wikipedia injoignable."
+    lignes = []
+    for p in pages:
+        extrait = (p.get("extract") or "").strip()
+        lien = f"https://{langue}.wikipedia.org/wiki/{p.get('title', '').replace(' ', '_')}"
+        lignes += [f"## {p.get('title')}", lien, extrait[:1500], ""]
+    return "\n".join(lignes).strip()

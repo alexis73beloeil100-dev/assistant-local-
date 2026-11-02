@@ -30,6 +30,12 @@ Regles :
 - Pour toute question sur des fichiers, l'etat de la machine ou les jeux, tu
   DOIS appeler un outil. Tu n'inventes jamais un chemin, une taille ou un
   nom de jeu : si tu ne l'as pas lu dans un resultat d'outil, tu ne le sais pas.
+- Pour une question de CONNAISSANCE (comment faire, que veut dire, une
+  fonction d'Unreal, une notion technique, un fait) : si tu es sur, reponds.
+  Si tu n'es pas sur, CHERCHE au lieu de deviner : chercher_documentation
+  (Unreal, programmation), chercher_encyclopedie (le reste), puis lire_page
+  pour le detail. Dis d'ou vient ta reponse. Si tu ne trouves rien, dis
+  franchement que tu ne sais pas : une reponse inventee est pire qu'aucune.
 - Cette regle vaut aussi quand PERSONNE NE TE DEMANDE RIEN. Ne cite jamais
   spontanement un processeur, une carte graphique, une quantite de memoire ou
   un jeu installe pour meubler une salutation. Les seuls chiffres exacts sont
@@ -1008,6 +1014,59 @@ TOOLS += [
         effect=True,
     ),
     Tool(
+        "point_du_projet",
+        "OU EN EST LE PROJET, en un appel : activite recente, derniers "
+        "commits, etat Git, plan en cours, notes du projet, dernieres "
+        "modifications, commandes en fond. A appeler des qu'on demande ou en "
+        "est le projet, ce qui a ete fait, ou ce qui reste.",
+        _obj({}), lambda: code.point_du_projet(),
+    ),
+    Tool(
+        "trouver_fichiers",
+        "Trouve les fichiers du projet dont le chemin correspond a un motif "
+        "(ex. *Arme*.h, Source/**/*.cpp, **/*.ini), du plus recent au plus ancien.",
+        _obj({"motif": STR, "dossier": STR}, ["motif"]),
+        lambda motif, dossier="": code.trouver_fichiers(str(motif), str(dossier)),
+    ),
+    Tool(
+        "ecrire_fichier",
+        "Remplace TOUT le contenu d'un fichier du projet (ou le cree s'il "
+        "n'existe pas). La difference est montree avant l'accord. Pour un "
+        "petit changement, prefere modifier_fichier.",
+        _obj({"chemin": STR, "contenu": STR}, ["chemin", "contenu"]),
+        lambda chemin, contenu: code.ecrire_fichier(str(chemin), str(contenu)),
+        effect=True,
+    ),
+    Tool(
+        "modifier_plusieurs",
+        "Plusieurs remplacements exacts dans un meme fichier, valides en une "
+        "fois. Tout ou rien : un passage introuvable annule l'ensemble.",
+        _obj({"chemin": STR, "remplacements": {"type": "array", "items": _obj(
+            {"ancien": STR, "nouveau": STR}, ["ancien", "nouveau"])}},
+             ["chemin", "remplacements"]),
+        lambda chemin, remplacements: code.modifier_plusieurs(str(chemin), list(remplacements)),
+        effect=True,
+    ),
+    Tool(
+        "lancer_en_fond",
+        "Lance une commande longue en fond dans le projet (serveur de "
+        "developpement, surveillance, longue compilation) sans bloquer.",
+        _obj({"commande": STR}, ["commande"]),
+        lambda commande: code.lancer_en_fond(str(commande)), effect=True,
+    ),
+    Tool(
+        "sortie_en_fond",
+        "Etat et dernieres lignes d'une commande en fond (numero), ou la "
+        "liste de toutes (numero 0).",
+        _obj({"numero": INT, "lignes": INT}),
+        lambda numero=0, lignes=60: code.sortie_en_fond(int(numero), int(lignes)),
+    ),
+    Tool(
+        "arreter_en_fond", "Arrete une commande lancee en fond.",
+        _obj({"numero": INT}, ["numero"]),
+        lambda numero: code.arreter_en_fond(int(numero)), effect=True,
+    ),
+    Tool(
         "arborescence_projet",
         "Montre l'arborescence du projet de travail (sans les dossiers "
         "generes : Binaries, Intermediate, node_modules...). 'dossier' est "
@@ -1110,6 +1169,15 @@ TOOLS += [
         _obj({"requete": {**STR, "description": "En anglais, plus de resultats"}},
              ["requete"]),
         lambda requete: web.chercher(str(requete)),
+    ),
+    Tool(
+        "chercher_encyclopedie",
+        "Cherche dans Wikipedia (articles et leur resume) : histoire, "
+        "science, technique, culture, definitions. A utiliser des que tu "
+        "n'es pas sur d'un fait, au lieu de deviner.",
+        _obj({"requete": STR, "langue": {**STR, "description": "fr par defaut, en pour l'anglais"}},
+             ["requete"]),
+        lambda requete, langue="fr": web.chercher_encyclopedie(str(requete), str(langue)),
     ),
     Tool(
         "lire_page",
@@ -1445,10 +1513,14 @@ OUTILS_EDITEUR = frozenset({
 })
 
 OUTILS_ATELIER_CODE = frozenset({
-    "choisir_projet", "executer_dans_projet", "arborescence_projet", "lire_code", "chercher_dans_le_code",
+    "choisir_projet", "executer_dans_projet", "arborescence_projet",
+    "point_du_projet",
+    "trouver_fichiers", "ecrire_fichier", "modifier_plusieurs",
+    "lancer_en_fond", "sortie_en_fond", "arreter_en_fond", "lire_code", "chercher_dans_le_code",
     "modifier_fichier", "creer_fichier", "historique_modifications",
     "annuler_modification", "plan", "memoire_projet", "git_etat",
     "git_difference", "git_enregistrer", "chercher_documentation", "lire_page",
+    "chercher_encyclopedie",
 })
 
 
@@ -1526,6 +1598,9 @@ CONSIGNE_MODE = {
             "identifiant : garde-le pour blueprint_relier. Compile le "
             "Blueprint a la fin (blueprint_compiler) et verifie par "
             "capture_editeur puis lire_image.\n"
+            "- \"Ou en est le projet\", \"qu'est-ce qui a ete fait\" : "
+            "point_du_projet, puis reponds a partir de ce qu'il rend, sans "
+            "inventer.\n"
             "- Termine en disant ce qui a change et quoi tester dans "
             "l'editeur.\n"
             "Si une demande concerne le reste de la machine (son, jeux, "
@@ -1565,7 +1640,8 @@ def changer_mode(mode: str) -> None:
 OUTILS_DEV_SEULEMENT = frozenset({
     "projets_unreal", "choisir_projet_unreal", "projet_unreal",
     "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
-}) | OUTILS_ATELIER_CODE | OUTILS_EDITEUR | OUTILS_ANIMATION
+}) | (OUTILS_ATELIER_CODE - {"chercher_documentation", "lire_page",
+                              "chercher_encyclopedie"}) | OUTILS_EDITEUR | OUTILS_ANIMATION
 
 
 def outils_du_mode(mode: str | None = None) -> list[Tool]:
