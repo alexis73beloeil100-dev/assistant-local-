@@ -9,7 +9,10 @@ datas = [('assistant/skills/probe.ps1', 'assistant/skills'),
          # La video de l'ecran de chargement. Si elle manque, demarrage.ouvrir()
          # rend None et l'application demarre exactement comme avant : une
          # decoration ne doit jamais empecher un programme de s'ouvrir.
-         ('assistant/ressources/demarrage.mp4', 'assistant/ressources')]
+         ('assistant/ressources/demarrage.mp4', 'assistant/ressources'),
+         # Le plugin d'editeur de l'atelier Unreal, copie dans le projet de
+         # l'utilisateur a sa demande (voir assistant/skills/editeur.py).
+         ('ressources_unreal/UnrealMCP', 'ressources_unreal/UnrealMCP')]
 
 # Outils tiers portables embarques avec l'application.
 #

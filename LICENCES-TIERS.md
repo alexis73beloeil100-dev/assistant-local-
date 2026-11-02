@@ -86,6 +86,15 @@ passer en GPL. Ce n'est pas le cas.
 
 ---
 
+## Plugin d'éditeur UnrealMCP — MIT
+
+`ressources_unreal/UnrealMCP` vient de <https://github.com/chongdashu/unreal-mcp>
+(auteur : chongdashu), sous licence MIT. Il est copié dans le projet Unreal de
+l'utilisateur, à sa demande, pour que l'assistant pilote l'éditeur. Sa licence
+et l'origine exacte sont dans `ressources_unreal/UnrealMCP/NOTICE.txt`.
+
+---
+
 ## Le reste — permissif
 
 | Composant | Version | Licence |

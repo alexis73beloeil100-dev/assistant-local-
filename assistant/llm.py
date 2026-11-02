@@ -7,6 +7,7 @@ rend le resultat. C'est ce qui rend le comportement previsible et auditable.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -19,7 +20,7 @@ from assistant.skills import (apps, archives, cleanup, content, control,
                               desk, documents, files, fixes, gamemode, games,
                               hardware, inventaire, reminders, shell, system,
                               unreal, vision)
-from assistant.skills import code, web
+from assistant.skills import code, editeur, web
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -1097,6 +1098,246 @@ TOOLS += [
     ),
 ]
 
+VEC3 = {"type": "array", "items": {"type": "number"},
+        "description": "[x, y, z]"}
+
+
+def _ed(nom: str, **params) -> str:
+    return editeur.commande(nom, params)
+
+
+def _noeud(blueprint, genre, nom="", cible="", position=None, parametres=None,
+           type_variable="", expose=False) -> str:
+    pos = list(position) if position else None
+    if genre == "evenement":
+        return _ed("add_blueprint_event_node", blueprint_name=blueprint,
+                   event_name=nom, node_position=pos)
+    if genre == "fonction":
+        return _ed("add_blueprint_function_node", blueprint_name=blueprint,
+                   function_name=nom, target=cible, node_position=pos,
+                   params=parametres)
+    if genre == "variable":
+        return _ed("add_blueprint_variable", blueprint_name=blueprint,
+                   variable_name=nom, variable_type=type_variable,
+                   is_exposed=bool(expose))
+    if genre == "composant":
+        return _ed("add_blueprint_get_self_component_reference",
+                   blueprint_name=blueprint, component_name=nom, node_position=pos)
+    if genre == "self":
+        return _ed("add_blueprint_self_reference", blueprint_name=blueprint,
+                   node_position=pos)
+    if genre == "action_entree":
+        return _ed("add_blueprint_input_action_node", blueprint_name=blueprint,
+                   action_name=nom, node_position=pos)
+    return f"Genre de noeud inconnu : {genre}"
+
+
+def _widget(action, widget="", element="", texte="", position=None,
+            evenement="", liaison="", ordre=0) -> str:
+    pos = list(position) if position else None
+    if action == "creer":
+        return _ed("create_umg_widget_blueprint", name=widget)
+    if action == "texte":
+        return _ed("add_text_block_to_widget", blueprint_name=widget,
+                   widget_name=element, text=texte, position=pos)
+    if action == "bouton":
+        return _ed("add_button_to_widget", blueprint_name=widget,
+                   widget_name=element, text=texte, position=pos or [0, 0])
+    if action == "evenement":
+        return _ed("bind_widget_event", blueprint_name=widget,
+                   widget_name=element, event_name=evenement)
+    if action == "liaison_texte":
+        return _ed("set_text_block_binding", blueprint_name=widget,
+                   widget_name=element, binding_name=liaison)
+    if action == "afficher":
+        return _ed("add_widget_to_viewport", blueprint_name=widget, z_order=int(ordre))
+    return f"Action d'interface inconnue : {action}"
+
+
+def _capture(nom: str = "") -> str:
+    dossier = config.DATA_DIR / "captures_editeur"
+    dossier.mkdir(parents=True, exist_ok=True)
+    fichier = dossier / f"{(nom or 'capture').replace(' ', '_')}_{int(time.time())}.png"
+    texte = _ed("take_screenshot", filepath=str(fichier))
+    if texte.startswith(("Refuse", "L'editeur")):
+        return texte
+    return (f"Capture de la vue de l'editeur : {fichier}\n"
+            "Pour la regarder, appelle lire_image avec ce chemin.")
+
+
+TOOLS += [
+    Tool("installer_plugin_editeur",
+         "Installe dans le projet le plugin qui permet de piloter l'editeur "
+         "Unreal (acteurs, Blueprints, noeuds, interface). A faire une fois, "
+         "puis compiler le projet et rouvrir l'editeur.",
+         _obj({}), lambda: editeur.installer_plugin(), effect=True),
+    Tool("editeur_etat",
+         "Verifie que l'editeur Unreal est ouvert et pilotable.",
+         _obj({}), lambda: editeur.etat()),
+    Tool("niveau_acteurs",
+         "Liste les acteurs du niveau ouvert, ou ceux dont le nom contient "
+         "'motif'.",
+         _obj({"motif": STR}),
+         lambda motif="": _ed("find_actors_by_name", pattern=motif) if motif
+         else _ed("get_actors_in_level")),
+    Tool("acteur_lire", "Proprietes d'un acteur du niveau.",
+         _obj({"nom": STR}, ["nom"]), lambda nom: _ed("get_actor_properties", name=nom)),
+    Tool("acteur_creer",
+         "Place un acteur dans le niveau : 'type' StaticMeshActor, "
+         "PointLight, SpotLight, DirectionalLight, CameraActor...",
+         _obj({"type": STR, "nom": STR, "position": VEC3, "rotation": VEC3,
+               "echelle": VEC3}, ["type", "nom"]),
+         lambda type, nom, position=None, rotation=None, echelle=None: _ed(
+             "spawn_actor", type=type, name=nom, location=position,
+             rotation=rotation, scale=echelle), effect=True),
+    Tool("acteur_depuis_blueprint",
+         "Place dans le niveau une instance d'un Blueprint.",
+         _obj({"blueprint": STR, "nom": STR, "position": VEC3, "rotation": VEC3},
+              ["blueprint", "nom"]),
+         lambda blueprint, nom, position=None, rotation=None: _ed(
+             "spawn_blueprint_actor", blueprint_name=blueprint, actor_name=nom,
+             location=position, rotation=rotation), effect=True),
+    Tool("acteur_transformer", "Deplace, tourne ou redimensionne un acteur.",
+         _obj({"nom": STR, "position": VEC3, "rotation": VEC3, "echelle": VEC3},
+              ["nom"]),
+         lambda nom, position=None, rotation=None, echelle=None: _ed(
+             "set_actor_transform", name=nom, location=position,
+             rotation=rotation, scale=echelle), effect=True),
+    Tool("acteur_regler", "Change une propriete d'un acteur du niveau.",
+         _obj({"nom": STR, "propriete": STR, "valeur": {}}, ["nom", "propriete", "valeur"]),
+         lambda nom, propriete, valeur: _ed("set_actor_property", name=nom,
+                                            property_name=propriete,
+                                            property_value=valeur), effect=True),
+    Tool("acteur_supprimer", "Retire un acteur du niveau (Ctrl+Z le rend).",
+         _obj({"nom": STR}, ["nom"]), lambda nom: _ed("delete_actor", name=nom),
+         effect=True),
+    Tool("vue_cadrer",
+         "Cadre la vue de l'editeur sur un acteur ('cible') ou une position.",
+         _obj({"cible": STR, "position": VEC3, "distance": {"type": "number"}}),
+         lambda cible="", position=None, distance=None: _ed(
+             "focus_viewport", target=cible, location=position, distance=distance)),
+    Tool("capture_editeur",
+         "Capture la vue de l'editeur dans une image, pour verifier un "
+         "resultat (puis lire_image).",
+         _obj({"nom": STR}), lambda nom="": _capture(str(nom))),
+    Tool("blueprint_creer",
+         "Cree un Blueprint ('parent' : Actor, Pawn, Character...).",
+         _obj({"nom": STR, "parent": STR}, ["nom", "parent"]),
+         lambda nom, parent: _ed("create_blueprint", name=nom, parent_class=parent),
+         effect=True),
+    Tool("blueprint_composant",
+         "Ajoute un composant a un Blueprint ('type' : StaticMeshComponent, "
+         "BoxComponent, SphereComponent, CameraComponent, "
+         "SpringArmComponent, PointLightComponent...).",
+         _obj({"blueprint": STR, "type": STR, "nom": STR, "position": VEC3,
+               "rotation": VEC3, "echelle": VEC3}, ["blueprint", "type", "nom"]),
+         lambda blueprint, type, nom, position=None, rotation=None, echelle=None: _ed(
+             "add_component_to_blueprint", blueprint_name=blueprint,
+             component_type=type, component_name=nom, location=position,
+             rotation=rotation, scale=echelle), effect=True),
+    Tool("blueprint_regler",
+         "Change une valeur par defaut d'un Blueprint, ou d'un de ses "
+         "composants si 'composant' est donne.",
+         _obj({"blueprint": STR, "propriete": STR, "valeur": {}, "composant": STR},
+              ["blueprint", "propriete", "valeur"]),
+         lambda blueprint, propriete, valeur, composant="": (
+             _ed("set_component_property", blueprint_name=blueprint,
+                 component_name=composant, property_name=propriete,
+                 property_value=valeur) if composant else
+             _ed("set_blueprint_property", blueprint_name=blueprint,
+                 property_name=propriete, property_value=valeur)), effect=True),
+    Tool("blueprint_maillage",
+         "Donne un maillage et/ou un materiau a un composant StaticMesh "
+         "(chemins d'assets, ex. /Engine/BasicShapes/Cube.Cube).",
+         _obj({"blueprint": STR, "composant": STR, "maillage": STR, "materiau": STR},
+              ["blueprint", "composant"]),
+         lambda blueprint, composant, maillage="", materiau="": _ed(
+             "set_static_mesh_properties", blueprint_name=blueprint,
+             component_name=composant, static_mesh=maillage, material=materiau),
+         effect=True),
+    Tool("blueprint_physique", "Reglages physiques d'un composant.",
+         _obj({"blueprint": STR, "composant": STR, "simuler": {"type": "boolean"},
+               "masse": {"type": "number"}, "amortissement_lineaire": {"type": "number"},
+               "amortissement_angulaire": {"type": "number"}}, ["blueprint", "composant"]),
+         lambda blueprint, composant, simuler=None, masse=None,
+         amortissement_lineaire=None, amortissement_angulaire=None: _ed(
+             "set_physics_properties", blueprint_name=blueprint,
+             component_name=composant, simulate_physics=simuler, mass=masse,
+             linear_damping=amortissement_lineaire,
+             angular_damping=amortissement_angulaire), effect=True),
+    Tool("blueprint_pion", "Reglages d'un Pawn : possession automatique, degats.",
+         _obj({"blueprint": STR, "possession": STR, "peut_subir_degats": {"type": "boolean"}},
+              ["blueprint"]),
+         lambda blueprint, possession="", peut_subir_degats=None: _ed(
+             "set_pawn_properties", blueprint_name=blueprint,
+             auto_possess_player=possession, can_be_damaged=peut_subir_degats),
+         effect=True),
+    Tool("blueprint_compiler", "Compile un Blueprint et rend ses erreurs.",
+         _obj({"blueprint": STR}, ["blueprint"]),
+         lambda blueprint: _ed("compile_blueprint", blueprint_name=blueprint),
+         effect=True),
+    Tool("blueprint_noeud",
+         "Ajoute un noeud au graphe d'un Blueprint. 'genre' : evenement (nom "
+         "= ReceiveBeginPlay, ReceiveTick...), fonction (nom de la fonction, "
+         "'cible' = classe ou composant, 'parametres' = valeurs des broches), "
+         "variable (nom, 'type_variable' : Boolean, Integer, Float, Vector, "
+         "String...), composant (reference a un composant), self, "
+         "action_entree. Rend l'identifiant du noeud, pour le relier.",
+         _obj({"blueprint": STR, "genre": {**STR, "enum": [
+             "evenement", "fonction", "variable", "composant", "self", "action_entree"]},
+             "nom": STR, "cible": STR, "position": {"type": "array", "items": INT},
+             "parametres": {"type": "object"}, "type_variable": STR,
+             "expose": {"type": "boolean"}}, ["blueprint", "genre"]),
+         lambda **k: _noeud(**k), effect=True),
+    Tool("blueprint_relier",
+         "Relie deux noeuds d'un Blueprint, de la broche de sortie 'broche_source' "
+         "(ex. then, ReturnValue) a la broche d'entree 'broche_cible' "
+         "(ex. execute, Target).",
+         _obj({"blueprint": STR, "source": STR, "broche_source": STR,
+               "cible": STR, "broche_cible": STR},
+              ["blueprint", "source", "broche_source", "cible", "broche_cible"]),
+         lambda blueprint, source, broche_source, cible, broche_cible: _ed(
+             "connect_blueprint_nodes", blueprint_name=blueprint,
+             source_node_id=source, source_pin=broche_source,
+             target_node_id=cible, target_pin=broche_cible), effect=True),
+    Tool("blueprint_chercher_noeuds",
+         "Retrouve des noeuds d'un Blueprint ('genre' : Event, et "
+         "'evenement' : ReceiveBeginPlay...) et leurs identifiants.",
+         _obj({"blueprint": STR, "genre": STR, "evenement": STR}, ["blueprint", "genre"]),
+         lambda blueprint, genre, evenement="": _ed(
+             "find_blueprint_nodes", blueprint_name=blueprint, node_type=genre,
+             event_name=evenement)),
+    Tool("entree_creer",
+         "Cree une action d'entree (Input Mapping) liee a une touche.",
+         _obj({"action": STR, "touche": STR, "maj": {"type": "boolean"},
+               "ctrl": {"type": "boolean"}, "alt": {"type": "boolean"}},
+              ["action", "touche"]),
+         lambda action, touche, maj=False, ctrl=False, alt=False: _ed(
+             "create_input_mapping", action_name=action, key=touche,
+             shift=maj, ctrl=ctrl, alt=alt), effect=True),
+    Tool("interface_umg",
+         "Construit une interface UMG. 'action' : creer (widget), texte et "
+         "bouton (element, texte, position [x, y]), evenement (element, "
+         "evenement ex. OnClicked), liaison_texte (element, liaison), "
+         "afficher (ordre).",
+         _obj({"action": {**STR, "enum": ["creer", "texte", "bouton", "evenement",
+                                         "liaison_texte", "afficher"]},
+               "widget": STR, "element": STR, "texte": STR,
+               "position": {"type": "array", "items": {"type": "number"}},
+               "evenement": STR, "liaison": STR, "ordre": INT}, ["action", "widget"]),
+         lambda **k: _widget(**k), effect=True),
+]
+
+OUTILS_EDITEUR = frozenset({
+    "installer_plugin_editeur", "editeur_etat", "niveau_acteurs", "acteur_lire",
+    "acteur_creer", "acteur_depuis_blueprint", "acteur_transformer",
+    "acteur_regler", "acteur_supprimer", "vue_cadrer", "capture_editeur",
+    "blueprint_creer", "blueprint_composant", "blueprint_regler",
+    "blueprint_maillage", "blueprint_physique", "blueprint_pion",
+    "blueprint_compiler", "blueprint_noeud", "blueprint_relier",
+    "blueprint_chercher_noeuds", "entree_creer", "interface_umg",
+})
+
 OUTILS_ATELIER_CODE = frozenset({
     "arborescence_projet", "lire_code", "chercher_dans_le_code",
     "modifier_fichier", "creer_fichier", "historique_modifications",
@@ -1147,8 +1388,9 @@ OUTILS_DEV = frozenset({
     # L'atelier Unreal.
     "projets_unreal", "choisir_projet_unreal", "projet_unreal",
     "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
-    # L'atelier de code.
+    # L'atelier de code, et l'editeur.
     *OUTILS_ATELIER_CODE,
+    *OUTILS_EDITEUR,
     # Passer un extrait de code a l'utilisateur.
     "lire_presse_papier", "copier",
 })
@@ -1168,6 +1410,12 @@ CONSIGNE_MODE = {
             "- Une API dont tu n'es pas sur : chercher_documentation.\n"
             "- Un choix durable (convention, architecture) : note-le avec "
             "memoire_projet.\n"
+            "- Blueprints, niveau, interface : outils de l'editeur. Verifie "
+            "d'abord editeur_etat ; s'il ne repond pas, propose "
+            "installer_plugin_editeur. Un noeud ajoute rend son "
+            "identifiant : garde-le pour blueprint_relier. Compile le "
+            "Blueprint a la fin (blueprint_compiler) et verifie par "
+            "capture_editeur puis lire_image.\n"
             "- Termine en disant ce qui a change et quoi tester dans "
             "l'editeur.\n"
             "Si une demande concerne le reste de la machine (son, jeux, "
@@ -1207,7 +1455,7 @@ def changer_mode(mode: str) -> None:
 OUTILS_DEV_SEULEMENT = frozenset({
     "projets_unreal", "choisir_projet_unreal", "projet_unreal",
     "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
-}) | OUTILS_ATELIER_CODE
+}) | OUTILS_ATELIER_CODE | OUTILS_EDITEUR
 
 
 def outils_du_mode(mode: str | None = None) -> list[Tool]:
