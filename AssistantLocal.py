@@ -55,6 +55,12 @@ def main() -> int:
     deux fenetres dependent de toute facon des memes modules.
     """
     try:
+        # Avant tout import de bibliotheque : certaines lancent des programmes
+        # console des leur chargement, et chacun ouvrait une fenetre noire.
+        from assistant import sans_console
+
+        sans_console.installer()
+
         # Le plus tot possible : un plantage natif survenu avant cet appel ne
         # laisse aucune trace. Voir assistant.vie -- l'application a disparu
         # deux fois sans rien ecrire nulle part.

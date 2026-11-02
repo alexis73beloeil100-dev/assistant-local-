@@ -4335,3 +4335,38 @@ def test_un_raccourci_indisponible_n_empeche_pas_l_application_de_s_ouvrir():
     source = inspect.getsource(gui.main)
     debut = source.index("mini_fenetre")
     assert "except Exception" in source[debut:debut + 600]
+
+
+# --- Plus de fenetres noires ------------------------------------------------
+
+def test_le_filet_cache_les_consoles_lancees_sans_drapeau(monkeypatch):
+    """joblib, platform... lancent des consoles sans CREATE_NO_WINDOW."""
+    import subprocess
+    import sys
+
+    from assistant import sans_console
+
+    vus = []
+
+    def faux_init(self, args, *a, **kw):
+        vus.append(kw.get("creationflags"))
+
+    monkeypatch.setattr(subprocess.Popen, "__init__", faux_init)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(sans_console, "_installe", False)
+    monkeypatch.setattr(sans_console, "_noter", lambda _a: None)
+    assert sans_console.installer()
+
+    subprocess.Popen(["wmic", "cpu", "get", "NumberOfCores"])
+    subprocess.Popen(["installateur.exe"], creationflags=0x00000008)
+    assert vus == [sans_console.CREATE_NO_WINDOW, 0x00000008], (
+        "un appel sans drapeau doit etre cache ; un drapeau choisi, respecte")
+
+
+def test_le_filet_est_pose_avant_tout_le_reste():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent
+              / "AssistantLocal.py").read_text(encoding="utf-8")
+    corps = source[source.index("def main()"):]
+    assert corps.index("sans_console.installer()") < corps.index("vie.demarrer")
