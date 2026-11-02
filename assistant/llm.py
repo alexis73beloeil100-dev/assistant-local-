@@ -1668,10 +1668,13 @@ def _mes_outils() -> str:
     mode = mode_actuel()
     noms = sorted(t.name for t in outils_du_mode(mode))
     autre = "pc" if mode == "dev" else "dev"
+    communs = set(noms) & {t.name for t in outils_du_mode(autre)}
     return (f"REPONSE A RECOPIER TELLE QUELLE : en mode {mode.upper()} (le mode "
             f"actif), j'ai {len(noms)} outils. En mode {autre.upper()} : "
             f"{len(outils_du_mode(autre))}. Au total, l'application en a "
-            f"{len(TOOLS)}.\n\nOutils du mode {mode.upper()} :\n"
+            f"{len(TOOLS)}, et pas {len(noms) + len(outils_du_mode(autre))} : "
+            f"{len(communs)} servent dans les deux modes et ne comptent qu'une "
+            f"fois.\n\nOutils du mode {mode.upper()} :\n"
             + "\n".join(f"{n}. {nom}" for n, nom in enumerate(noms, 1)))
 
 

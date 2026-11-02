@@ -3696,7 +3696,7 @@ def test_le_nombre_d_outils_vient_de_l_application_pas_du_modele(monkeypatch):
     texte, _ = llm.chat([{"role": "user", "content":
                           "Je veux juste savoir combien il y a reellement d'outils"}])
     assert texte.startswith(f"En mode DEV (le mode actif), j'ai {len(llm.outils_du_mode('dev'))} outils")
-    assert f"Au total, l'application en a {len(llm.TOOLS)}" in texte
+    assert f"Au total, l'application en a {len(llm.TOOLS)}, et pas 194 : 29 servent" in texte
     assert not llm._QUESTION_OUTILS.search("ouvre la boite a outils de Windows")
 
 
