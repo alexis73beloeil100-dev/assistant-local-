@@ -366,10 +366,17 @@ class AssistantWindow(tk.Tk):
         self.lien_projet.bind("<Button-1>", lambda _e: self.choisir_projet())
         self._montrer_projet()
 
-        lien = tk.Label(bottom, text="Composants", bg=t.SURFACE, fg=t.ACCENT,
-                        font=t.FONT_UI_TINY, cursor="hand2", anchor="w")
-        lien.pack(fill="x", padx=t.PAD, pady=(4, 0))
-        lien.bind("<Button-1>", lambda _e: self.open_installer())
+        # Deux lignes : trois liens cote a cote depassaient de la barre.
+        for rangee in ((("Composants", self.open_installer),),
+                       (("Sauvegarder", self.sauvegarder_donnees),
+                        ("Restaurer", self.restaurer_donnees))):
+            liens = tk.Frame(bottom, bg=t.SURFACE)
+            liens.pack(fill="x", padx=t.PAD, pady=(4, 0))
+            for texte, action in rangee:
+                lien = tk.Label(liens, text=texte, bg=t.SURFACE, fg=t.ACCENT,
+                                font=t.FONT_UI_TINY, cursor="hand2")
+                lien.pack(side="left", padx=(0, t.PAD))
+                lien.bind("<Button-1>", lambda _e, a=action: a())
 
     def changer_mode(self, mode: str) -> None:
         try:
@@ -392,6 +399,61 @@ class AssistantWindow(tk.Tk):
             self._nav[self.current].set_actif(True)
         nom = "Dev" if mode == "dev" else "PC"
         self.post("status", (f"Mode {nom}", t.GREEN))
+
+    def _mot_de_passe(self, titre: str, confirmer: bool) -> str | None:
+        from tkinter import simpledialog
+
+        premier = simpledialog.askstring(
+            titre, "Mot de passe de l'archive (8 caracteres au moins) :",
+            show="*", parent=self)
+        if not premier:
+            return None
+        if confirmer:
+            second = simpledialog.askstring(titre, "Retape-le :", show="*", parent=self)
+            if second != premier:
+                self.post("error", "Les deux mots de passe ne sont pas identiques.")
+                return None
+        return premier
+
+    def sauvegarder_donnees(self) -> None:
+        """Tout ce qu'on perdrait a une reinitialisation, dans une archive."""
+        from tkinter import filedialog
+
+        from assistant import sauvegarde
+
+        dossier = filedialog.askdirectory(
+            parent=self, title="Ou ranger la sauvegarde (cle USB, disque, OneDrive) ?")
+        if not dossier:
+            return
+        mot = self._mot_de_passe("Sauvegarder", confirmer=True)
+        if not mot:
+            return
+        self.post("status", ("Sauvegarde en cours", t.AMBER))
+        threading.Thread(target=lambda: (
+            self.post("info", sauvegarde.sauvegarder(dossier, mot)),
+            self.post("status", ("Pret", t.GREEN))), daemon=True).start()
+
+    def restaurer_donnees(self) -> None:
+        from tkinter import filedialog
+
+        from assistant import sauvegarde
+
+        fichier = filedialog.askopenfilename(
+            parent=self, title="Choisir la sauvegarde a restaurer",
+            filetypes=[("Sauvegarde Assistant local", "*.alsauv")])
+        if not fichier:
+            return
+        mot = self._mot_de_passe("Restaurer", confirmer=False)
+        if not mot:
+            return
+        self.post("status", ("Restauration en cours", t.AMBER))
+
+        def travail():
+            message = sauvegarde.restaurer(fichier, mot)
+            self.post("info", message + " Redemarre l'application pour tout recharger.")
+            self.post("status", ("Pret", t.GREEN))
+
+        threading.Thread(target=travail, daemon=True).start()
 
     def fenetre_cle_dev(self) -> None:
         from assistant import fenetre_cle

@@ -95,6 +95,14 @@ et l'origine exacte sont dans `ressources_unreal/UnrealMCP/NOTICE.txt`.
 
 ---
 
+## Bibliothèque locale — téléchargée, pas redistribuée
+
+La documentation de Python (licence PSF) et l'archive hors ligne de
+cppreference (CC-BY-SA 3.0 et GFDL) ne sont pas livrées avec l'application :
+l'utilisateur les télécharge depuis leur source, à sa demande, pour son usage.
+
+---
+
 ## Le reste — permissif
 
 | Composant | Version | Licence |

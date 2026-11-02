@@ -20,7 +20,7 @@ from assistant.skills import (apps, archives, cleanup, content, control,
                               desk, documents, files, fixes, gamemode, games,
                               hardware, inventaire, reminders, shell, system,
                               unreal, vision)
-from assistant.skills import animation, code, editeur, web
+from assistant.skills import animation, bibliotheque, code, editeur, web
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -32,9 +32,10 @@ Regles :
   nom de jeu : si tu ne l'as pas lu dans un resultat d'outil, tu ne le sais pas.
 - Pour une question de CONNAISSANCE (comment faire, que veut dire, une
   fonction d'Unreal, une notion technique, un fait) : si tu es sur, reponds.
-  Si tu n'es pas sur, CHERCHE au lieu de deviner : chercher_documentation
-  (Unreal, programmation), chercher_encyclopedie (le reste), puis lire_page
-  pour le detail. Dis d'ou vient ta reponse. Si tu ne trouves rien, dis
+  Si tu n'es pas sur, CHERCHE au lieu de deviner : d'abord
+  chercher_bibliotheque (hors ligne : Python, C++), puis chercher_documentation
+  (Unreal, programmation), chercher_encyclopedie (le reste), et lire_page ou
+  lire_bibliotheque pour le detail. Dis d'ou vient ta reponse. Si tu ne trouves rien, dis
   franchement que tu ne sais pas : une reponse inventee est pire qu'aucune.
 - Cette regle vaut aussi quand PERSONNE NE TE DEMANDE RIEN. Ne cite jamais
   spontanement un processeur, une carte graphique, une quantite de memoire ou
@@ -1171,6 +1172,32 @@ TOOLS += [
         lambda requete: web.chercher(str(requete)),
     ),
     Tool(
+        "chercher_bibliotheque",
+        "Cherche dans la bibliotheque LOCALE (documentation de Python, "
+        "reference du C++) : instantane et hors ligne. A essayer en premier "
+        "pour une question de langage ou de bibliotheque standard.",
+        _obj({"requete": STR, "nombre": INT}, ["requete"]),
+        lambda requete, nombre=6: bibliotheque.chercher(str(requete), int(nombre)),
+    ),
+    Tool(
+        "lire_bibliotheque",
+        "Lit le texte complet d'une page de la bibliotheque locale (son chemin, "
+        "tel que rendu par chercher_bibliotheque).",
+        _obj({"chemin": STR}, ["chemin"]),
+        lambda chemin: bibliotheque.lire(str(chemin)),
+    ),
+    Tool(
+        "installer_bibliotheque",
+        "Telecharge et indexe une documentation dans la bibliotheque locale : "
+        "'python' (5 Mo) ou 'cppreference' (47 Mo). Une fois suffit.",
+        _obj({"source": {**STR, "enum": ["python", "cppreference"]}}, ["source"]),
+        lambda source: bibliotheque.installer(str(source)), effect=True,
+    ),
+    Tool(
+        "etat_bibliotheque", "Ce que contient la bibliotheque locale.",
+        _obj({}), lambda: bibliotheque.etat(),
+    ),
+    Tool(
         "chercher_encyclopedie",
         "Cherche dans Wikipedia (articles et leur resume) : histoire, "
         "science, technique, culture, definitions. A utiliser des que tu "
@@ -1520,7 +1547,8 @@ OUTILS_ATELIER_CODE = frozenset({
     "modifier_fichier", "creer_fichier", "historique_modifications",
     "annuler_modification", "plan", "memoire_projet", "git_etat",
     "git_difference", "git_enregistrer", "chercher_documentation", "lire_page",
-    "chercher_encyclopedie",
+    "chercher_encyclopedie", "chercher_bibliotheque", "lire_bibliotheque",
+    "installer_bibliotheque", "etat_bibliotheque",
 })
 
 
@@ -1641,7 +1669,9 @@ OUTILS_DEV_SEULEMENT = frozenset({
     "projets_unreal", "choisir_projet_unreal", "projet_unreal",
     "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
 }) | (OUTILS_ATELIER_CODE - {"chercher_documentation", "lire_page",
-                              "chercher_encyclopedie"}) | OUTILS_EDITEUR | OUTILS_ANIMATION
+                              "chercher_encyclopedie", "chercher_bibliotheque",
+                              "lire_bibliotheque", "installer_bibliotheque",
+                              "etat_bibliotheque"}) | OUTILS_EDITEUR | OUTILS_ANIMATION
 
 
 def outils_du_mode(mode: str | None = None) -> list[Tool]:
