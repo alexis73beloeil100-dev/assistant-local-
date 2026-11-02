@@ -283,6 +283,56 @@ def context_for_vram(vram: float | None = None) -> int:
 # Taille de la fenetre de contexte, en jetons. Detectee, surchargeable.
 LLM_CONTEXT = int(os.environ.get("ASSISTANT_CONTEXT", "0")) or context_for_vram()
 
+# Les paliers ci-dessus ont ete mesures avec le 4B. Avec un modele plus
+# lourd, 65 536 jetons ne tiennent plus : le 14B pese 9,3 Go et sa memoire
+# de contexte 160 Ko par jeton, soit 10 Go pour 65 536 jetons. Le total
+# depasse la carte, Ollama deborde sur le processeur, et chaque reponse
+# prend des minutes. On calcule donc le contexte POUR le modele choisi.
+_contextes: dict[str, int] = {}
+RESERVE_CARTE_GO = 1.2
+
+
+def contexte_pour(modele: str, vram: float | None = None) -> int:
+    """Contexte qui tient sur la carte avec CE modele, d'apres ses dimensions."""
+    if os.environ.get("ASSISTANT_CONTEXT"):
+        return LLM_CONTEXT
+    if modele in _contextes:
+        return _contextes[modele]
+    try:
+        import requests
+
+        infos = requests.post(f"{OLLAMA_URL}/api/show", json={"model": modele},
+                              timeout=10).json().get("model_info", {})
+        tailles = requests.get(f"{OLLAMA_URL}/api/tags", timeout=10).json()
+        poids = next(m["size"] for m in tailles.get("models", [])
+                     if m["name"] == modele) / 1024 ** 3
+    except Exception:  # noqa: BLE001 - sans Ollama, on garde les paliers
+        return LLM_CONTEXT
+    contexte = calculer_contexte(infos, poids, _vram_gb() if vram is None else vram)
+    _contextes[modele] = contexte
+    return contexte
+
+
+def calculer_contexte(infos: dict, poids_go: float, vram: float) -> int:
+    """Plus grand palier dont poids + memoire de contexte tient sur la carte."""
+    def champ(suffixe: str) -> int:
+        return next((int(v) for k, v in infos.items()
+                     if k.endswith(suffixe) and isinstance(v, (int, float))), 0)
+
+    couches = champ(".block_count")
+    tetes_kv = champ(".attention.head_count_kv") or champ(".attention.head_count")
+    dimension = champ(".attention.key_length") or (
+        champ(".embedding_length") // max(champ(".attention.head_count"), 1))
+    if not (couches and tetes_kv and dimension) or vram <= 0:
+        return LLM_CONTEXT
+    # Cle + valeur, 2 octets chacune, par couche et par tete.
+    par_jeton = 2 * couches * tetes_kv * dimension * 2
+    budget = (vram - RESERVE_CARTE_GO - poids_go) * 1024 ** 3
+    for palier in (65_536, 49_152, 32_768, 16_384, 8_192):
+        if palier * par_jeton <= budget:
+            return min(palier, context_for_vram(vram))
+    return 4_096
+
 # Part du contexte qu'on autorise l'historique a occuper. Le reste est la
 # marge dont le modele a besoin pour raisonner et repondre.
 CONTEXT_USAGE = 0.65

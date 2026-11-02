@@ -1906,7 +1906,7 @@ def _call(convo: list[dict], with_tools: bool = True,
         # Peu de hasard : un assistant qui choisit des outils et recopie des
         # faits n'a rien a gagner a la creativite. En mode Dev, encore moins.
         "options": {"temperature": 0.1 if mode_actuel() == "dev" else 0.3,
-                    "num_ctx": config.LLM_CONTEXT},
+                    "num_ctx": config.contexte_pour(config.LLM_MODEL)},
     }
     if think is not None:
         payload["think"] = think
@@ -2062,7 +2062,7 @@ def trim_conversation(messages: list[dict]) -> list[dict]:
     if not messages:
         return messages
 
-    budget = int(config.LLM_CONTEXT * config.CONTEXT_USAGE)
+    budget = int(config.contexte_pour(config.LLM_MODEL) * config.CONTEXT_USAGE)
     if _taille_estimee(messages) <= budget:
         return messages
 

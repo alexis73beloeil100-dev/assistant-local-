@@ -3788,3 +3788,17 @@ def test_ollama_est_lance_avec_une_console_invisible_dont_ses_enfants_heritent()
     drapeaux = ast.unparse(next(k.value for k in appel.keywords if k.arg == "creationflags"))
     assert "CREATE_NO_WINDOW" in drapeaux and "DETACHED" not in drapeaux
     assert not hasattr(backend, "DETACHED_PROCESS")
+
+
+def test_le_contexte_suit_le_modele_pour_ne_pas_deborder_de_la_carte():
+    """Avec le 14B, 65 536 jetons = 8,6 + 10 Go > 16 Go : Ollama debordait sur
+    le processeur et chaque reponse prenait des minutes."""
+    from assistant import config
+
+    q14 = {"qwen3.block_count": 40, "qwen3.attention.head_count_kv": 8,
+           "qwen3.attention.key_length": 128}
+    contexte = config.calculer_contexte(q14, 8.6, 15.9)
+    assert contexte == 32_768
+    assert contexte * 2 * 40 * 8 * 128 * 2 / 1024 ** 3 + 8.6 <= 15.9 - 1.2
+    assert config.calculer_contexte(q14, 8.6, 0) == config.LLM_CONTEXT
+    assert "contexte_pour(config.LLM_MODEL)" in open("assistant/llm.py", encoding="utf-8").read()
