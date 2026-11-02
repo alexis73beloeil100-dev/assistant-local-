@@ -3629,8 +3629,8 @@ def test_le_modele_compte_ses_outils_au_lieu_d_estimer(monkeypatch):
         monkeypatch.setattr(llm, "mode_actuel", lambda m=mode: m)
         texte = llm.dispatch("mes_outils", {})
         attendu = len(llm.outils_du_mode(mode))
-        assert texte.startswith(f"Mode {mode.upper()} : {attendu} outils exactement.")
-        assert len(texte.splitlines()) == attendu + 1
+        assert f"en mode {mode.upper()} (le mode actif), j'ai {attendu} outils" in texte
+        assert len([l for l in texte.splitlines() if l[:1].isdigit()]) == attendu
     assert "Pas de \"environ\"" in llm.SYSTEM_PROMPT
 
 
