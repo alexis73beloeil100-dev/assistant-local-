@@ -66,9 +66,14 @@ qu'une phrase sur six.
 **La mini-fenêtre** : **Win+Maj+A**, n'importe où, fait apparaître un petit
 orbe en haut de l'écran, la zone de texte prête. Échap le renvoie.
 
+**L'atelier Unreal** (mode Dev) : projets récents ou **Choisir le projet**,
+moteur UE5 retrouvé tout seul (registre, Launcher ou moteur compilé), compilation
+avec les erreurs par fichier et ligne, journaux de l'éditeur, dernier rapport de
+plantage. Voir `assistant/skills/unreal.py`.
+
 **Le mode Dev / PC**, en bas à gauche. En **Dev**, le modèle ne voit que les
 outils du développement (fichiers et code, captures, commandes, applications,
-état du PC) : 21 outils au lieu de 81, il répond plus vite et se trompe moins
+état du PC, atelier Unreal) : 27 outils au lieu de 81, il répond plus vite et se trompe moins
 d'outil. En **PC**, il a tout.
 
 La pastille en haut à droite : verte = prêt, ambre = en travail, rouge =

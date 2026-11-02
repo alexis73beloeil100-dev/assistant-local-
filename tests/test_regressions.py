@@ -3509,7 +3509,9 @@ def test_le_mode_dev_n_envoie_que_ses_outils(monkeypatch):
     assert "regler_volume" not in noms
 
     monkeypatch.setattr(llm, "mode_actuel", lambda: "pc")
-    assert len(llm.outils_du_mode()) == len(llm.TOOLS)
+    pc = {o.name for o in llm.outils_du_mode()}
+    assert pc == set(llm.BY_NAME) - llm.OUTILS_DEV_SEULEMENT
+    assert llm.OUTILS_DEV_SEULEMENT <= llm.OUTILS_DEV
 
 
 def test_un_outil_du_mode_pc_nomme_de_memoire_en_mode_dev_ne_part_pas(monkeypatch):

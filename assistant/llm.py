@@ -18,7 +18,7 @@ from assistant import selftest
 from assistant.skills import (apps, archives, cleanup, content, control,
                               desk, documents, files, fixes, gamemode, games,
                               hardware, inventaire, reminders, shell, system,
-                              vision)
+                              unreal, vision)
 
 SYSTEM_PROMPT = """Tu es l'assistant local de cette machine Windows.
 
@@ -926,6 +926,73 @@ TOOLS: list[Tool] = [
     ),
 ]
 
+# --- Atelier Unreal (mode Dev seulement) -----------------------------------
+
+TOOLS += [
+    Tool(
+        "projets_unreal",
+        "Liste les projets Unreal ouverts recemment (memorises par l'editeur) "
+        "et dit lequel est le projet de travail actuel.",
+        _obj({}),
+        lambda: _projets_unreal(),
+    ),
+    Tool(
+        "choisir_projet_unreal",
+        "Choisit le projet Unreal de travail, par le chemin de son .uproject "
+        "ou du dossier qui le contient.",
+        _obj({"chemin": {**STR, "description": "Chemin du .uproject ou de son dossier"}},
+             ["chemin"]),
+        lambda chemin: unreal.choisir_projet(str(chemin)),
+    ),
+    Tool(
+        "projet_unreal",
+        "Resume le projet Unreal de travail : version du moteur et son dossier, "
+        "modules C++, cibles, plugins, nombre de fichiers et classes. A appeler "
+        "avant de travailler sur le projet.",
+        _obj({}),
+        lambda: unreal.resume_projet(),
+    ),
+    Tool(
+        "compiler_unreal",
+        "Compile le projet Unreal (cible Editor, Win64) et rend les erreurs avec "
+        "fichier et ligne. L'editeur doit etre ferme, ou Live Coding inactif. "
+        "Peut prendre plusieurs minutes.",
+        _obj({"configuration": {**STR, "enum": ["Development", "DebugGame", "Debug"],
+                                "description": "Development par defaut"}}),
+        lambda configuration="Development": unreal.compiler(str(configuration)),
+        effect=True,
+    ),
+    Tool(
+        "journaux_unreal",
+        "Lit le journal de la derniere session de l'editeur ou du jeu : par "
+        "defaut seulement les erreurs et avertissements.",
+        _obj({"lignes": {**INT, "description": "Nombre de lignes, 60 par defaut"},
+              "tout": {"type": "boolean",
+                       "description": "true pour la fin brute du journal"}}),
+        lambda lignes=60, tout=False: unreal.journaux(int(lignes), bool(tout)),
+    ),
+    Tool(
+        "dernier_plantage_unreal",
+        "Lit le dernier rapport de plantage du projet : message d'erreur et pile "
+        "d'appels, avec les lignes du code du projet signalees.",
+        _obj({}),
+        lambda: unreal.dernier_plantage(),
+    ),
+]
+
+
+def _projets_unreal() -> str:
+    actuel = unreal.projet_actuel()
+    recents = unreal.projets_recents()
+    lignes = [f"Projet de travail : {actuel or 'aucun'}"]
+    if recents:
+        lignes.append("Ouverts recemment dans Unreal :")
+        lignes += [f"  - {p}" for p in recents[:15]]
+    else:
+        lignes.append("Unreal n'a memorise aucun projet recent.")
+    return "\n".join(lignes)
+
+
 BY_NAME = {t.name: t for t in TOOLS}
 
 
@@ -953,6 +1020,9 @@ OUTILS_DEV = frozenset({
     # Ouvrir ou fermer l'editeur, l'IDE ; tuer un editeur fige.
     "ouvrir_application", "fermer_application", "lister_applications",
     "arreter_processus",
+    # L'atelier Unreal.
+    "projets_unreal", "choisir_projet_unreal", "projet_unreal",
+    "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
     # Passer un extrait de code a l'utilisateur.
     "lire_presse_papier", "copier",
 })
@@ -983,11 +1053,18 @@ def changer_mode(mode: str) -> None:
     settings.set("mode_outils", mode)
 
 
+# Ce qui n'a de sens qu'en developpement : le mode PC ne les voit pas.
+OUTILS_DEV_SEULEMENT = frozenset({
+    "projets_unreal", "choisir_projet_unreal", "projet_unreal",
+    "compiler_unreal", "journaux_unreal", "dernier_plantage_unreal",
+})
+
+
 def outils_du_mode(mode: str | None = None) -> list[Tool]:
     mode = mode or mode_actuel()
     if mode == "dev":
         return [t for t in TOOLS if t.name in OUTILS_DEV]
-    return list(TOOLS)
+    return [t for t in TOOLS if t.name not in OUTILS_DEV_SEULEMENT]
 
 
 def dispatch(name: str, args: dict, dry_run: bool = False) -> str:
@@ -1002,8 +1079,10 @@ def dispatch(name: str, args: dict, dry_run: bool = False) -> str:
         return f"Outil inconnu : {name}"
     if tool not in outils_du_mode():
         # Le modele ne l'a pas vu, mais il a pu le nommer de memoire.
-        return (f"{name} est un outil du mode PC, indisponible en mode Dev. "
-                "Dis a l'utilisateur de basculer avec le bouton Dev / PC.")
+        autre = "Dev" if name in OUTILS_DEV_SEULEMENT else "PC"
+        return (f"{name} est un outil du mode {autre}, indisponible dans le "
+                "mode actuel. Dis a l'utilisateur de basculer avec le bouton "
+                "Dev / PC.")
     if dry_run and tool.effect:
         return f"[simulation] {name} aurait ete execute avec {args}."
     try:

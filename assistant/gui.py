@@ -348,6 +348,14 @@ class AssistantWindow(tk.Tk):
             self.boutons_mode[mode] = bouton
         self._montrer_mode()
 
+        # Le projet Unreal de travail : choisi une fois, retenu ensuite.
+        self.lien_projet = tk.Label(bottom, text="", bg=t.SURFACE,
+                                    fg=t.ACCENT, font=t.FONT_UI_TINY,
+                                    cursor="hand2", anchor="w")
+        self.lien_projet.pack(fill="x", padx=t.PAD, pady=(6, 0))
+        self.lien_projet.bind("<Button-1>", lambda _e: self.choisir_projet())
+        self._montrer_projet()
+
         lien = tk.Label(bottom, text="Composants", bg=t.SURFACE, fg=t.ACCENT,
                         font=t.FONT_UI_TINY, cursor="hand2", anchor="w")
         lien.pack(fill="x", padx=t.PAD, pady=(4, 0))
@@ -358,6 +366,30 @@ class AssistantWindow(tk.Tk):
         self._montrer_mode()
         nom = "Dev" if mode == "dev" else "PC"
         self.post("status", (f"Mode {nom}", t.GREEN))
+
+    def choisir_projet(self) -> None:
+        from tkinter import filedialog
+
+        from assistant.skills import unreal
+
+        recents = unreal.projets_recents()
+        depart = str(recents[0].parent.parent) if recents else None
+        chemin = filedialog.askopenfilename(
+            parent=self, title="Choisir le projet Unreal",
+            initialdir=depart,
+            filetypes=[("Projet Unreal", "*.uproject")])
+        if not chemin:
+            return
+        self.post("info", unreal.choisir_projet(chemin))
+        self._montrer_projet()
+
+    def _montrer_projet(self) -> None:
+        from assistant.skills import unreal
+
+        projet = unreal.projet_actuel()
+        texte = (f"Projet : {projet.stem}" if projet
+                 else "Choisir le projet Unreal")
+        self.lien_projet.configure(text=texte[:30])
 
     def _montrer_mode(self) -> None:
         actuel = llm.mode_actuel()
