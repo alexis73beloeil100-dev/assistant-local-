@@ -1185,6 +1185,18 @@ class AssistantWindow(tk.Tk):
         if self.busy:
             return
 
+        # L'ecoute permanente tient deja le micro : ouvrir un second flux
+        # echouait sur "micro deja en cours d'utilisation", et le bouton
+        # semblait ne rien faire. On lui demande d'enregistrer a sa place ;
+        # elle coupe seule a la fin de la phrase.
+        boucle = getattr(self, "boucle_vocale", None)
+        if boucle is not None:
+            self.show(CHAT_KEY)
+            boucle.trigger_now()
+            self.post("status", ("Parle, je coupe a la fin de ta phrase",
+                                 t.ACCENT))
+            return
+
         self.show(CHAT_KEY)
         self.recorder = stt.Recorder(device=self.mic_device)
         demarre = self.recorder.start(
@@ -1235,7 +1247,7 @@ class AssistantWindow(tk.Tk):
                     self.post("error", f"Transcription impossible : {exc}")
 
                 if texte:
-                    self.after(0, lambda: self.ask(texte))
+                    self.post("appel", lambda: self.ask(texte))
                 else:
                     self.post("info",
                               f"Rien compris dans {duree:.1f} s d'audio "
@@ -1245,7 +1257,7 @@ class AssistantWindow(tk.Tk):
                               "parametres son de Windows.")
 
             self.post("busy", False)
-            self.after(0, lambda: self.mic_btn.set_enabled(True))
+            self.post("appel", lambda: self.mic_btn.set_enabled(True))
             self.post("status", ("Pret", t.GREEN))
 
         threading.Thread(target=work, daemon=True).start()
@@ -1292,7 +1304,7 @@ class AssistantWindow(tk.Tk):
                                          t.AMBER))
 
             def sur_commande(texte: str) -> None:
-                self.after(0, lambda: self.ask(texte))
+                self.post("appel", lambda: self.ask(texte))
 
             def sur_declenchement(trigger) -> None:
                 detail = f" ({trigger.score})" if trigger.score else ""
@@ -1303,6 +1315,11 @@ class AssistantWindow(tk.Tk):
 
             def sur_etat(message: str) -> None:
                 self.post("ecouteinfo", (message[:34], t.TEXT_FAINT))
+                # Un echec de la commande vocale ne doit pas rester dans la
+                # petite ligne d'etat : on croyait qu'il n'avait rien fait.
+                if message in ("Rien entendu.", "Transcription vide."):
+                    self.post("info", f"{message} Parle plus pres du micro, "
+                                      "ou verifie le micro choisi a gauche.")
 
             def sur_score(score: float) -> None:
                 # Un temoin permanent : l'utilisateur voit sa voix faire
@@ -1332,7 +1349,7 @@ class AssistantWindow(tk.Tk):
                 # micro et une erreur de modele ne se corrigent pas pareil.
                 self.post("ecouteinfo", (f"arret : {exc}"[:34], t.RED))
                 self.post("status", (f"Ecoute impossible : {exc}"[:70], t.RED))
-                self.after(0, lambda: self.ecoute.set(False))
+                self.post("appel", lambda: self.ecoute.set(False))
 
             # La boucle s'est arretee, pour une raison ou une autre : l'anneau
             # ne doit pas continuer a tourner comme si on ecoutait encore.

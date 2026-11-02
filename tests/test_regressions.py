@@ -4370,3 +4370,27 @@ def test_le_filet_est_pose_avant_tout_le_reste():
               / "AssistantLocal.py").read_text(encoding="utf-8")
     corps = source[source.index("def main()"):]
     assert corps.index("sans_console.installer()") < corps.index("vie.demarrer")
+
+
+def test_la_voix_transcrite_passe_par_la_file_et_pas_par_after():
+    """after() appele depuis un fil de travail peut echouer en silence.
+
+    La phrase dictee etait transcrite, puis remise a la fenetre par
+    self.after(0, ...) depuis le fil de l'ecoute : elle pouvait se perdre, et
+    l'utilisateur voyait le micro s'activer sans qu'aucun mot n'apparaisse.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent / "assistant"
+              / "gui.py").read_text(encoding="utf-8")
+    assert "self.after(0," not in source
+
+
+def test_parler_pendant_l_ecoute_permanente_ne_rouvre_pas_le_micro():
+    """Le second flux echouait sur "micro deja en cours d'utilisation"."""
+    import inspect
+
+    from assistant import gui
+
+    source = inspect.getsource(gui.AssistantWindow.listen_once)
+    assert source.index("trigger_now") < source.index("stt.Recorder")

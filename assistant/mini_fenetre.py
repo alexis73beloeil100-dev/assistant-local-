@@ -208,9 +208,21 @@ class MiniFenetre(tk.Toplevel):
         self._bulle(f"« {question} »\n\nJe réfléchis…", t.TEXT_DIM)
 
     def parler(self) -> None:
-        """Premier clic : il ecoute. Second clic : il transcrit et repond."""
+        """Premier clic : il ecoute. Second clic : il transcrit et repond.
+
+        Si l'ecoute permanente tourne, elle tient le micro : un seul clic
+        suffit, elle enregistre et coupe seule a la fin de la phrase.
+        """
         if self.fenetre.busy and not self.ecoute:
             return
+        if getattr(self.fenetre, "boucle_vocale", None) is not None:
+            self.fenetre.listen_once()
+            self.attend_reponse = True
+            self._changer_etat("ecoute")
+            self._bulle("Je t'écoute, je coupe tout seul quand tu as fini.",
+                        t.TEXT_DIM)
+            return
+
         self.ecoute = not self.ecoute
         self.fenetre.listen_once()
         if self.ecoute:
@@ -225,16 +237,21 @@ class MiniFenetre(tk.Toplevel):
 
     def _sur_message(self, genre: str, texte: str) -> None:
         """Appele par la grande fenetre pour chaque message affiche."""
-        if not self.attend_reponse:
+        # Une erreur de micro arrive pendant l'ecoute, avant toute question :
+        # la taire laissait l'orbe vert sans que rien ne s'enregistre.
+        if not (self.attend_reponse or self.ecoute):
             return
         if genre == "user":
             # La question dictee, une fois transcrite.
+            self._changer_etat("reflexion")
             self._bulle(f"« {texte} »\n\nJe réfléchis…", t.TEXT_DIM)
             return
         if genre not in ("assistant", "error", "info"):
             return
         self.attend_reponse = False
+        self.ecoute = False
         self._changer_etat("pret")
+        self._dessiner()
         self._bulle(texte, t.RED if genre == "error" else t.TEXT)
 
     def _bulle(self, texte: str, couleur) -> None:
