@@ -1,0 +1,11 @@
+# Construction de l'executable et tests : inutile pour faire tourner
+# l'application, rien de ceci n'est livre dans l'installateur.
+-r requirements.txt
+altgraph==0.17.5
+iniconfig==2.3.0
+pefile==2024.8.26
+pluggy==1.6.0
+pyinstaller==6.22.2
+pyinstaller-hooks-contrib==2026.6
+pytest==9.1.1
+pywin32-ctypes==0.2.3
