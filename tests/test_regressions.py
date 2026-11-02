@@ -3579,3 +3579,17 @@ def test_le_markdown_du_modele_ne_laisse_plus_d_asterisques():
     assert styles["Tick"] == "code"
     assert styles["int a;"] == "bloc"
     assert "• Chercher" in texte
+
+
+def test_la_barre_laterale_suit_le_mode():
+    """En Dev, les panneaux du developpement ; en PC, ceux de la machine."""
+    from assistant import llm, panels
+
+    dev = {p.key for p in panels.PANELS if "dev" in p.modes}
+    pc = {p.key for p in panels.PANELS if "pc" in p.modes}
+    assert "unreal_projet" in dev and "unreal_projet" not in pc
+    assert {"jeux", "modejeu", "correctifs", "notes"} <= pc - dev
+    assert {"configuration", "fichiers", "commandes", "miseajour"} <= dev & pc
+    for p in panels.PANELS:
+        assert set(p.modes) <= set(llm.MODES), p.key
+    assert ("unreal", "unreal") in panels.CATEGORIES

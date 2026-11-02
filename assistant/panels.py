@@ -42,6 +42,9 @@ class Panel:
     # rubriques rendent la place de chaque chose previsible, et surtout elles
     # montrent ce qui existe. Une fonction qu'on ne trouve pas n'existe pas.
     categorie: str = "machine"
+    # Modes ou le panneau apparait dans la barre laterale. En Dev, seuls les
+    # panneaux utiles au developpement ; en PC, ceux de la machine.
+    modes: tuple[str, ...] = ("pc",)
 
 
 
@@ -454,6 +457,16 @@ def _mise_a_jour() -> str:
     ])
 
 
+def _projet_unreal() -> str:
+    from assistant.skills import unreal
+
+    lignes = ["PROJET UNREAL", "", unreal.resume_projet(), ""]
+    if unreal.derniere_compilation:
+        lignes += ["DERNIERE COMPILATION", "", unreal.derniere_compilation, ""]
+    lignes += ["JOURNAL DE LA DERNIERE SESSION", "", unreal.journaux(15)]
+    return "\n".join(lignes)
+
+
 def _controle() -> str:
     from assistant.skills import control
 
@@ -542,22 +555,26 @@ PANELS: list[Panel] = [
           court="Débuter", icone="boussole", categorie="assistant"),
     Panel("configuration", "Ma configuration",
           "carte mère, CPU, RAM, GPU, disques, Windows", _configuration,
-          court="Config", icone="puce", categorie="machine"),
+          court="Config", icone="puce", categorie="machine",
+          modes=("pc", "dev")),
     Panel("problemes", "Problèmes détectés",
           "disques, matériel, journal Windows", _problemes,
           court="Santé", icone="alerte", categorie="machine"),
     Panel("etat", "État en direct",
           "charge CPU par cœur, RAM, GPU, processus", _etat, live=True,
-          court="En direct", icone="pouls", categorie="machine"),
+          court="En direct", icone="pouls", categorie="machine",
+          modes=("pc", "dev")),
     Panel("lenteurs", "Pourquoi ça rame",
           "ce qui sature la machine maintenant", _lenteurs, live=True,
-          court="Lenteurs", icone="jauge", categorie="machine"),
+          court="Lenteurs", icone="jauge", categorie="machine",
+          modes=("pc", "dev")),
     Panel("jeux", "Mes jeux", "tailles, booster, désinstaller", _jeux,
           interactif="ludotheque", court="Jeux", icone="manette", categorie="logiciels"),
     Panel("espace", "Espace disque", "ce qui prend de la place", _espace,
           court="Espace", icone="disque", categorie="machine"),
     Panel("fichiers", "Mes fichiers", "index et surveillance", _fichiers,
-          court="Fichiers", icone="dossier", categorie="machine"),
+          court="Fichiers", icone="dossier", categorie="machine",
+          modes=("pc", "dev")),
     Panel("demarrage", "Démarrage de Windows",
           "cocher ce qui se lance avec la session", _demarrage,
           interactif="startup", court="Session", icone="alimentation", categorie="reparer"),
@@ -570,7 +587,8 @@ PANELS: list[Panel] = [
           interactif="pupitre", court="Contrôle", icone="curseurs", categorie="assistant"),
     Panel("applications", "Mes applications",
           "tout ce qui peut être ouvert", _applications,
-          court="Apps", icone="grille", categorie="logiciels"),
+          court="Apps", icone="grille", categorie="logiciels",
+          modes=("pc", "dev")),
     Panel("modejeu", "Mode jeu",
           "préparer la machine avant de jouer", _mode_jeu, live=True,
           court="Mode jeu", icone="fusee", categorie="logiciels"),
@@ -581,15 +599,18 @@ PANELS: list[Panel] = [
           court="Notes", icone="note", categorie="assistant"),
     Panel("commandes", "Commandes Windows",
           "ce qui est autorisé et refusé", _commandes,
-          court="Console", icone="terminal", categorie="reparer"),
+          court="Console", icone="terminal", categorie="reparer",
+          modes=("pc", "dev")),
     Panel("journal", "Journal des actions",
           "tout ce qui a été fait ou refusé", _journal, live=True,
-          court="Journal", icone="registre", categorie="assistant"),
+          court="Journal", icone="registre", categorie="assistant",
+          modes=("pc", "dev")),
     Panel("connaissance", "Ce qu'il sait de ce PC",
           "appris au démarrage, conservé d'une fois sur l'autre", _connaissance, live=True,
           court="Suivi", icone="cerveau", categorie="assistant"),
     Panel("autotest", "Autotest", "vérifier que tout fonctionne", _autotest,
-          court="Autotest", icone="bouclier", categorie="assistant"),
+          court="Autotest", icone="bouclier", categorie="assistant",
+          modes=("pc", "dev")),
     Panel("atelier", "Réparer Windows",
           "fichiers système, image, antivirus", _atelier_windows,
           interactif="atelier", live=True,
@@ -597,15 +618,21 @@ PANELS: list[Panel] = [
     Panel("preinstalle", "Préinstallés",
           "ce qui était là avant vous", _preinstalle,
           court="D'origine", icone="grille", categorie="logiciels"),
+    Panel("unreal_projet", "Projet Unreal",
+          "le projet, la derniere compilation, le journal", _projet_unreal,
+          live=True, court="Projet", icone="dossier", categorie="unreal",
+          modes=("dev",)),
     Panel("miseajour", "Vérifier les mises à jour",
           "version installée, et la dernière publiée", _mise_a_jour,
           interactif="miseajour", live=True,
-          court="Mise à jour", icone="telechargement", categorie="assistant"),
+          court="Mise à jour", icone="telechargement", categorie="assistant",
+          modes=("pc", "dev")),
 ]
 
 # Rubriques de la barre laterale, dans l'ordre d'affichage. Le libelle est ce
 # que l'utilisateur lit ; la cle est ce que porte chaque Panel.
 CATEGORIES = [
+    ("unreal", "unreal"),
     ("machine", "ma machine"),
     ("reparer", "reparer"),
     ("logiciels", "logiciels"),

@@ -34,6 +34,9 @@ CLE_PROJET = "projet_unreal"
 DUREE_MAX_COMPILATION = 3600
 ERREURS_AFFICHEES = 25
 
+# Le compte-rendu de la derniere compilation, pour le panneau Projet.
+derniere_compilation = ""
+
 
 class Echec(Exception):
     """Une etape a echoue ; le message se lit tel quel."""
@@ -392,8 +395,11 @@ def compiler(configuration: str = "Development", ask=None) -> str:
     except OSError as exc:
         return f"Compilation impossible a lancer : {exc}"
     duree = time.time() - debut
-    return compte_rendu(projet.nom, resultat.returncode,
-                        resultat.stdout + "\n" + resultat.stderr, duree)
+    global derniere_compilation
+    derniere_compilation = compte_rendu(
+        projet.nom, resultat.returncode,
+        resultat.stdout + "\n" + resultat.stderr, duree)
+    return derniere_compilation
 
 
 def compte_rendu(nom: str, code_retour: int, sortie: str, duree: float) -> str:

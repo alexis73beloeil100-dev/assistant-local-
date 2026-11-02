@@ -274,9 +274,18 @@ class AssistantWindow(tk.Tk):
 
         liste = ScrollArea(side, bg=t.SURFACE)
         liste.pack(fill="both", expand=True)
-        interieur = liste.inner
+        self._rail = liste.inner
+        self._remplir_rail()
 
-        self._entete_rail(interieur, "parler")
+    def _remplir_rail(self) -> None:
+        """La barre laterale du mode en cours : Dev ou PC."""
+        interieur = self._rail
+        for enfant in interieur.winfo_children():
+            enfant.destroy()
+        self._nav = {}
+        mode = llm.mode_actuel()
+
+        self._entete_rail(interieur, "conversation")
         self._cellule(interieur, CHAT_KEY, "Discuter", "parole",
                       colonne=None)
 
@@ -288,7 +297,8 @@ class AssistantWindow(tk.Tk):
         # attendre. Les rubriques rendent la place de chaque chose previsible,
         # et surtout elles MONTRENT ce qui existe.
         for cle, libelle in panels.CATEGORIES:
-            dedans = [p for p in panels.PANELS if p.categorie == cle]
+            dedans = [p for p in panels.PANELS
+                      if p.categorie == cle and mode in p.modes]
             if not dedans:
                 continue
             self._entete_rail(interieur, libelle)
@@ -368,6 +378,14 @@ class AssistantWindow(tk.Tk):
             self.fenetre_cle_dev()
             return
         self._montrer_mode()
+        self._montrer_projet()
+        self._remplir_rail()
+        # Le panneau ouvert n'existe peut-etre plus dans ce mode.
+        panneau = panels.BY_KEY.get(self.current)
+        if panneau is not None and mode not in panneau.modes:
+            self.show(CHAT_KEY)
+        elif self.current in self._nav:
+            self._nav[self.current].set_actif(True)
         nom = "Dev" if mode == "dev" else "PC"
         self.post("status", (f"Mode {nom}", t.GREEN))
 
@@ -380,6 +398,8 @@ class AssistantWindow(tk.Tk):
         fenetre_cle.ouvrir(self, ouvrir_dev)
 
     def choisir_projet(self) -> None:
+        if llm.mode_actuel() != "dev":
+            return
         from tkinter import filedialog
 
         from assistant.skills import unreal
@@ -398,10 +418,14 @@ class AssistantWindow(tk.Tk):
     def _montrer_projet(self) -> None:
         from assistant.skills import unreal
 
+        if llm.mode_actuel() != "dev":
+            # Le projet Unreal ne concerne que le mode Dev.
+            self.lien_projet.configure(text="", cursor="arrow")
+            return
         projet = unreal.projet_actuel()
         texte = (f"Projet : {projet.stem}" if projet
                  else "Choisir le projet Unreal")
-        self.lien_projet.configure(text=texte[:30])
+        self.lien_projet.configure(text=texte[:30], cursor="hand2")
 
     def _montrer_mode(self) -> None:
         actuel = llm.mode_actuel()
