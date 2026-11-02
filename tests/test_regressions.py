@@ -3651,3 +3651,15 @@ def test_les_autres_ia_ne_sont_pas_ses_composants():
     for nom in ("claude.exe", "ChatGPT.exe", "codex.exe"):
         assert nom in llm.SYSTEM_PROMPT
     assert "relance l'outil" in llm.SYSTEM_PROMPT
+
+
+def test_les_modeles_proposes_existent_et_le_choix_est_large():
+    from assistant import components as comp
+
+    ids = [c[0] for c in comp.LLM_CHOICES]
+    assert len(ids) == 10 and comp.PREFERRED_LLM in ids
+    # Ces etiquettes n'existent pas chez Ollama : le telechargement echouait.
+    assert not {"qwen3.5:8b", "qwen3.5:14b", "qwen3.5:1.7b"} & set(ids)
+    assert {"qwen3-coder:30b", "gpt-oss:20b", "devstral:24b"} <= set(ids)
+    assert [c[3] for c in comp.LLM_CHOICES] == sorted((c[3] for c in comp.LLM_CHOICES), reverse=True)
+    assert comp.nom_modele_valide("qwen3:32b") and not comp.nom_modele_valide("x; rm -rf")

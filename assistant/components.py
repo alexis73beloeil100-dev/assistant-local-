@@ -71,10 +71,18 @@ def cpu_threads() -> int:
 # dans la VRAM disponible, avec de la marge pour la transcription.
 LLM_CHOICES = [
     # (identifiant ollama, libelle, telechargement Go, VRAM necessaire Go)
-    ("qwen3.5:14b",  "Qwen 3.5 14B - le plus capable",        9.0, 10.5),
-    ("qwen3.5:8b",   "Qwen 3.5 8B - intermediaire",           5.0, 6.8),
-    ("qwen3.5:4b",   "Qwen 3.5 4B - rapide",                  3.4, 6.1),
-    ("qwen3.5:1.7b", "Qwen 3.5 1.7B - machines modestes",     1.4, 2.5),
+    # Tailles relevees sur ollama.com/library (novembre 2026), tous avec
+    # appel d'outils. VRAM = poids + 1,5 Go pour le contexte de travail.
+    ("qwen3.5:35b-a3b", "Qwen 3.5 35B-A3B - le plus capable, MoE",        22.0, 23.5),
+    ("qwen3.5:27b",     "Qwen 3.5 27B - tres capable, lent",              20.0, 21.5),
+    ("qwen3-coder:30b", "Qwen3 Coder 30B - specialiste du code, MoE",     19.0, 20.5),
+    ("gpt-oss:20b",     "GPT-OSS 20B (OpenAI) - raisonnement et code",    14.0, 15.5),
+    ("devstral:24b",    "Devstral 24B (Mistral) - agent de code",         14.0, 15.5),
+    ("qwen3:14b",       "Qwen3 14B - polyvalent, bon en code",             9.3, 10.8),
+    ("qwen3.5:9b",      "Qwen 3.5 9B - intermediaire",                     7.6,  9.1),
+    ("qwen3:8b",        "Qwen3 8B - intermediaire",                        5.2,  6.7),
+    ("qwen3.5:4b",      "Qwen 3.5 4B - rapide",                            4.0,  6.1),
+    ("qwen3.5:2b",      "Qwen 3.5 2B - machines modestes",                 3.1,  4.6),
 ]
 
 # Marge laissee a l'affichage et aux autres programmes sur la carte graphique.
@@ -90,6 +98,14 @@ VRAM_RESERVE = 1.2
 # lent et enchainait les outils sans conclure. Pour un assistant qui
 # selectionne des outils plutot qu'il ne redige, plus gros n'est pas meilleur.
 PREFERRED_LLM = "qwen3.5:4b"
+
+
+def nom_modele_valide(nom: str) -> bool:
+    """Nom Ollama : modele[:etiquette], eventuellement precede d'un espace de noms."""
+    import re
+
+    return bool(re.fullmatch(r"[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?"
+                             r"(:[a-zA-Z0-9][a-zA-Z0-9._-]*)?", nom))
 
 
 def model_options() -> list[dict]:
@@ -140,7 +156,7 @@ def fitting_models(reserve_gb: float = VRAM_RESERVE) -> list[tuple[str, str, flo
     if vram <= 0:
         # Sans carte dediee, tout tourne sur le processeur : seuls les petits
         # modeles restent utilisables.
-        return [c for c in LLM_CHOICES if c[3] <= 3.0]
+        return [c for c in LLM_CHOICES if c[3] <= 6.1]
     disponible = vram - reserve_gb
     return [c for c in LLM_CHOICES if c[3] <= disponible] or [LLM_CHOICES[-1]]
 

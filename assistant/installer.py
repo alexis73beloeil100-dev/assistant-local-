@@ -65,9 +65,22 @@ class Installer(tk.Tk):
                  font=t.FONT_UI_TINY, anchor="w").pack(
             fill="x", padx=t.PAD_XL, pady=(t.PAD, 4))
 
-        self.modeles = tk.Frame(self, bg=t.BG)
-        self.modeles.pack(fill="x", padx=t.PAD_XL)
+        zone = self.zone_modeles = ScrollArea(self, bg=t.BG)
+        zone.configure(height=230)
+        zone.pack_propagate(False)
+        zone.pack(fill="x", padx=t.PAD_XL)
+        self.modeles = zone.inner
         self.model_choice = tk.StringVar()
+
+        autre = tk.Frame(self, bg=t.BG)
+        autre.pack(fill="x", padx=t.PAD_XL, pady=(4, 0))
+        tk.Label(autre, text="Autre modele Ollama (nom exact, ex. qwen3:32b) :",
+                 bg=t.BG, fg=t.TEXT_DIM, font=t.FONT_UI_SMALL).pack(side="left")
+        self.autre_modele = tk.Entry(autre, bg=t.SURFACE_2, fg=t.TEXT,
+                                     insertbackground=t.TEXT, relief="flat",
+                                     font=t.FONT_UI_SMALL, width=28)
+        self.autre_modele.pack(side="left", padx=(8, 0))
+        self.autre_modele.bind("<KeyRelease>", lambda _e: self._on_model_change())
 
         tk.Label(self, text="COMPOSANTS", bg=t.BG, fg=t.TEXT_FAINT,
                  font=t.FONT_UI_TINY, anchor="w").pack(
@@ -161,7 +174,7 @@ class Installer(tk.Tk):
                 haut, variable=self.model_choice, value=option["id"],
                 bg=t.SURFACE, activebackground=t.SURFACE,
                 selectcolor=t.SURFACE_2, highlightthickness=0, bd=0,
-                cursor="hand2", command=self._on_model_change,
+                cursor="hand2", command=self._choisir_dans_liste,
             ).pack(side="left")
 
             titre = option["label"]
@@ -184,13 +197,29 @@ class Installer(tk.Tk):
                                       pady=(0, t.PAD))
 
         self.options = options
+        # Le modele conseille est souvent en bas de liste : on l'amene a l'ecran.
+        rang = next((i for i, o in enumerate(options) if o["recommended"]), 0)
+        self.update_idletasks()
+        self.zone_modeles.canvas.yview_moveto(max(rang - 1, 0) / max(len(options), 1))
+
+    def _choisir_dans_liste(self) -> None:
+        """Un clic dans la liste annule le nom saisi a la main."""
+        self.autre_modele.delete(0, "end")
+        self._on_model_change()
 
     def _on_model_change(self) -> None:
         """Repercute le choix sur le composant a telecharger."""
-        choisi = self.model_choice.get()
+        libre = self.autre_modele.get().strip()
+        if libre and not comp.nom_modele_valide(libre):
+            self.etat.configure(text=f"Nom de modele invalide : {libre}")
+            return
+        choisi = libre or self.model_choice.get()
         option = next((o for o in self.options if o["id"] == choisi), None)
         if option is None:
-            return
+            if not libre:
+                return
+            # Taille inconnue tant qu'Ollama ne l'a pas telecharge.
+            option = {"download_gb": 0.0}
         for component in self.components:
             if component.key == "modele":
                 component.label = f"Modele de langage ({choisi})"
