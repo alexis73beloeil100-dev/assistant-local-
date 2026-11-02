@@ -473,3 +473,71 @@ def test_ouvre_unreal_avec_un_projet_ouvre_le_projet(moteur_installe, monkeypatc
     uproject, exe, lances = moteur_installe
     texte = apps.open_app("Unreal Engine")
     assert lances == [[str(exe), str(uproject)]] and "IronFall" in texte
+
+
+# --- Tests automatises, classes, outils divers ---------------------------------------
+
+def test_le_rapport_des_tests_automatises_est_lu():
+    rapport = {"tests": [
+        {"fullTestPath": "Project.Armes.Tir", "state": "Success", "entries": []},
+        {"fullTestPath": "Project.Armes.Recharge", "state": "Fail", "entries": [
+            {"event": {"type": "Error", "message": "Expected 30 but was 0"}}]}]}
+    resultats, source = unreal.lire_rapport_tests(rapport, "")
+    assert source == "rapport"
+    assert resultats == [("Success", "Project.Armes.Tir", []),
+                         ("Fail", "Project.Armes.Recharge", ["Expected 30 but was 0"])]
+    journal = ("LogAutomationController: Display: Test Completed. Result={Success} "
+               "Name={Tir} Path={Project.Armes.Tir}\n")
+    assert unreal.lire_rapport_tests(None, journal) == (
+        [("Success", "Project.Armes.Tir", [])], "journal")
+
+
+def test_les_tests_automatises_partent_sans_fenetre_avec_le_bon_filtre(tmp_path, reglages,
+                                                                      monkeypatch):
+    uproject = faux_projet(tmp_path, "IronFall", "5.8")
+    unreal.choisir_projet(str(uproject))
+    moteur = tmp_path / "UE_5.8"
+    exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor-Cmd.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    monkeypatch.setattr(unreal, "dossier_moteur", lambda _p, _a: moteur)
+    monkeypatch.setattr(unreal.safety, "guard", lambda action, ask=None: True)
+    vus = []
+
+    class Fini:
+        returncode = 0
+        stderr = ""
+        stdout = ("Test Completed. Result={Success} Name={A} Path={Project.A}\n"
+                  "Test Completed. Result={Fail} Name={B} Path={Project.B}\n")
+
+    monkeypatch.setattr(unreal.subprocess, "run", lambda cmd, **kw: vus.append(cmd) or Fini())
+    texte = unreal.lancer_tests("Project")
+    assert vus[0][:2] == [str(exe), str(uproject)]
+    assert "-ExecCmds=Automation RunTests Project;Quit" in vus[0] and "-NullRHI" in vus[0]
+    assert texte.startswith("Tests Unreal « Project » : 1 reussi(s), 1 en echec")
+    assert "[ECHEC] Project.B" in texte
+
+
+def test_une_classe_unreal_creee_est_complete(tmp_path, reglages):
+    uproject = faux_projet(tmp_path, "IronFall")
+    unreal.choisir_projet(str(uproject))
+    h, corps_h, cpp, corps_cpp = unreal.creer_classe("Munitions", "UActorComponent", "Armes")
+    assert h == "Source/IronFall/Armes/Munitions.h" and cpp.endswith("Armes/Munitions.cpp")
+    assert '#include "Components/ActorComponent.h"' in corps_h
+    assert '#include "Munitions.generated.h"' in corps_h
+    assert "class IRONFALL_API UMunitions : public UActorComponent" in corps_h
+    assert "BlueprintSpawnableComponent" in corps_h and "GENERATED_BODY()" in corps_h
+    assert "UMunitions::UMunitions()" in corps_cpp
+    assert "PrimaryComponentTick.bCanEverTick = false;" in corps_cpp
+
+
+def test_chaque_besoin_courant_d_unreal_a_son_outil():
+    from assistant import llm
+
+    for nom in ("tests_unreal", "creer_classe_unreal", "live_coding",
+                "commande_console_unreal", "sauvegarder_tout_unreal", "ouvrir_niveau",
+                "lister_assets", "references_asset", "regenerer_fichiers_projet",
+                "nettoyer_build_unreal", "ouvrir_ide", "ouvrir_unreal", "jouer_test",
+                "compiler_unreal", "empaqueter_unreal"):
+        assert nom in llm.OUTILS_DEV, nom
+    assert "tests_unreal" in llm.CONSIGNE_MODE["dev"]

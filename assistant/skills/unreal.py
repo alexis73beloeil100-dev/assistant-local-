@@ -733,3 +733,216 @@ def moteurs_installes() -> dict[str, Path]:
             trouves.setdefault(version, dossier)
     return dict(sorted(trouves.items(), key=lambda kv: [int(x) for x in kv[0].split(".")
                                                          if x.isdigit()]))
+
+
+# --- Tests automatises d'Unreal (Automation) -----------------------------------------
+
+_RESULTAT_TEST = re.compile(
+    r"Test Completed\. Result=\{(?P<etat>\w+)\}\s+Name=\{(?P<nom>[^}]*)\}\s+Path=\{(?P<chemin>[^}]*)\}")
+
+
+def lire_rapport_tests(rapport: dict | None, journal: str) -> tuple[list[tuple[str, str, list[str]]], str]:
+    """[(etat, chemin, erreurs)] depuis index.json, sinon depuis le journal."""
+    resultats = []
+    if rapport:
+        for t in rapport.get("tests", []):
+            erreurs = [str(e.get("event", {}).get("message", ""))
+                       for e in t.get("entries", [])
+                       if e.get("event", {}).get("type") in ("Error", "Fatal")]
+            resultats.append((str(t.get("state", "?")),
+                              str(t.get("fullTestPath") or t.get("testDisplayName")),
+                              erreurs))
+        if resultats:
+            return resultats, "rapport"
+    for m in _RESULTAT_TEST.finditer(journal):
+        resultats.append((m["etat"], m["chemin"] or m["nom"], []))
+    return resultats, "journal"
+
+
+def lancer_tests(filtre: str = "Project") -> str:
+    """Lance les tests automatises d'Unreal (Session Frontend) sans fenetre."""
+    import json as _json
+    import tempfile
+
+    try:
+        projet = analyser(_projet_ou_echec())
+        moteur = dossier_moteur(projet.chemin, projet.association)
+    except Echec as exc:
+        return str(exc)
+    exe = moteur / "Engine" / "Binaries" / "Win64" / "UnrealEditor-Cmd.exe"
+    if not exe.is_file():
+        return f"UnrealEditor-Cmd.exe introuvable : {exe}"
+    filtre = re.sub(r"[^\w. +-]", "", filtre or "Project") or "Project"
+    safety.guard(safety.Action(kind="compilation", summary=f"Tests Unreal : {filtre}",
+                               targets=[str(projet.chemin)], routine=True))
+    with tempfile.TemporaryDirectory() as dossier:
+        commande = [str(exe), str(projet.chemin),
+                    f"-ExecCmds=Automation RunTests {filtre};Quit",
+                    "-unattended", "-nopause", "-nosplash", "-NullRHI", "-log",
+                    "-stdout", "-FullStdOutLogOutput",
+                    f"-ReportExportPath={dossier}",
+                    "-testexit=Automation Test Queue Empty"]
+        debut = time.time()
+        try:
+            r = subprocess.run(commande, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=DUREE_MAX_COMPILATION,
+                               cwd=str(projet.chemin.parent),
+                               creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0)
+        except subprocess.TimeoutExpired:
+            return "Tests arretes apres une heure : ils semblent bloques."
+        except OSError as exc:
+            return f"Tests impossibles a lancer : {exc}"
+        rapport = None
+        index = Path(dossier) / "index.json"
+        if index.is_file():
+            try:
+                rapport = _json.loads(index.read_text(encoding="utf-8-sig"))
+            except ValueError:
+                rapport = None
+    resultats, source = lire_rapport_tests(rapport, r.stdout + r.stderr)
+    duree = time.time() - debut
+    if not resultats:
+        return (f"Aucun test trouve pour le filtre « {filtre} » ({duree:.0f} s). "
+                "Les tests du projet se trouvent souvent sous « Project » ; "
+                "essaie un autre filtre, par exemple le nom du projet.")
+    echecs = [x for x in resultats if x[0].lower() not in ("success", "succeeded")]
+    lignes = [f"Tests Unreal « {filtre} » : {len(resultats) - len(echecs)} reussi(s), "
+              f"{len(echecs)} en echec, en {duree:.0f} s (d'apres le {source})."]
+    for etat, chemin, erreurs in echecs[:30]:
+        lignes.append(f"  [ECHEC] {chemin}")
+        lignes += [f"      {e[:240]}" for e in erreurs[:3]]
+    return "\n".join(lignes)
+
+
+# --- Le reste de la boite a outils Unreal ---------------------------------------------
+
+def regenerer_fichiers_projet() -> str:
+    """Regenere la solution Visual Studio (.sln) du projet."""
+    try:
+        projet = analyser(_projet_ou_echec())
+        moteur = dossier_moteur(projet.chemin, projet.association)
+    except Echec as exc:
+        return str(exc)
+    ubt = moteur / "Engine" / "Binaries" / "DotNET" / "UnrealBuildTool" / "UnrealBuildTool.exe"
+    if not ubt.is_file():
+        return f"UnrealBuildTool introuvable : {ubt}"
+    try:
+        r = subprocess.run([str(ubt), "-projectfiles", f"-project={projet.chemin}",
+                            "-game", "-rocket", "-progress"],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=900, cwd=str(projet.chemin.parent),
+                           creationflags=CREATE_NO_WINDOW if os.name == "nt" else 0)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"Regeneration impossible : {exc}"
+    if r.returncode == 0:
+        return f"Fichiers du projet regeneres : {projet.chemin.with_suffix('.sln')}"
+    fin = "\n".join((r.stdout + r.stderr).strip().splitlines()[-15:])
+    return f"Echec de la regeneration (code {r.returncode}) :\n{fin}"
+
+
+def nettoyer_build(ask=None) -> str:
+    """Supprime Binaries et Intermediate (vers la Corbeille) : build propre."""
+    try:
+        projet = _projet_ou_echec()
+    except Echec as exc:
+        return str(exc)
+    cibles = [projet.parent / d for d in ("Binaries", "Intermediate")
+              if (projet.parent / d).is_dir()]
+    if not cibles:
+        return "Rien a nettoyer : ni Binaries ni Intermediate."
+    action = safety.Action(kind="fichier", summary=f"Nettoyer le build de {projet.stem}",
+                           targets=[str(c) for c in cibles], reversible=True,
+                           details="Vers la Corbeille. Unreal les recree a la "
+                                   "prochaine compilation.")
+    try:
+        if not safety.guard(action, ask=ask):
+            return "Nettoyage annule."
+    except safety.Refused as exc:
+        return str(exc)
+    from send2trash import send2trash
+
+    for c in cibles:
+        send2trash(str(c))
+    return ("Binaries et Intermediate partis a la Corbeille. Recompile le projet "
+            "(compiler_unreal), puis regenere les fichiers du projet si l'IDE se perd.")
+
+
+def ouvrir_ide() -> str:
+    """Ouvre la solution du projet dans Visual Studio ou Rider."""
+    try:
+        projet = _projet_ou_echec()
+    except Echec as exc:
+        return str(exc)
+    sln = projet.with_suffix(".sln")
+    if not sln.is_file():
+        return (f"{sln.name} n'existe pas encore : genere-le avec "
+                "regenerer_fichiers_projet.")
+    try:
+        os.startfile(str(sln))  # type: ignore[attr-defined]
+    except (AttributeError, OSError) as exc:
+        return f"Ouverture impossible : {exc}"
+    return f"{sln.name} s'ouvre dans ton IDE."
+
+
+def creer_classe(nom: str, parent: str = "AActor", dossier: str = "") -> tuple[str, str, str, str]:
+    """(chemin .h, contenu .h, chemin .cpp, contenu .cpp) d'une classe Unreal."""
+    projet = analyser(_projet_ou_echec())
+    if not projet.modules:
+        raise Echec("Projet sans module C++ : impossible d'y ajouter une classe.")
+    module = projet.modules[0]
+    prefixes = {"A": "AActor", "U": "UObject", "F": "", "S": ""}
+    nom = re.sub(r"\W", "", nom)
+    lettre = "A" if parent.startswith("A") else "U"
+    if nom[:1] in prefixes and nom[1:2].isupper():
+        nom = nom[1:]
+    classe = lettre + nom
+    sous = (dossier.strip("/\\") + "/") if dossier else ""
+    h = f"Source/{module}/{sous}{nom}.h"
+    cpp = f"Source/{module}/{sous}{nom}.cpp"
+    api = f"{module.upper()}_API"
+    composant = parent.endswith("Component")
+    corps_h = f"""#pragma once
+
+#include "CoreMinimal.h"
+#include "{_entete_parent(parent)}"
+#include "{nom}.generated.h"
+
+UCLASS({'ClassGroup=(Custom), meta=(BlueprintSpawnableComponent)' if composant else 'Blueprintable'})
+class {api} {classe} : public {parent}
+{{
+\tGENERATED_BODY()
+
+public:
+\t{classe}();
+
+protected:
+\tvirtual void BeginPlay() override;
+}};
+"""
+    corps_cpp = f"""#include "{sous}{nom}.h"
+
+{classe}::{classe}()
+{{
+\t{'PrimaryComponentTick' if composant else 'PrimaryActorTick'}.bCanEverTick = false;
+}}
+
+void {classe}::BeginPlay()
+{{
+\tSuper::BeginPlay();
+}}
+"""
+    return h, corps_h, cpp, corps_cpp
+
+
+def _entete_parent(parent: str) -> str:
+    connus = {
+        "AActor": "GameFramework/Actor.h", "APawn": "GameFramework/Pawn.h",
+        "ACharacter": "GameFramework/Character.h",
+        "APlayerController": "GameFramework/PlayerController.h",
+        "AGameModeBase": "GameFramework/GameModeBase.h",
+        "UActorComponent": "Components/ActorComponent.h",
+        "USceneComponent": "Components/SceneComponent.h",
+        "UObject": "UObject/Object.h", "UUserWidget": "Blueprint/UserWidget.h",
+        "UAnimInstance": "Animation/AnimInstance.h",
+    }
+    return connus.get(parent, f"{parent[1:] if parent[:1] in 'AU' else parent}.h")

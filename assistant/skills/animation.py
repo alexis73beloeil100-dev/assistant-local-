@@ -617,3 +617,87 @@ def _geste_editeur_ouvert(script: str, **valeurs):
     if not r.get("success"):
         raise Indisponible(str(r.get("result")))
     return r
+
+
+# --- Commandes de l'editeur ---------------------------------------------------------
+
+_CONSOLE = """
+monde = unreal.EditorLevelLibrary.get_editor_world()
+unreal.SystemLibrary.execute_console_command(monde, commande)
+_rendre({"ok": True})
+"""
+
+
+def commande_console(commande: str) -> str:
+    """Une commande de la console d'Unreal (stat unit, LiveCoding.Compile...)."""
+    try:
+        _geste_editeur_ouvert(_CONSOLE, commande=str(commande))
+    except Indisponible as exc:
+        return f"L'editeur doit etre ouvert avec son Python active : {exc}"
+    return f"Commande envoyee a l'editeur : {commande}"
+
+
+_SAUVER = """
+unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)
+_rendre({"ok": True})
+"""
+
+
+def sauvegarder_tout() -> str:
+    try:
+        _geste_editeur_ouvert(_SAUVER)
+    except Indisponible as exc:
+        return f"L'editeur doit etre ouvert avec son Python active : {exc}"
+    return "Tout est sauvegarde dans l'editeur (niveaux et assets modifies)."
+
+
+_NIVEAU = """
+unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(niveau)
+_rendre({"ok": True})
+"""
+
+
+def ouvrir_niveau(niveau: str) -> str:
+    try:
+        _geste_editeur_ouvert(_NIVEAU, niveau=str(niveau))
+    except Indisponible as exc:
+        return f"L'editeur doit etre ouvert avec son Python active : {exc}"
+    return f"Niveau ouvert : {niveau}"
+
+
+_ASSETS = """
+chemins = unreal.EditorAssetLibrary.list_assets(dossier, recursive=True, include_folder=False)
+res = []
+for p in chemins:
+    d = unreal.EditorAssetLibrary.find_asset_data(p)
+    classe = str(d.asset_class_path.asset_name) if hasattr(d, "asset_class_path") else str(d.asset_class)
+    if not filtre or filtre.lower() in (str(p) + classe).lower():
+        res.append([str(p).split(".")[0], classe])
+    if len(res) >= 400: break
+_rendre(res)
+"""
+
+
+def lister_assets(dossier: str = "/Game", filtre: str = "") -> str:
+    try:
+        res = _geste(_ASSETS, dossier=dossier or "/Game", filtre=filtre)
+    except Indisponible as exc:
+        return str(exc)
+    if not res:
+        return f"Aucun asset dans {dossier}" + (f" pour « {filtre} »." if filtre else ".")
+    return f"{len(res)} asset(s) :\n" + "\n".join(f"  {c:<22} {p}" for p, c in res)
+
+
+_REFERENCES = """
+_rendre({"utilise_par": [str(x) for x in unreal.EditorAssetLibrary.find_package_referencers_for_asset(chemin, False)]})
+"""
+
+
+def references(chemin: str) -> str:
+    try:
+        r = _geste(_REFERENCES, chemin=chemin)
+    except Indisponible as exc:
+        return str(exc)
+    qui = r["utilise_par"]
+    return (f"{chemin} est utilise par {len(qui)} asset(s) :\n" + "\n".join(f"  {q}" for q in qui)
+            if qui else f"{chemin} n'est utilise par aucun asset.")

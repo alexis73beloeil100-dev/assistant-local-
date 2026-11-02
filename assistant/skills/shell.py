@@ -93,39 +93,55 @@ def refus(commande: str) -> str | None:
     return None
 
 
-def lecture_seule(commande: str) -> bool:
-    """La commande se contente-t-elle de lire ?
+# Les seuls blocs {...} toleres : lire une propriete de l'objet courant, ou
+# la comparer a une valeur ecrite en clair. Rien qui puisse appeler une
+# commande. ForEach-Object {$_.FullName}, Where-Object {$_.Length -gt 1000}.
+_BLOC_SUR = re.compile(
+    r"\{\s*\$_(?:\.\w+)+\s*"
+    r"(?:-(?:eq|ne|gt|lt|ge|le|like|notlike|match|notmatch|contains)\s+"
+    r"(?:\"[^\"$`(){}]*\"|'[^']*'|\d+(?:\.\d+)?))?\s*\}",
+    re.IGNORECASE)
+_SE_DEPLACER = re.compile(r"^\s*(cd|chdir|sl|set-location|push-location|pushd)\s+"
+                          r"(\"[^\"$`]*\"|'[^']*'|[^\s;&|$`(){}]+)\s*$", re.IGNORECASE)
+_TUYAU_LECTURE = re.compile(
+    r"^\s*(select-|sort-|format-|measure-|out-string|where-|convertto-|"
+    r"findstr|more|head|tail|foreach-object\s+BLOC|%\s+BLOC|where\s+BLOC|"
+    r"\?\s+BLOC|group-object|get-unique|out-host)", re.IGNORECASE)
 
-    Un enchainement (`;`, `&&`, `|`) suffit a la disqualifier : "Get-Date;
-    Remove-Item ..." commence par un verbe de lecture mais ne l'est pas.
-    Le pipe vers un formateur est la seule exception tolerable.
-    """
-    # "(Get-CimInstance ...).Caption" est une lecture : la parenthese
-    # ouvrante ne doit pas la faire passer pour une commande modifiante.
-    debut = commande.strip()
+
+def _segment_en_lecture(segment: str) -> bool:
+    segment = segment.strip()
+    if not segment:
+        return True
+    if _SE_DEPLACER.match(segment):
+        return True
+    debut = segment
     if debut.startswith("("):
         # Une seule paire de parentheses autour de la lecture, pas davantage.
         debut = debut[1:].replace(")", "", 1).lstrip()
-    # Seul le premier mot est compare aux verbes de lecture ; tout ce qui
-    # permet d'executer une seconde commande plus loin doit donc disqualifier :
-    # sous-expression "$(...)" ou "(...)", bloc "{...}", saut de ligne
-    # (separateur d'instructions en PowerShell), accent grave (continuation,
-    # echappement) et evaluation de texte (iex, Invoke-Expression).
-    if (SOUS_COMMANDE.search(debut)
-            or re.search(r"\b(iex|invoke-expression|invoke-command)\b",
-                         commande, re.IGNORECASE)):
+    if SOUS_COMMANDE.search(debut) or not LECTURE_SEULE.match(debut):
         return False
-    if not LECTURE_SEULE.match(debut):
+    return all(_TUYAU_LECTURE.match(t) for t in debut.split("|")[1:])
+
+
+def lecture_seule(commande: str) -> bool:
+    """La commande se contente-t-elle de lire ?
+
+    Chaque morceau d'un enchainement (`;`, `&&`) est juge seul : "cd dossier;
+    Get-ChildItem" est une lecture, "Get-Date; Remove-Item x" ne l'est pas.
+    Ce qui permettrait de cacher une commande plus loin disqualifie toujours :
+    sous-expression "$(...)", bloc "{...}" autre qu'une simple lecture de
+    propriete, saut de ligne, accent grave, evaluation de texte (iex).
+    """
+    if re.search(r"\b(iex|invoke-expression|invoke-command|start-process|"
+                 r"invoke-item)\b", commande, re.IGNORECASE):
         return False
-    for morceau in re.split(r"[;&]{1,2}", commande)[1:]:
-        if morceau.strip():
-            return False
-    for morceau in commande.split("|")[1:]:
-        if not re.match(r"^\s*(select-|sort-|format-|measure-|out-string|"
-                        r"where-|convertto-|findstr|more|head|tail)\b",
-                        morceau.strip(), re.IGNORECASE):
-            return False
-    return True
+    if re.search(r"[\r\n`]|\$\(|@\(", commande):
+        return False
+    texte = _BLOC_SUR.sub("BLOC", commande)
+    morceaux = re.split(r";|&&", texte)
+    return all(_segment_en_lecture(m) for m in morceaux) and any(
+        m.strip() and not _SE_DEPLACER.match(m) for m in morceaux)
 
 
 def _executer(commande: str) -> tuple[bool, str]:

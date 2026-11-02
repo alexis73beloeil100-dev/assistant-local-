@@ -1522,6 +1522,55 @@ TOOLS += [
          "\"joue\", \"teste le jeu\".",
          _obj({"action": {**STR, "enum": ["jouer", "simuler", "arreter"]}}),
          lambda action="jouer": animation.jouer_dans_editeur(str(action)), effect=True),
+    Tool("tests_unreal",
+         "Lance les TESTS AUTOMATISES d'Unreal (Automation, Session Frontend) "
+         "sans fenetre, et rend reussites et echecs avec leurs erreurs. "
+         "'filtre' : Project par defaut, ou le debut du nom des tests. C'est "
+         "CET outil pour \"lance les tests\", \"test automatise\".",
+         _obj({"filtre": STR}), lambda filtre="Project": unreal.lancer_tests(str(filtre))),
+    Tool("creer_classe_unreal",
+         "Cree une classe C++ Unreal complete (.h et .cpp) dans le module du "
+         "projet : UCLASS, GENERATED_BODY, constructeur, BeginPlay, bon "
+         "include du parent. 'parent' : AActor, ACharacter, APawn, "
+         "UActorComponent, USceneComponent, UObject, UUserWidget, UAnimInstance...",
+         _obj({"nom": STR, "parent": STR, "dossier": STR}, ["nom"]),
+         lambda nom, parent="AActor", dossier="": _creer_classe(str(nom), str(parent), str(dossier)),
+         effect=True),
+    Tool("live_coding",
+         "Recompile le C++ pendant que l'editeur est ouvert (Live Coding, "
+         "Ctrl+Alt+F11), sans le fermer.",
+         _obj({}), lambda: animation.commande_console("LiveCoding.Compile"), effect=True),
+    Tool("commande_console_unreal",
+         "Envoie une commande a la console de l'editeur : stat unit, stat fps, "
+         "stat gpu, r.ScreenPercentage 75, show collision...",
+         _obj({"commande": STR}, ["commande"]),
+         lambda commande: animation.commande_console(str(commande)), effect=True),
+    Tool("sauvegarder_tout_unreal",
+         "Sauvegarde dans l'editeur tous les niveaux et assets modifies.",
+         _obj({}), lambda: animation.sauvegarder_tout(), effect=True),
+    Tool("ouvrir_niveau",
+         "Ouvre un niveau dans l'editeur (chemin /Game/Maps/...).",
+         _obj({"niveau": STR}, ["niveau"]),
+         lambda niveau: animation.ouvrir_niveau(str(niveau)), effect=True),
+    Tool("lister_assets",
+         "Liste les assets du projet (Blueprints, maillages, animations, "
+         "niveaux, materiaux...) d'un dossier /Game, filtres par nom ou type.",
+         _obj({"dossier": STR, "filtre": STR}),
+         lambda dossier="/Game", filtre="": animation.lister_assets(str(dossier), str(filtre))),
+    Tool("references_asset",
+         "Quels assets utilisent cet asset (avant de le renommer ou supprimer).",
+         _obj({"chemin": STR}, ["chemin"]),
+         lambda chemin: animation.references(str(chemin))),
+    Tool("regenerer_fichiers_projet",
+         "Regenere la solution Visual Studio (.sln) du projet Unreal.",
+         _obj({}), lambda: unreal.regenerer_fichiers_projet(), effect=True),
+    Tool("nettoyer_build_unreal",
+         "Nettoie le build (Binaries et Intermediate vers la Corbeille) quand "
+         "la compilation se bloque sur des restes. Demande l'accord.",
+         _obj({}), lambda: unreal.nettoyer_build(), effect=True),
+    Tool("ouvrir_ide",
+         "Ouvre la solution du projet dans Visual Studio ou Rider.",
+         _obj({}), lambda: unreal.ouvrir_ide(), effect=True),
     Tool("lancer_jeu_unreal",
          "Lance le jeu Unreal du projet seul, hors editeur, en fenetre (option 'carte' : chemin "
          "d'un niveau /Game/...).",
@@ -1544,7 +1593,11 @@ OUTILS_ANIMATION = frozenset({
     "activer_python_editeur", "anim_squelette", "anim_infos", "anim_compatibilite",
     "anim_mesurer", "anim_notify", "anim_courbe", "anim_montage",
     "retargeter_animations", "python_editeur", "empaqueter_unreal",
-    "ouvrir_unreal", "jouer_test", "lancer_jeu_unreal",
+    "ouvrir_unreal", "jouer_test", "lancer_jeu_unreal", "tests_unreal",
+    "creer_classe_unreal", "live_coding", "commande_console_unreal",
+    "sauvegarder_tout_unreal", "ouvrir_niveau", "lister_assets",
+    "references_asset", "regenerer_fichiers_projet", "nettoyer_build_unreal",
+    "ouvrir_ide",
     "assets_lourds",
 })
 
@@ -1569,6 +1622,15 @@ OUTILS_ATELIER_CODE = frozenset({
     "chercher_encyclopedie", "chercher_bibliotheque", "lire_bibliotheque",
     "installer_bibliotheque", "etat_bibliotheque",
 })
+
+
+def _creer_classe(nom: str, parent: str, dossier: str) -> str:
+    try:
+        h, corps_h, cpp, corps_cpp = unreal.creer_classe(nom, parent, dossier)
+    except unreal.Echec as exc:
+        return str(exc)
+    return "\n".join([code.creer_fichier(h, corps_h), code.creer_fichier(cpp, corps_cpp),
+                      "Compile ensuite le projet (compiler_unreal)."])
 
 
 def _projets_unreal() -> str:
@@ -1648,8 +1710,13 @@ CONSIGNE_MODE = {
             "Blueprint a la fin (blueprint_compiler) et verifie par "
             "capture_editeur puis lire_image.\n"
             "- Unreal : \"ouvre Unreal\" -> ouvrir_unreal ; \"lance un test\", "
-            "\"PIE\", \"joue\" -> jouer_test ; jamais ouvrir_application pour "
+            "\"PIE\", \"joue\" -> jouer_test ; \"tests automatises\", \"lance "
+            "les tests\" -> tests_unreal ; jamais ouvrir_application pour "
             "Unreal Engine.\n"
+            "- Commandes : dans le projet, executer_dans_projet. Si un outil "
+            "dedie existe (compiler, tests, ouvrir, jouer, chercher), utilise-le "
+            "au lieu d'une commande. Une commande qui echoue deux fois : arrete "
+            "et explique, ne tente pas dix variantes.\n"
             "- \"Ou en est le projet\", \"qu'est-ce qui a ete fait\" : "
             "point_du_projet, puis reponds a partir de ce qu'il rend, sans "
             "inventer.\n"

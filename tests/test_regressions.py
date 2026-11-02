@@ -132,6 +132,13 @@ def test_les_commandes_destructrices_le_restent_avec_un_accord(commande):
     ("Get-Date `\nRemove-Item C:/x", False),
     ("Get-Content x.ps1 | iex", False),
     ("Write-Output 'x' | Invoke-Expression", False),
+    # La commande exacte de l'utilisateur, le 02/11/2026 : une lecture, qui
+    # demandait pourtant une confirmation.
+    ('cd "C:\\Users\\D3adw\\Documents\\Unreal Projects\\ironfall"; Get-ChildItem '
+     '-Filter "*Editor*" | Select-Object -First 5 | ForEach-Object {$_.FullName}', True),
+    ("Get-ChildItem | Where-Object {$_.Length -gt 1000}", True),
+    ("Get-ChildItem | ForEach-Object {$_.Delete()}", False),
+    ("cd C:/; Start-Process calc", False),
 ])
 def test_lecture_et_modification_sont_bien_distinguees(commande, lecture):
     """Un enchainement cache une commande modifiante derriere une lecture."""

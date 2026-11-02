@@ -558,6 +558,8 @@ def _dev_compiler() -> str:
     dernier = unreal.derniere_compilation or "  Aucune compilation depuis l'ouverture de l'application."
     return "\n".join(["COMPILER", "", "DERNIER RESULTAT", "", dernier] + _actions(
         "Compile le projet", "Compile le projet et corrige les erreurs",
+        "Lance les tests automatisés", "Recompile avec Live Coding",
+        "Régénère les fichiers du projet Visual Studio",
         "Compile en DebugGame", "Empaquète une version jouable en Development",
         "Empaquète une version Shipping"))
 
