@@ -358,6 +358,16 @@ class AssistantWindow(tk.Tk):
             self.boutons_mode[mode] = bouton
         self._montrer_mode()
 
+        # Le modele : bascule entre ceux qui sont installes, comme dans
+        # ChatGPT. La liste est relue a chaque clic, donc un modele que
+        # l'installateur vient d'ajouter y apparait sans relancer.
+        self.lien_modele = tk.Label(bottom, text="", bg=t.SURFACE,
+                                    fg=t.ACCENT, font=t.FONT_UI_TINY,
+                                    cursor="hand2", anchor="w")
+        self.lien_modele.pack(fill="x", padx=t.PAD, pady=(6, 0))
+        self.lien_modele.bind("<Button-1>", self.choisir_modele)
+        self._montrer_modele()
+
         # Le projet Unreal de travail : choisi une fois, retenu ensuite.
         self.lien_projet = tk.Label(bottom, text="", bg=t.SURFACE,
                                     fg=t.ACCENT, font=t.FONT_UI_TINY,
@@ -377,6 +387,37 @@ class AssistantWindow(tk.Tk):
                                 font=t.FONT_UI_TINY, cursor="hand2")
                 lien.pack(side="left", padx=(0, t.PAD))
                 lien.bind("<Button-1>", lambda _e, a=action: a())
+
+    def _montrer_modele(self) -> None:
+        self.lien_modele.configure(text=f"Modele : {config.LLM_MODEL}  (changer)")
+
+    def choisir_modele(self, evenement=None) -> None:
+        from assistant import backend
+
+        installes = backend.modeles_de_conversation()
+        menu = tk.Menu(self, tearoff=False, bg=t.SURFACE, fg=t.TEXT,
+                       activebackground=t.SURFACE_2, activeforeground=t.ACCENT)
+        if not installes:
+            menu.add_command(label="Aucun modele installe : ouvre Composants",
+                             command=self.open_installer)
+        for nom in installes:
+            marque = "> " if nom == config.LLM_MODEL else "   "
+            menu.add_command(label=marque + nom,
+                             command=lambda n=nom: self._basculer_modele(n))
+        x = evenement.x_root if evenement else self.winfo_pointerx()
+        y = evenement.y_root if evenement else self.winfo_pointery()
+        menu.tk_popup(x, y)
+
+    def _basculer_modele(self, nom: str) -> None:
+        from assistant import backend
+
+        ancien = config.LLM_MODEL
+        config.changer_modele(nom)
+        self._montrer_modele()
+        if ancien != nom:
+            # 4B + 14B = 16,9 Go : ils ne tiennent pas ensemble sur 16 Go.
+            threading.Thread(target=backend.decharger, args=(ancien,),
+                             daemon=True).start()
 
     def changer_mode(self, mode: str) -> None:
         try:

@@ -308,6 +308,15 @@ def llm_model() -> str:
 
 LLM_MODEL = llm_model()
 
+
+def changer_modele(nom: str) -> None:
+    """Bascule de modele tout de suite, et pour les prochains lancements."""
+    global LLM_MODEL
+    from assistant import settings
+
+    settings.set("llm_model", nom)
+    LLM_MODEL = nom
+
 # --- Securite ---------------------------------------------------------------
 
 # Lecture libre, ecriture confirmee : toute action qui modifie la machine

@@ -66,6 +66,20 @@ def models() -> list[str]:
         return []
 
 
+def modeles_de_conversation() -> list[str]:
+    """Les modeles installes qui savent converser (pas ceux d'indexation)."""
+    return sorted(m for m in models() if "embed" not in m.lower())
+
+
+def decharger(nom: str) -> None:
+    """Libere la carte graphique d'un modele : deux charges ensemble ne tiennent pas."""
+    try:
+        requests.post(f"{config.OLLAMA_URL}/api/generate",
+                      json={"model": nom, "keep_alive": 0}, timeout=15)
+    except requests.RequestException:
+        pass
+
+
 def start(on_progress=None) -> tuple[bool, str]:
     """Demarre le serveur s'il ne tourne pas, et attend qu'il reponde.
 

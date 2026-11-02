@@ -3720,3 +3720,37 @@ def test_le_total_des_deux_tas_n_est_pas_additionne(monkeypatch):
     consigne = llm.avec_consigne_de_mode([{"role": "system", "content": "x"},
                                           {"role": "user", "content": "y"}])[1]["content"]
     assert f"en a {len(llm.TOOLS)}, et pas 194" in consigne
+
+
+def test_le_modele_installe_n_est_pas_ecrase_par_l_application_ouverte(tmp_path, monkeypatch):
+    """L'installateur (autre processus) choisissait qwen3:14b ; l'application
+    ouverte reecrivait qwen3.5:4b au premier changement de mode."""
+    import json
+
+    from assistant import config, settings
+
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings, "_cache", None)
+    settings.set("llm_model", "qwen3.5:4b")
+    assert settings.get("llm_model") == "qwen3.5:4b"      # cache rempli
+    fichier = tmp_path / "settings.json"
+    donnees = json.loads(fichier.read_text())
+    donnees["llm_model"] = "qwen3:14b"                      # l'installateur
+    fichier.write_text(json.dumps(donnees))
+    settings.set("mode_outils", "dev")                      # l'application
+    final = json.loads(fichier.read_text())
+    assert final == {"llm_model": "qwen3:14b", "mode_outils": "dev"}
+
+
+def test_basculer_de_modele_vaut_tout_de_suite(tmp_path, monkeypatch):
+    from assistant import backend, config, settings
+
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings, "_cache", None)
+    monkeypatch.setattr(config, "LLM_MODEL", "qwen3.5:4b")
+    config.changer_modele("qwen3:14b")
+    assert config.LLM_MODEL == "qwen3:14b" and settings.get("llm_model") == "qwen3:14b"
+    monkeypatch.setattr(backend, "models", lambda: ["qwen3:14b", "nomic-embed-text:latest",
+                                                    "qwen3.5:4b"])
+    assert backend.modeles_de_conversation() == ["qwen3.5:4b", "qwen3:14b"]
+    assert "config.LLM_MODEL" in open("assistant/llm.py", encoding="utf-8").read()

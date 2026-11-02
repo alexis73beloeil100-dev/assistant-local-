@@ -78,12 +78,11 @@ def set(key: str, value) -> None:
     global _cache
     chemin = _path()
     with _lock:
-        # On relit le fichier si rien n'est encore en cache : partir d'un
-        # dictionnaire vide ecraserait tous les reglages existants au premier
-        # set() de la session.
-        if _cache is None:
-            _cache = _load(chemin)
-        données = dict(_cache)
+        # On relit TOUJOURS le fichier avant d'ecrire. Avec le seul cache,
+        # l'application ouverte reecrivait ses vieux reglages par-dessus ceux
+        # de l'installateur (autre processus) : le modele telecharge etait
+        # remplace par l'ancien au premier changement de mode.
+        données = _load(chemin) if chemin.is_file() else dict(_cache or {})
         données[key] = value
         _cache = données
 
