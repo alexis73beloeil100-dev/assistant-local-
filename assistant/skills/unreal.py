@@ -514,3 +514,90 @@ def dernier_plantage() -> str:
     if any(l.startswith("  >>") for l in lignes):
         lignes.append("(>> = code du projet : c'est la que la correction se fait)")
     return "\n".join(lignes)
+
+
+# --- Etape 5 : construire une version jouable, reperer les assets lourds -------
+
+DUREE_MAX_PAQUET = 4 * 3600
+
+
+def commande_paquet(projet: Projet, moteur: Path, configuration: str,
+                    sortie: Path) -> list[str]:
+    uat = moteur / "Engine" / "Build" / "BatchFiles" / "RunUAT.bat"
+    if not uat.is_file():
+        raise Echec(f"RunUAT.bat introuvable dans le moteur : {uat}")
+    commande = [str(uat), "BuildCookRun", f"-project={projet.chemin}", "-noP4",
+                "-platform=Win64", f"-clientconfig={configuration}",
+                "-cook", "-allmaps", "-stage", "-pak", "-archive",
+                f"-archivedirectory={sortie}", "-utf8output"]
+    # Un projet Blueprint n'a rien a compiler : -build le ferait echouer.
+    if any(c.endswith("Editor") for c in projet.cibles):
+        commande.insert(5, "-build")
+    return commande
+
+
+def empaqueter(configuration: str = "Development", ask=None) -> str:
+    """Construit une version jouable du jeu (BuildCookRun) dans Packaged/."""
+    configuration = configuration if configuration in (
+        "Development", "Shipping", "DebugGame") else "Development"
+    try:
+        projet = analyser(_projet_ou_echec())
+        moteur = dossier_moteur(projet.chemin, projet.association)
+        sortie = projet.chemin.parent / "Packaged" / configuration
+        commande = commande_paquet(projet, moteur, configuration, sortie)
+    except Echec as exc:
+        return str(exc)
+    action = safety.Action(kind="compilation",
+                           summary=f"Empaqueter {projet.nom} ({configuration})",
+                           targets=[str(sortie)], reversible=True, routine=True)
+    try:
+        if not safety.guard(action, ask=ask):
+            return "Empaquetage annule."
+    except safety.Refused as exc:
+        return str(exc)
+    debut = time.time()
+    try:
+        r = subprocess.run(commande, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           timeout=DUREE_MAX_PAQUET,
+                           cwd=str(projet.chemin.parent),
+                           creationflags=CREATE_NO_WINDOW)
+    except subprocess.TimeoutExpired:
+        return "Empaquetage arrete apres 4 heures : il semble bloque."
+    except OSError as exc:
+        return f"Empaquetage impossible a lancer : {exc}"
+    rendu = compte_rendu(projet.nom, r.returncode, r.stdout + "\n" + r.stderr,
+                         time.time() - debut).replace("Compilation de", "Empaquetage de", 1)
+    if r.returncode == 0:
+        rendu += f"\nVersion jouable dans : {sortie}"
+    return rendu
+
+
+TAILLES_ALERTE = {".uasset": 50 * 1024 * 1024, ".umap": 200 * 1024 * 1024}
+
+
+def assets_lourds(nombre: int = 25) -> str:
+    """Les plus gros assets du dossier Content, sur le disque."""
+    try:
+        projet = _projet_ou_echec()
+    except Echec as exc:
+        return str(exc)
+    contenu = projet.parent / "Content"
+    if not contenu.is_dir():
+        return f"Pas de dossier Content dans {projet.parent}."
+    fichiers = [(f.stat().st_size, f) for f in contenu.rglob("*")
+                if f.is_file() and f.suffix.lower() in (".uasset", ".umap", ".ubulk")]
+    if not fichiers:
+        return "Aucun asset dans Content."
+    fichiers.sort(key=lambda x: -x[0])
+    total = sum(t for t, _ in fichiers)
+    lignes = [f"{len(fichiers)} fichiers d'assets, {total / 1e9:.2f} Go au total. "
+              f"Les {min(nombre, len(fichiers))} plus lourds :"]
+    for taille, f in fichiers[:max(1, int(nombre))]:
+        alerte = taille >= TAILLES_ALERTE.get(f.suffix.lower(), 1 << 62)
+        chemin = "/Game/" + f.relative_to(contenu).with_suffix("").as_posix()
+        lignes.append(f"  {taille / 1e6:8.1f} Mo  {chemin}" + ("  <- lourd" if alerte else ""))
+    lignes.append("Textures : 4096 ou plus sans raison, pas de mip-maps ; maillages : "
+                  "pas de niveaux de detail (LOD) ; sons : non compresses. A "
+                  "verifier dans l'editeur ou avec python_editeur.")
+    return "\n".join(lignes)

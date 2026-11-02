@@ -1414,10 +1414,24 @@ TOOLS += [
          lambda script: animation.python_editeur(str(script)), effect=True),
 ]
 
+TOOLS += [
+    Tool("empaqueter_unreal",
+         "Construit une version jouable du jeu Unreal (cook, pak, archive) "
+         "dans Packaged/<configuration>. Long : de quelques minutes a une heure.",
+         _obj({"configuration": {**STR, "enum": ["Development", "Shipping", "DebugGame"]}}),
+         lambda configuration="Development": unreal.empaqueter(str(configuration)),
+         effect=True),
+    Tool("assets_lourds",
+         "Les plus gros assets du projet Unreal (Content), avec ceux qui sont "
+         "anormalement lourds.",
+         _obj({"nombre": INT}), lambda nombre=25: unreal.assets_lourds(int(nombre))),
+]
+
 OUTILS_ANIMATION = frozenset({
     "activer_python_editeur", "anim_squelette", "anim_infos", "anim_compatibilite",
     "anim_mesurer", "anim_notify", "anim_courbe", "anim_montage",
-    "retargeter_animations", "python_editeur",
+    "retargeter_animations", "python_editeur", "empaqueter_unreal",
+    "assets_lourds",
 })
 
 OUTILS_EDITEUR = frozenset({

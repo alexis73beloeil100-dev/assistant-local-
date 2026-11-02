@@ -309,3 +309,37 @@ def test_sans_projet_choisi_il_propose_les_recents(tmp_path, reglages,
     monkeypatch.setattr(unreal, "projets_recents", lambda: [a])
     unreal.resume_projet()
     assert unreal.projet_actuel() == a, "un seul projet recent : il est pris"
+
+
+# --- Etape 5 -----------------------------------------------------------------------
+
+def test_l_empaquetage_vise_le_projet_et_un_dossier_d_archive(tmp_path):
+    uproject = faux_projet(tmp_path)
+    moteur = tmp_path / "UE_5.4"
+    uat = moteur / "Engine" / "Build" / "BatchFiles" / "RunUAT.bat"
+    uat.parent.mkdir(parents=True)
+    uat.write_text("@echo off", encoding="utf-8")
+    sortie = tmp_path / "Tireur" / "Packaged" / "Shipping"
+    commande = unreal.commande_paquet(unreal.analyser(uproject), moteur,
+                                      "Shipping", sortie)
+    assert commande[:2] == [str(uat), "BuildCookRun"]
+    assert f"-project={uproject}" in commande and "-build" in commande
+    assert "-clientconfig=Shipping" in commande
+    assert f"-archivedirectory={sortie}" in commande
+    blueprint = faux_projet(tmp_path / "bp", "Plateforme", cpp=False)
+    assert "-build" not in unreal.commande_paquet(unreal.analyser(blueprint), moteur,
+                                                  "Development", sortie)
+
+
+def test_les_assets_lourds_sont_tries_et_signales(tmp_path, reglages):
+    uproject = faux_projet(tmp_path)
+    unreal.choisir_projet(str(uproject))
+    contenu = uproject.parent / "Content"
+    (contenu / "Textures").mkdir(parents=True)
+    (contenu / "Textures" / "T_Sol_8K.uasset").write_bytes(b"0" * (60 * 1024 * 1024))
+    (contenu / "Maps").mkdir()
+    (contenu / "Maps" / "Niveau1.umap").write_bytes(b"0" * (3 * 1024 * 1024))
+    texte = unreal.assets_lourds()
+    lignes = texte.splitlines()
+    assert "/Game/Textures/T_Sol_8K" in lignes[1] and "<- lourd" in lignes[1]
+    assert "/Game/Maps/Niveau1" in lignes[2] and "lourd" not in lignes[2]
