@@ -4309,3 +4309,29 @@ def test_la_vision_est_annoncee_comme_elle_est_livree():
         "le composant est decoche : les notes doivent le dire, sinon elles "
         "promettent une fonction que personne n'aura")
     assert "Facultatif" in vision.note
+
+
+# --- La mini-fenetre -------------------------------------------------------
+
+def test_le_raccourci_de_la_mini_fenetre_est_win_maj_a():
+    """Choisi par l'utilisateur ; distinct de Ctrl+Alt+Espace, qui garde la voix."""
+    import ast
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent / "assistant"
+              / "mini_fenetre.py").read_text(encoding="utf-8")
+    valeurs = {n.targets[0].id: n.value.value for n in ast.parse(source).body
+               if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)
+               and isinstance(n.targets[0], ast.Name)}
+    assert valeurs["RACCOURCI"] == "<cmd>+<shift>+a"
+    assert valeurs["RACCOURCI"] != "<ctrl>+<alt>+<space>"
+
+
+def test_un_raccourci_indisponible_n_empeche_pas_l_application_de_s_ouvrir():
+    import inspect
+
+    from assistant import gui
+
+    source = inspect.getsource(gui.main)
+    debut = source.index("mini_fenetre")
+    assert "except Exception" in source[debut:debut + 600]

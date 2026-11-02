@@ -133,6 +133,9 @@ class AssistantWindow(tk.Tk):
         self.events: queue.Queue = queue.Queue()
         self.convo = llm.new_conversation()
         self.busy = False
+        # Rappels (genre, texte) pour chaque message affiche : la mini-fenetre
+        # y lit la reponse a la question qu'elle a posee.
+        self.abonnes_reponse: list = []
         self.speak = tk.BooleanVar(value=False)
         self.mic_device: int | None = None
         self.current = CHAT_KEY
@@ -1068,6 +1071,11 @@ class AssistantWindow(tk.Tk):
     BANDEAUX = {"error": "erreur", "warn": "alerte"}
 
     def add(self, texte: str, role: str = "assistant") -> None:
+        for abonne in list(self.abonnes_reponse):
+            try:
+                abonne(role, texte)
+            except Exception:  # noqa: BLE001
+                pass
         ton = self.BANDEAUX.get(role)
         if ton:
             message = Bandeau(self.chat.inner, texte, ton=ton)
@@ -1620,6 +1628,15 @@ MESSAGE_DE_REPRISE = ""
 def main() -> int:
     fenetre = AssistantWindow()
     fenetre.protocol("WM_DELETE_WINDOW", fenetre._fermer_proprement)
+    try:
+        from assistant import mini_fenetre
+
+        mini = mini_fenetre.MiniFenetre(fenetre)
+        fenetre.mini_raccourci = mini_fenetre.demarrer_raccourci(fenetre, mini)
+    except Exception as exc:  # noqa: BLE001
+        # Un raccourci indisponible ne doit pas empecher l'application de
+        # s'ouvrir : on le dit, et la grande fenetre reste utilisable.
+        fenetre.add(f"Mini-fenêtre indisponible : {exc}", "error")
     if MESSAGE_DE_REPRISE:
         fenetre.after(1200, lambda: fenetre.post("error", MESSAGE_DE_REPRISE))
     fenetre.mainloop()
